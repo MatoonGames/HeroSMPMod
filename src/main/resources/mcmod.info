@@ -1,0 +1,16 @@
+[
+  {
+    "modid": "herosmp",
+    "name": "Hero SMP",
+    "description": "A mod for custom disconnect screens.",
+    "version": "1.0",
+    "mcversion": "1.12.2",
+    "authorList": ["Matoon"],
+    "url": "https://matoon.games",
+    "credits": "233Neon",
+    "logoFile": "assets/herosmp/logo.png",
+    "updateUrl": "",
+    "screenshots": [],
+    "dependencies": []
+  }
+]
