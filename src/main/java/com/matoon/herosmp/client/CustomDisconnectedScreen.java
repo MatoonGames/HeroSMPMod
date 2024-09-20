@@ -26,8 +26,8 @@ public class CustomDisconnectedScreen extends GuiScreen {
         this.parentScreen = parentScreen != null ? parentScreen : new GuiScreen() {};
         this.message = message != null ? message : new TextComponentString("Disconnected from the server");
 
-        // Print the message using toString() instead of getUnformattedText()
-        System.out.println("CustomDisconnectedScreen initialized with message: " + message.toString());
+        // Move this line to after the null check to avoid issues
+        System.out.println("CustomDisconnectedScreen initialized with message: " + this.message.getUnformattedText());
     }
 
     @Override

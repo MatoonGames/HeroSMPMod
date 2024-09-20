@@ -11,13 +11,14 @@ import net.minecraftforge.client.event.RenderGameOverlayEvent;
 import com.matoon.herosmp.client.GuiImageCycler;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.ScaledResolution;
+import java.lang.reflect.Method;  // Import reflection
 import net.minecraftforge.fml.common.eventhandler.SubscribeEvent;
 
 import java.lang.reflect.Field;
 
 public class EventHandler {
 
-    private GuiImageCycler guiImageCycler = new GuiImageCycler();  // Create the GUI cycler
+    private GuiImageCycler guiImageCycler = new GuiImageCycler();
 
     @SubscribeEvent
     public void onRenderGameOverlay(RenderGameOverlayEvent event) {
@@ -32,8 +33,22 @@ public class EventHandler {
 
     // Method to check if the player is in a multiplayer server
     private boolean isMultiplayer() {
-        Minecraft mc = Minecraft.getMinecraft();
-        return mc.getCurrentServerData() != null && !mc.isIntegratedServerRunning();
+        Minecraft mc = getMinecraftInstance();
+        if (mc != null && mc.getCurrentServerData() != null && !mc.isIntegratedServerRunning()) {
+            return true;
+        }
+        return false;
+    }
+
+    // Use reflection to get the Minecraft instance
+    private Minecraft getMinecraftInstance() {
+        try {
+            Method getMinecraftMethod = Minecraft.class.getDeclaredMethod("getMinecraft");
+            return (Minecraft) getMinecraftMethod.invoke(null);
+        } catch (Exception e) {
+            e.printStackTrace();
+            return null;
+        }
     }
 
     @SubscribeEvent
