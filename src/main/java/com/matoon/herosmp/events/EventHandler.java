@@ -1,16 +1,40 @@
 package com.matoon.herosmp.events;
 
+import com.matoon.herosmp.HeroSMP;
 import com.matoon.herosmp.client.CustomDisconnectedScreen;
 import net.minecraft.client.gui.GuiDisconnected;
 import net.minecraft.client.gui.GuiScreen;
 import net.minecraft.util.text.ITextComponent;
 import net.minecraft.util.text.TextComponentString;
 import net.minecraftforge.client.event.GuiOpenEvent;
+import net.minecraftforge.client.event.RenderGameOverlayEvent;
+import com.matoon.herosmp.client.GuiImageCycler;
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.gui.ScaledResolution;
 import net.minecraftforge.fml.common.eventhandler.SubscribeEvent;
 
 import java.lang.reflect.Field;
 
 public class EventHandler {
+
+    private GuiImageCycler guiImageCycler = new GuiImageCycler();  // Create the GUI cycler
+
+    @SubscribeEvent
+    public void onRenderGameOverlay(RenderGameOverlayEvent event) {
+        if (event.getType() == RenderGameOverlayEvent.ElementType.ALL) {
+            // Check if the GUI is enabled in the config and if the player is in multiplayer
+            if (HeroSMP.enableGUI && isMultiplayer()) {
+                ScaledResolution scaledRes = new ScaledResolution(Minecraft.getMinecraft());
+                guiImageCycler.renderCyclingImages(scaledRes);  // Render the GUI only in multiplayer
+            }
+        }
+    }
+
+    // Method to check if the player is in a multiplayer server
+    private boolean isMultiplayer() {
+        Minecraft mc = Minecraft.getMinecraft();
+        return mc.getCurrentServerData() != null && !mc.isIntegratedServerRunning();
+    }
 
     @SubscribeEvent
     public void onClientDisconnect(GuiOpenEvent event) {
