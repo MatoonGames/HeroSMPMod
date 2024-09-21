@@ -1,10 +1,13 @@
 package com.matoon.herosmp;
 
-import com.matoon.herosmp.events.EventHandler;
+import com.matoon.herosmp.level.LevelHandler;
 import net.minecraftforge.common.MinecraftForge;
 import net.minecraftforge.common.config.Configuration;
 import net.minecraftforge.fml.common.Mod;
+import net.minecraftforge.fml.common.SidedProxy;
 import net.minecraftforge.fml.common.event.FMLPreInitializationEvent;
+import net.minecraftforge.fml.relauncher.Side;
+import net.minecraftforge.fml.relauncher.SideOnly;
 
 import java.io.File;
 
@@ -19,7 +22,11 @@ public class HeroSMP {
     public static Configuration config;
     public static boolean enableGUI = true;  // Default value for GUI enabled
     public static boolean guiMultiplayerOnly = true;  // Default: multiplayer-only
-    public static boolean enableScoreboard = true;  // New: Enable/disable scoreboard
+    public static boolean enableScoreboard = true;  // Default value for scoreboard visibility
+
+    // Proxy references for client and server
+    @SidedProxy(clientSide = "com.matoon.herosmp.client.ClientProxy", serverSide = "com.matoon.herosmp.server.ServerProxy")
+    public static CommonProxy proxy;
 
     @Mod.EventHandler
     public void preInit(FMLPreInitializationEvent event) {
@@ -30,8 +37,13 @@ public class HeroSMP {
         // Load the config
         loadConfig();
 
-        // Register the event handler
-        MinecraftForge.EVENT_BUS.register(new EventHandler());
+        // Initialize client-side or server-side proxies
+        proxy.preInit(event);
+
+        // Load level rewards on the server side only
+        if (event.getSide().isServer()) {
+            LevelHandler.loadLevelRewards(config);
+        }
     }
 
     public static void loadConfig() {
