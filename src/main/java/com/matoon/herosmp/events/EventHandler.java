@@ -2,53 +2,54 @@ package com.matoon.herosmp.events;
 
 import com.matoon.herosmp.HeroSMP;
 import com.matoon.herosmp.client.CustomDisconnectedScreen;
+import com.matoon.herosmp.client.MultiplayerScoreboardHandler;
+import com.matoon.herosmp.client.GuiImageCycler;
+import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiDisconnected;
 import net.minecraft.client.gui.GuiScreen;
+import net.minecraft.client.gui.ScaledResolution;
 import net.minecraft.util.text.ITextComponent;
 import net.minecraft.util.text.TextComponentString;
 import net.minecraftforge.client.event.GuiOpenEvent;
 import net.minecraftforge.client.event.RenderGameOverlayEvent;
-import com.matoon.herosmp.client.GuiImageCycler;
-import net.minecraft.client.Minecraft;
-import net.minecraft.client.gui.ScaledResolution;
-import java.lang.reflect.Method;  // Import reflection
 import net.minecraftforge.fml.common.eventhandler.SubscribeEvent;
 
 import java.lang.reflect.Field;
 
 public class EventHandler {
 
-    private GuiImageCycler guiImageCycler = new GuiImageCycler();
+    private final GuiImageCycler guiImageCycler = new GuiImageCycler();
+    private final MultiplayerScoreboardHandler scoreboardHandler = new MultiplayerScoreboardHandler();
 
     @SubscribeEvent
     public void onRenderGameOverlay(RenderGameOverlayEvent event) {
         if (event.getType() == RenderGameOverlayEvent.ElementType.ALL) {
-            // Check if the GUI is enabled in the config and if the player is in multiplayer
-            if (HeroSMP.enableGUI && isMultiplayer()) {
+            // Check if the GUI is enabled in the config
+            if (HeroSMP.enableGUI) {
                 ScaledResolution scaledRes = new ScaledResolution(Minecraft.getMinecraft());
-                guiImageCycler.renderCyclingImages(scaledRes);  // Render the GUI only in multiplayer
+
+                // Display the custom image and scoreboard if multiplayer
+                if (HeroSMP.guiMultiplayerOnly && isMultiplayer()) {
+                    guiImageCycler.renderCyclingImages(scaledRes);
+                    scoreboardHandler.renderScoreboard(scaledRes);
+                } else if (!HeroSMP.guiMultiplayerOnly) {
+                    // Display in both singleplayer and multiplayer
+                    guiImageCycler.renderCyclingImages(scaledRes);
+                    scoreboardHandler.renderScoreboard(scaledRes);
+                }
             }
         }
     }
 
     // Method to check if the player is in a multiplayer server
     private boolean isMultiplayer() {
-        Minecraft mc = getMinecraftInstance();
+        Minecraft mc = Minecraft.getMinecraft();
         if (mc != null && mc.getCurrentServerData() != null && !mc.isIntegratedServerRunning()) {
+            System.out.println("Player is in Multiplayer");
             return true;
         }
+        System.out.println("Player is NOT in Multiplayer");
         return false;
-    }
-
-    // Use reflection to get the Minecraft instance
-    private Minecraft getMinecraftInstance() {
-        try {
-            Method getMinecraftMethod = Minecraft.class.getDeclaredMethod("getMinecraft");
-            return (Minecraft) getMinecraftMethod.invoke(null);
-        } catch (Exception e) {
-            e.printStackTrace();
-            return null;
-        }
     }
 
     @SubscribeEvent

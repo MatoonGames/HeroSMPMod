@@ -18,6 +18,8 @@ public class HeroSMP {
     // Config fields
     public static Configuration config;
     public static boolean enableGUI = true;  // Default value for GUI enabled
+    public static boolean guiMultiplayerOnly = true;  // Default: multiplayer-only
+    public static boolean enableScoreboard = true;  // New: Enable/disable scoreboard
 
     @Mod.EventHandler
     public void preInit(FMLPreInitializationEvent event) {
@@ -36,6 +38,8 @@ public class HeroSMP {
         try {
             config.load();
             enableGUI = config.getBoolean("enableGUI", Configuration.CATEGORY_GENERAL, true, "Set to false to disable the in-game GUI.");
+            guiMultiplayerOnly = config.getBoolean("guiMultiplayerOnly", Configuration.CATEGORY_GENERAL, true, "Set to false to display GUI in both singleplayer and multiplayer.");
+            enableScoreboard = config.getBoolean("enableScoreboard", Configuration.CATEGORY_GENERAL, true, "Set to false to disable the scoreboard.");
         } catch (Exception e) {
             System.err.println("Error loading config for " + MODID);
         } finally {
