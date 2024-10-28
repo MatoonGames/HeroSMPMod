@@ -61,11 +61,12 @@ public class MultiplayerScoreboardHandler {
         }
 
         // Display "Level: ", centered
-        String levelText = TextFormatting.BOLD + "Level: " + TextFormatting.RESET + mc.player.experienceLevel;
-        mc.fontRenderer.drawString(levelText, centerX - mc.fontRenderer.getStringWidth(levelText) - 5, centerY, 0xFFFFFF);
+        String levelText = TextFormatting.BOLD + "Level: " + TextFormatting.RESET + "TBD";
+        int levelTextWidth = mc.fontRenderer.getStringWidth(levelText);
+        mc.fontRenderer.drawString(levelText, centerX - (levelTextWidth + boxWidth) / 2, centerY, 0xFFFFFF);
 
         // Display the server IP, centered
-        String serverIP = "HEROSMP.PRO";
+        String serverIP = "Server IP: herosmp.pro";
         int serverIPWidth = mc.fontRenderer.getStringWidth(serverIP);
         mc.fontRenderer.drawString(serverIP, centerX - (serverIPWidth + boxWidth) / 2, centerY + 15, 0xFFFFFF);
     }

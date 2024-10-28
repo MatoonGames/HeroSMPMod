@@ -16,11 +16,6 @@ import net.minecraftforge.fml.common.eventhandler.SubscribeEvent;
 
 import java.lang.reflect.Field;
 
-import net.minecraftforge.fml.relauncher.Side;
-import net.minecraftforge.fml.relauncher.SideOnly;
-
-// Add @SideOnly to ensure it's client-side only
-@SideOnly(Side.CLIENT)
 public class EventHandler {
 
     private final GuiImageCycler guiImageCycler = new GuiImageCycler();
@@ -47,19 +42,17 @@ public class EventHandler {
     }
 
     // Method to check if the player is in a multiplayer server
-    @SideOnly(Side.CLIENT) // Ensure this only runs client-side
     private boolean isMultiplayer() {
         Minecraft mc = Minecraft.getMinecraft();
         if (mc != null && mc.getCurrentServerData() != null && !mc.isIntegratedServerRunning()) {
-            System.out.println("Player is in Multiplayer");
+            //System.out.println("Player is in Multiplayer");
             return true;
         }
-        System.out.println("Player is NOT in Multiplayer");
+        //System.out.println("Player is NOT in Multiplayer");
         return false;
     }
 
     @SubscribeEvent
-    @SideOnly(Side.CLIENT) // Ensure this only runs client-side
     public void onClientDisconnect(GuiOpenEvent event) {
         GuiScreen openedGui = event.getGui();
 
@@ -75,12 +68,6 @@ public class EventHandler {
                     Field messageField = GuiDisconnected.class.getDeclaredField("message");
                     messageField.setAccessible(true);
                     ITextComponent message = (ITextComponent) messageField.get(openedGui);
-
-                    // Safety check for message nullity
-                    if (message == null) {
-                        message = new TextComponentString("Disconnected from the server.");
-                    }
-
                     System.out.println("Successfully retrieved message: " + message.getUnformattedText());
 
                     // Open the custom disconnect screen after disconnection

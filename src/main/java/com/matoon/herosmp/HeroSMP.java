@@ -1,15 +1,25 @@
 package com.matoon.herosmp;
 
+<<<<<<< HEAD
+import com.matoon.herosmp.client.ClientProxy;
+import com.matoon.herosmp.server.ServerProxy;
 import com.matoon.herosmp.level.LevelHandler;
+=======
+import com.matoon.herosmp.events.EventHandler;
+>>>>>>> parent of 9f6120d (Proxies and Leveling System)
 import net.minecraftforge.common.MinecraftForge;
-import net.minecraftforge.common.config.Configuration;
 import net.minecraftforge.fml.common.Mod;
+<<<<<<< HEAD
 import net.minecraftforge.fml.common.SidedProxy;
+import net.minecraftforge.fml.common.event.FMLInitializationEvent;
+import net.minecraftforge.fml.common.event.FMLPostInitializationEvent;
 import net.minecraftforge.fml.common.event.FMLPreInitializationEvent;
-import net.minecraftforge.fml.relauncher.Side;
-import net.minecraftforge.fml.relauncher.SideOnly;
+import net.minecraftforge.common.config.Configuration;
+=======
+import net.minecraftforge.fml.common.event.FMLPreInitializationEvent;
 
 import java.io.File;
+>>>>>>> parent of 9f6120d (Proxies and Leveling System)
 
 @Mod(modid = HeroSMP.MODID, name = HeroSMP.NAME, version = HeroSMP.VERSION)
 public class HeroSMP {
@@ -18,46 +28,70 @@ public class HeroSMP {
     public static final String NAME = "Hero SMP";
     public static final String VERSION = "1.0";
 
+<<<<<<< HEAD
+    @SidedProxy(clientSide = "com.matoon.herosmp.client.ClientProxy", serverSide = "com.matoon.herosmp.server.ServerProxy")
+    public static CommonProxy proxy;
+=======
     // Config fields
     public static Configuration config;
     public static boolean enableGUI = true;  // Default value for GUI enabled
     public static boolean guiMultiplayerOnly = true;  // Default: multiplayer-only
-    public static boolean enableScoreboard = true;  // Default value for scoreboard visibility
+    public static boolean enableScoreboard = true;  // New: Enable/disable scoreboard
+>>>>>>> parent of 9f6120d (Proxies and Leveling System)
 
-    // Proxy references for client and server
-    @SidedProxy(clientSide = "com.matoon.herosmp.client.ClientProxy", serverSide = "com.matoon.herosmp.server.ServerProxy")
-    public static CommonProxy proxy;
+    @Mod.Instance
+    public static HeroSMP instance;
+
+    // Configuration variables
+    public static boolean enableScoreboard = true;
+    public static boolean enableGUI = true;
+    public static boolean guiMultiplayerOnly = true;
+    public static Configuration config;
 
     @Mod.EventHandler
     public void preInit(FMLPreInitializationEvent event) {
-        // Initialize the config
-        File configFile = new File(event.getModConfigurationDirectory(), MODID + ".cfg");
-        config = new Configuration(configFile);
+        System.out.println(NAME + " is loading (preInit phase).");
 
-        // Load the config
-        loadConfig();
+        // Initialize configuration
+        loadConfig(event);
 
-        // Initialize client-side or server-side proxies
-        proxy.preInit(event);
+<<<<<<< HEAD
+        // Initialize common elements (event handlers, registries, etc.)
+        proxy.init();
 
-        // Load level rewards on the server side only
-        if (event.getSide().isServer()) {
-            LevelHandler.loadLevelRewards(config);
-        }
+        // Register event handlers
+        MinecraftForge.EVENT_BUS.register(new LevelHandler());
+=======
+        // Register the event handler
+        MinecraftForge.EVENT_BUS.register(new EventHandler());
+>>>>>>> parent of 9f6120d (Proxies and Leveling System)
     }
 
-    public static void loadConfig() {
-        try {
-            config.load();
-            enableGUI = config.getBoolean("enableGUI", Configuration.CATEGORY_GENERAL, true, "Set to false to disable the in-game GUI.");
-            guiMultiplayerOnly = config.getBoolean("guiMultiplayerOnly", Configuration.CATEGORY_GENERAL, true, "Set to false to display GUI in both singleplayer and multiplayer.");
-            enableScoreboard = config.getBoolean("enableScoreboard", Configuration.CATEGORY_GENERAL, true, "Set to false to disable the scoreboard.");
-        } catch (Exception e) {
-            System.err.println("Error loading config for " + MODID);
-        } finally {
-            if (config.hasChanged()) {
-                config.save();
-            }
+    @Mod.EventHandler
+    public void init(FMLInitializationEvent event) {
+        System.out.println(NAME + " is initializing (init phase).");
+
+        // Register client-only or server-only elements through the proxy
+        proxy.registerClientOnly();
+        proxy.registerServerOnly();
+    }
+
+    @Mod.EventHandler
+    public void postInit(FMLPostInitializationEvent event) {
+        System.out.println(NAME + " has finished loading (postInit phase).");
+    }
+
+    private void loadConfig(FMLPreInitializationEvent event) {
+        config = new Configuration(event.getSuggestedConfigurationFile());
+        config.load();
+
+        enableScoreboard = config.getBoolean("enableScoreboard", "general", true, "Enable the scoreboard.");
+        enableGUI = config.getBoolean("enableGUI", "general", true, "Enable the GUI.");
+        guiMultiplayerOnly = config.getBoolean("guiMultiplayerOnly", "general", true, "Only show GUI in multiplayer.");
+
+        // Save the configuration if it was modified
+        if (config.hasChanged()) {
+            config.save();
         }
     }
 }
