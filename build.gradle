@@ -66,6 +66,8 @@ repositories {
 
 dependencies {
 
+    compile files('libs/mcef-deobf.jar')
+
     // deobfProvided "refinedstorage:refinedstorage:${rs_version}:deobf"
 
     // you may put jars on which you depend on in ./libs

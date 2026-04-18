@@ -7,6 +7,7 @@ import com.matoon.herosmp.network.PacketOpenPvpMenu;
 import com.matoon.herosmp.npc.kit.KitDefinition;
 import com.matoon.herosmp.npc.pvp.ArenaWorldProvider;
 import com.matoon.herosmp.npc.pvp.FixedTeleporter;
+import net.minecraft.entity.passive.EntityBat;
 import net.minecraft.entity.Entity;
 import net.minecraft.entity.monster.EntityShulker;
 import net.minecraft.entity.player.EntityPlayerMP;
@@ -21,6 +22,7 @@ import net.minecraft.init.Items;
 import net.minecraft.item.ItemStack;
 import net.minecraft.nbt.NBTTagCompound;
 import net.minecraft.nbt.NBTTagList;
+import net.minecraft.network.play.server.SPacketDestroyEntities;
 import net.minecraft.network.play.server.SPacketTitle;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.world.GameType;
@@ -43,11 +45,8 @@ import net.minecraft.potion.PotionEffect;
 import net.minecraftforge.common.DimensionManager;
 
 import java.io.File;
-import java.io.IOException;
-import java.nio.file.Files;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
-import java.util.Comparator;
 import java.util.Collections;
 import java.util.Deque;
 import java.util.HashMap;
@@ -65,21 +64,23 @@ import javax.annotation.Nullable;
 public class PvpQueueManager {
 
     private static final int ARENA_CHUNKS_ACROSS = ArenaWorldProvider.ARENA_CHUNKS_ACROSS;
-    private static final int ARENA_MIN_CHUNK = -(ARENA_CHUNKS_ACROSS / 2);
-    private static final int ARENA_MAX_CHUNK = ARENA_MIN_CHUNK + ARENA_CHUNKS_ACROSS - 1;
-    private static final int ARENA_MIN_BLOCK = ARENA_MIN_CHUNK * 16;
-    private static final int ARENA_MAX_BLOCK = ARENA_MAX_CHUNK * 16 + 15;
+    private static final int ARENA_MIN_CHUNK = ArenaWorldProvider.ARENA_MIN_LOCAL_CHUNK;
+    private static final int ARENA_MAX_CHUNK = ArenaWorldProvider.ARENA_MAX_LOCAL_CHUNK;
+    private static final int ARENA_MIN_BLOCK = ArenaWorldProvider.ARENA_MIN_LOCAL_BLOCK;
+    private static final int ARENA_MAX_BLOCK = ArenaWorldProvider.ARENA_MAX_LOCAL_BLOCK;
     private static final int ARENA_SPAWN_EDGE_PADDING = 20;
     private static final int ARENA_FIRST_SPAWN_X = ARENA_MIN_BLOCK + ARENA_SPAWN_EDGE_PADDING;
     private static final int ARENA_SECOND_SPAWN_X = ARENA_MAX_BLOCK - ARENA_SPAWN_EDGE_PADDING;
     private static final int ARENA_SPAWN_Z = 0;
-    private static final int ARENA_DIMENSION_START = -7000;
+    private static final int ARENA_DIMENSION_ID = -7000;
     private static final int ARENA_DIMENSION_TYPE_ID = 17770;
     private static final String ARENA_DIMENSION_TYPE_NAME = "herosmp_pvp";
     private static final String ARENA_DIMENSION_TYPE_SUFFIX = "_herosmp_pvp";
     private static final int ARENA_GENERATION_ATTEMPTS = 8;
     private static final int CLEANUP_UNLOAD_RETRY_TICKS = 20;
     private static final int CLEANUP_DELETE_DELAY_TICKS = 60;
+    private static final int ARENA_SLOT_CHUNKS = ArenaWorldProvider.SLOT_REGION_CHUNKS;
+    private static final int ARENA_SLOT_BLOCKS = ArenaWorldProvider.SLOT_REGION_BLOCKS;
     private static final int MAX_MATCH_CHESTS = 7;
     private static final int MIN_MATCH_CHESTS = 4;
     private static final int CHEST_PLACEMENT_ATTEMPTS = 180;
@@ -120,15 +121,14 @@ public class PvpQueueManager {
     private final Map<UUID, SoloMatch> soloMatches = new HashMap<UUID, SoloMatch>();
     private final Map<UUID, ReturnState> pendingReturns = new HashMap<UUID, ReturnState>();
     private final Map<UUID, PlayerInventorySnapshot> pendingInventoryReturns = new HashMap<UUID, PlayerInventorySnapshot>();
-    private final Map<Integer, CleanupState> pendingDimensionCleanup = new HashMap<Integer, CleanupState>();
+    private final Map<Long, ArenaCleanupState> pendingArenaCleanup = new HashMap<Long, ArenaCleanupState>();
     private final Set<UUID> awaitingKitSelection = new HashSet<UUID>();
     private final Map<UUID, BlockPos> chestHighlightTargets = new HashMap<UUID, BlockPos>();
     private final Map<UUID, SpectatorSession> spectators = new HashMap<UUID, SpectatorSession>();
     private final Map<UUID, VictorySequence> pendingVictorySequences = new HashMap<UUID, VictorySequence>();
-    private final AtomicInteger arenaCounter = new AtomicInteger(0);
-    private final AtomicInteger dimensionCounter = new AtomicInteger(ARENA_DIMENSION_START);
+    private final AtomicInteger matchCounter = new AtomicInteger(0);
     private final AtomicLong arenaSeedSequence = new AtomicLong(System.nanoTime());
-    private final Set<Integer> allocatedDimensions = new HashSet<Integer>();
+    private final Set<Long> allocatedArenaSlots = new HashSet<Long>();
     private DimensionType arenaDimensionType;
     private int ffaQueueCountdownTicks = -1;
 
@@ -253,12 +253,12 @@ public class PvpQueueManager {
         } else if (ffa != null) {
             spectators.put(spectatorId, new SpectatorSession(returnState, SpectateTarget.FFA_MATCH, ffa.matchId));
             ffa.spectators.add(spectatorId);
-            sx = 0.5D;
+            sx = ffa.slot.centerX + 0.5D;
             sy = 90.0D;
-            sz = 0.5D;
+            sz = ffa.slot.centerZ + 0.5D;
             send(spectator, TextFormatting.AQUA + "Now spectating FFA #" + ffa.matchId + TextFormatting.GRAY + ". Use /return to leave.");
         } else {
-            int soloId = Math.abs(solo.dimensionId);
+            int soloId = solo.matchId;
             spectators.put(spectatorId, new SpectatorSession(returnState, SpectateTarget.DEBUG_SOLO, soloId));
             solo.spectators.add(spectatorId);
             sx = solo.spawn.getX() + 0.5D;
@@ -269,6 +269,12 @@ public class PvpQueueManager {
 
         moveToDimension(spectator, world, sx, sy, sz, spectator.rotationYaw, spectator.rotationPitch);
         spectator.setGameType(GameType.SPECTATOR);
+        spectator.setSpectatingEntity(spectator);
+        spectator.sendPlayerAbilities();
+        SpectatorSession session = spectators.get(spectatorId);
+        if (session != null) {
+            spawnSpectatorBat(world, spectator, session);
+        }
         if (match != null && match.bossBar != null) {
             match.bossBar.addPlayer(spectator);
         } else if (ffa != null && ffa.bossBar != null) {
@@ -284,6 +290,8 @@ public class PvpQueueManager {
             send(player, TextFormatting.YELLOW + "You are not spectating a match.");
             return;
         }
+
+        removeSpectatorBat(player.getServer(), session);
 
         if (session.target == SpectateTarget.ACTIVE_MATCH) {
             ActiveMatch match = findMatchById(session.targetId);
@@ -377,7 +385,7 @@ public class PvpQueueManager {
             EntityPlayerMP soloPlayer = server.getPlayerList().getPlayerByUUID(solo.playerId);
             String soloName = soloPlayer != null ? soloPlayer.getName() : "Offline";
             String status = solo.phase == MatchPhase.ACTIVE ? "Debug Solo - In Progress" : "Debug Solo - Preparing";
-            entries.add(new PacketOpenPvpMenu.ActiveMatchEntry(Math.abs(solo.dimensionId), soloName, "Debug Solo", status));
+            entries.add(new PacketOpenPvpMenu.ActiveMatchEntry(solo.matchId, soloName, "Debug Solo", status));
         }
         return entries;
     }
@@ -393,7 +401,7 @@ public class PvpQueueManager {
 
     private SoloMatch findSoloMatchById(int matchId) {
         for (SoloMatch solo : soloMatches.values()) {
-            if (Math.abs(solo.dimensionId) == matchId) {
+            if (solo.matchId == matchId) {
                 return solo;
             }
         }
@@ -434,8 +442,8 @@ public class PvpQueueManager {
         ReturnState returnState = ReturnState.capture(player);
         PlayerInventorySnapshot inventorySnapshot = PlayerInventorySnapshot.capture(player);
         HeroSMP.KIT_MANAGER.clearPlayerInventory(player);
-        List<BlockPos> chestPositions = spawnMatchLootChests(preparedArena.world);
-        soloMatches.put(playerId, new SoloMatch(playerId, returnState, inventorySnapshot, preparedArena.dimensionId, preparedArena.firstSpawn, chestPositions));
+        List<BlockPos> chestPositions = spawnMatchLootChests(preparedArena.world, preparedArena.slot);
+        soloMatches.put(playerId, new SoloMatch(nextMatchId(), playerId, returnState, inventorySnapshot, preparedArena.dimensionId, preparedArena.slot, preparedArena.firstSpawn, chestPositions));
 
         preGenerateSpawnArea(preparedArena.world, preparedArena.firstSpawn.getX(), preparedArena.firstSpawn.getZ(), 4);
         teleportToArena(player, preparedArena.world, preparedArena.firstSpawn.getX() + 0.5D, preparedArena.firstSpawn.getY(), preparedArena.firstSpawn.getZ() + 0.5D, 90.0F);
@@ -462,7 +470,7 @@ public class PvpQueueManager {
         player.removePotionEffect(MobEffects.GLOWING);
         restorePlayer(player, soloMatch.returnState);
         soloMatch.inventory.restore(player);
-        teardownArenaDimension(player.getServer(), soloMatch.dimensionId);
+        teardownArenaSlot(player.getServer(), soloMatch.slot);
         send(player, TextFormatting.GREEN + "Exited debug solo arena.");
     }
 
@@ -533,9 +541,9 @@ public class PvpQueueManager {
         HeroSMP.KIT_MANAGER.clearPlayerInventory(first);
         HeroSMP.KIT_MANAGER.clearPlayerInventory(second);
 
-        List<BlockPos> chestPositions = spawnMatchLootChests(preparedArena.world);
+        List<BlockPos> chestPositions = spawnMatchLootChests(preparedArena.world, preparedArena.slot);
         ActiveMatch match = new ActiveMatch(
-                Math.abs(preparedArena.dimensionId),
+                nextMatchId(),
                 first.getUniqueID(),
                 second.getUniqueID(),
                 firstReturn,
@@ -543,6 +551,7 @@ public class PvpQueueManager {
                 firstInventory,
                 secondInventory,
                 preparedArena.dimensionId,
+                preparedArena.slot,
                 preparedArena.firstSpawn,
                 preparedArena.secondSpawn,
                 chestPositions
@@ -602,17 +611,17 @@ public class PvpQueueManager {
             return;
         }
 
-        List<BlockPos> spawnPoints = createFfaSpawnPoints(preparedArena.world, players.size());
+        List<BlockPos> spawnPoints = createFfaSpawnPoints(preparedArena.world, preparedArena.slot, players.size());
         if (spawnPoints.size() < players.size()) {
-            teardownArenaDimension(players.get(0).getServer(), preparedArena.dimensionId);
+            teardownArenaSlot(players.get(0).getServer(), preparedArena.slot);
             for (EntityPlayerMP player : players) {
                 send(player, TextFormatting.RED + "Failed to find enough FFA spawn points.");
             }
             return;
         }
 
-        List<BlockPos> chestPositions = spawnMatchLootChests(preparedArena.world);
-        FfaMatch match = new FfaMatch(Math.abs(preparedArena.dimensionId), preparedArena.dimensionId, chestPositions);
+        List<BlockPos> chestPositions = spawnMatchLootChests(preparedArena.world, preparedArena.slot);
+        FfaMatch match = new FfaMatch(nextMatchId(), preparedArena.dimensionId, preparedArena.slot, chestPositions);
         for (int i = 0; i < players.size(); i++) {
             EntityPlayerMP player = players.get(i);
             UUID playerId = player.getUniqueID();
@@ -644,18 +653,20 @@ public class PvpQueueManager {
         }
     }
 
-    private List<BlockPos> createFfaSpawnPoints(WorldServer world, int playerCount) {
+    private List<BlockPos> createFfaSpawnPoints(WorldServer world, ArenaSlot slot, int playerCount) {
         List<BlockPos> points = new ArrayList<BlockPos>();
-        int min = ARENA_MIN_BLOCK + ARENA_SPAWN_EDGE_PADDING;
-        int max = ARENA_MAX_BLOCK - ARENA_SPAWN_EDGE_PADDING;
+        int minX = slot.minBlockX + ARENA_SPAWN_EDGE_PADDING;
+        int maxX = slot.maxBlockX - ARENA_SPAWN_EDGE_PADDING;
+        int minZ = slot.minBlockZ + ARENA_SPAWN_EDGE_PADDING;
+        int maxZ = slot.maxBlockZ - ARENA_SPAWN_EDGE_PADDING;
         int[][] corners = new int[][]{
-                {min, min},
-                {max, min},
-                {max, max},
-                {min, max}
+                {minX, minZ},
+                {maxX, minZ},
+                {maxX, maxZ},
+                {minX, maxZ}
         };
         for (int i = 0; i < corners.length && points.size() < playerCount; i++) {
-            BlockPos spawn = findNaturalSpawn(world, corners[i][0], corners[i][1]);
+            BlockPos spawn = findNaturalSpawn(world, slot, corners[i][0], corners[i][1]);
             if (spawn != null) {
                 points.add(spawn);
             }
@@ -677,7 +688,7 @@ public class PvpQueueManager {
             returnSpectatorsForSolo(deadPlayer.getServer(), solo);
             pendingReturns.put(playerId, solo.returnState);
             pendingInventoryReturns.put(playerId, solo.inventory);
-            teardownArenaDimension(deadPlayer.getServer(), solo.dimensionId);
+            teardownArenaSlot(deadPlayer.getServer(), solo.slot);
             awaitingKitSelection.remove(playerId);
             soloMatches.remove(playerId);
             return;
@@ -709,6 +720,7 @@ public class PvpQueueManager {
 
         SpectatorSession spectatorSession = spectators.remove(playerId);
         if (spectatorSession != null) {
+            removeSpectatorBat(player.getServer(), spectatorSession);
             if (spectatorSession.target == SpectateTarget.ACTIVE_MATCH) {
                 ActiveMatch spectated = findMatchById(spectatorSession.targetId);
                 if (spectated != null) {
@@ -737,7 +749,7 @@ public class PvpQueueManager {
         if (victorySequence != null) {
             pendingReturns.put(playerId, victorySequence.returnState);
             pendingInventoryReturns.put(playerId, victorySequence.inventorySnapshot);
-            teardownArenaDimension(player.getServer(), victorySequence.dimensionId);
+            teardownArenaSlot(player.getServer(), victorySequence.slot);
             return;
         }
 
@@ -751,7 +763,7 @@ public class PvpQueueManager {
             returnSpectatorsForSolo(player.getServer(), solo);
             pendingReturns.put(playerId, solo.returnState);
             pendingInventoryReturns.put(playerId, solo.inventory);
-            teardownArenaDimension(player.getServer(), solo.dimensionId);
+            teardownArenaSlot(player.getServer(), solo.slot);
             return;
         }
 
@@ -795,7 +807,8 @@ public class PvpQueueManager {
         }
 
         if (isArenaDimension(player.dimension)) {
-            spectators.remove(player.getUniqueID());
+            SpectatorSession session = spectators.remove(player.getUniqueID());
+            removeSpectatorBat(player.getServer(), session);
             restorePlayer(player, ReturnState.overworldSpawn(player.getServer()));
             send(player, TextFormatting.YELLOW + "You were moved out of an expired arena.");
         }
@@ -803,7 +816,8 @@ public class PvpQueueManager {
 
     private boolean restorePendingState(EntityPlayerMP player) {
         boolean restored = false;
-        spectators.remove(player.getUniqueID());
+        SpectatorSession session = spectators.remove(player.getUniqueID());
+        removeSpectatorBat(player.getServer(), session);
         ReturnState returnState = pendingReturns.remove(player.getUniqueID());
         if (returnState != null) {
             restorePlayer(player, returnState);
@@ -869,7 +883,7 @@ public class PvpQueueManager {
             }
 
             if (winnerCelebration && participant.getUniqueID().equals(winner.getUniqueID())) {
-                beginVictorySequence(participant, returnState, inventorySnapshot, match.dimensionId);
+                beginVictorySequence(participant, returnState, inventorySnapshot, match.dimensionId, match.slot);
                 continue;
             }
 
@@ -879,7 +893,7 @@ public class PvpQueueManager {
         }
 
         if (!winnerCelebration) {
-            teardownArenaDimension(server, match.dimensionId);
+            teardownArenaSlot(server, match.slot);
         }
     }
 
@@ -916,43 +930,20 @@ public class PvpQueueManager {
     }
 
     private ArenaAllocation createArena(MinecraftServer server, String suffix) {
-        arenaCounter.incrementAndGet();
-        int dimensionId = allocateDimensionId();
-        // Ensure we never reuse stale terrain from a previous run for this dynamic arena id.
-        deleteDimensionFolder(dimensionId);
-        ArenaWorldProvider.setArenaSeed(dimensionId, nextUniqueArenaSeed());
-        ArenaWorldProvider.setArenaBiome(dimensionId, pickRandomArenaBiome());
-
-        DimensionType dimensionType = getOrCreateArenaDimensionType();
-        if (dimensionType == null) {
-            ArenaWorldProvider.clearArenaSeed(dimensionId);
-            ArenaWorldProvider.clearArenaBiome(dimensionId);
-            allocatedDimensions.remove(dimensionId);
-            return null;
-        }
-
-        try {
-            DimensionManager.registerDimension(dimensionId, dimensionType);
-            DimensionManager.initDimension(dimensionId);
-        } catch (RuntimeException ex) {
-            ArenaWorldProvider.clearArenaSeed(dimensionId);
-            ArenaWorldProvider.clearArenaBiome(dimensionId);
-            allocatedDimensions.remove(dimensionId);
-            return null;
-        }
-
-        WorldServer arenaWorld = server.getWorld(dimensionId);
+        WorldServer arenaWorld = ensureArenaWorld(server);
         if (arenaWorld == null) {
-            if (DimensionManager.isDimensionRegistered(dimensionId)) {
-                DimensionManager.unregisterDimension(dimensionId);
-            }
-            ArenaWorldProvider.clearArenaSeed(dimensionId);
-            ArenaWorldProvider.clearArenaBiome(dimensionId);
-            allocatedDimensions.remove(dimensionId);
             return null;
         }
 
-        return new ArenaAllocation(dimensionId, arenaWorld);
+        ArenaSlot slot = allocateArenaSlot();
+        if (slot == null) {
+            return null;
+        }
+
+        ArenaWorldProvider.setArenaSlotSeed(slot.slotX, slot.slotZ, nextUniqueArenaSeed());
+        ArenaWorldProvider.setArenaSlotBiome(slot.slotX, slot.slotZ, pickRandomArenaBiome());
+        deleteArenaSlotRegionFile(slot);
+        return new ArenaAllocation(ARENA_DIMENSION_ID, arenaWorld, slot);
     }
 
     private DimensionType getOrCreateArenaDimensionType() {
@@ -980,6 +971,57 @@ public class PvpQueueManager {
         }
     }
 
+    private WorldServer ensureArenaWorld(MinecraftServer server) {
+        DimensionType dimensionType = getOrCreateArenaDimensionType();
+        if (dimensionType == null) {
+            return null;
+        }
+        if (!DimensionManager.isDimensionRegistered(ARENA_DIMENSION_ID)) {
+            try {
+                DimensionManager.registerDimension(ARENA_DIMENSION_ID, dimensionType);
+            } catch (RuntimeException ex) {
+                return null;
+            }
+        }
+        try {
+            DimensionManager.initDimension(ARENA_DIMENSION_ID);
+        } catch (RuntimeException ignored) {
+        }
+        return server.getWorld(ARENA_DIMENSION_ID);
+    }
+
+    @Nullable
+    private ArenaSlot allocateArenaSlot() {
+        for (int index = 1; index < Integer.MAX_VALUE; index++) {
+            int slotX = slotCoordinateForIndex(index);
+            int slotZ = 0;
+            long key = arenaSlotKey(slotX, slotZ);
+            if (allocatedArenaSlots.contains(key) || pendingArenaCleanup.containsKey(key)) {
+                continue;
+            }
+            ArenaSlot slot = new ArenaSlot(slotX, slotZ);
+            allocatedArenaSlots.add(key);
+            return slot;
+        }
+        return null;
+    }
+
+    private int slotCoordinateForIndex(int index) {
+        if (index == 0) {
+            return 0;
+        }
+        int magnitude = (index + 1) / 2;
+        return (index % 2 == 0) ? magnitude : -magnitude;
+    }
+
+    private long arenaSlotKey(ArenaSlot slot) {
+        return arenaSlotKey(slot.slotX, slot.slotZ);
+    }
+
+    private long arenaSlotKey(int slotX, int slotZ) {
+        return (((long) slotX) << 32) ^ (slotZ & 0xFFFFFFFFL);
+    }
+
     private ArenaPreparedArena prepareArena(MinecraftServer server, String suffix, boolean needsOppositeSpawns) {
         for (int attempt = 0; attempt < ARENA_GENERATION_ATTEMPTS; attempt++) {
             ArenaAllocation arena = createArena(server, suffix);
@@ -987,34 +1029,34 @@ public class PvpQueueManager {
                 continue;
             }
 
-            preGenerateEntireArena(arena.world);
+            preGenerateEntireArena(arena.world, arena.slot);
 
-            BlockPos firstSpawn = findNaturalSpawn(arena.world, ARENA_FIRST_SPAWN_X, ARENA_SPAWN_Z);
+            BlockPos firstSpawn = findNaturalSpawn(arena.world, arena.slot, arena.slot.toWorldX(ARENA_FIRST_SPAWN_X), arena.slot.toWorldZ(ARENA_SPAWN_Z));
             if (firstSpawn == null) {
-                teardownArenaDimension(server, arena.dimensionId);
+                teardownArenaSlot(server, arena.slot);
                 continue;
             }
 
             BlockPos secondSpawn = null;
             if (needsOppositeSpawns) {
-                secondSpawn = findNaturalSpawn(arena.world, ARENA_SECOND_SPAWN_X, ARENA_SPAWN_Z);
+                secondSpawn = findNaturalSpawn(arena.world, arena.slot, arena.slot.toWorldX(ARENA_SECOND_SPAWN_X), arena.slot.toWorldZ(ARENA_SPAWN_Z));
                 if (secondSpawn == null || firstSpawn.distanceSq(secondSpawn) < 96.0D * 96.0D) {
-                    teardownArenaDimension(server, arena.dimensionId);
+                    teardownArenaSlot(server, arena.slot);
                     continue;
                 }
             }
 
-            return new ArenaPreparedArena(arena.dimensionId, arena.world, firstSpawn, secondSpawn);
+            return new ArenaPreparedArena(arena.dimensionId, arena.world, arena.slot, firstSpawn, secondSpawn);
         }
 
         return null;
     }
 
-    private BlockPos findNaturalSpawn(WorldServer world, int x, int z) {
-        int minX = ARENA_MIN_BLOCK + 2;
-        int maxX = ARENA_MAX_BLOCK - 2;
-        int minZ = ARENA_MIN_BLOCK + 2;
-        int maxZ = ARENA_MAX_BLOCK - 2;
+    private BlockPos findNaturalSpawn(WorldServer world, ArenaSlot slot, int x, int z) {
+        int minX = slot.minBlockX + 2;
+        int maxX = slot.maxBlockX - 2;
+        int minZ = slot.minBlockZ + 2;
+        int maxZ = slot.maxBlockZ - 2;
         int clampedX = Math.max(minX, Math.min(maxX, x));
         int clampedZ = Math.max(minZ, Math.min(maxZ, z));
 
@@ -1103,9 +1145,9 @@ public class PvpQueueManager {
         }
     }
 
-    private void preGenerateEntireArena(WorldServer world) {
-        for (int chunkX = ARENA_MIN_CHUNK; chunkX <= ARENA_MAX_CHUNK; chunkX++) {
-            for (int chunkZ = ARENA_MIN_CHUNK; chunkZ <= ARENA_MAX_CHUNK; chunkZ++) {
+    private void preGenerateEntireArena(WorldServer world, ArenaSlot slot) {
+        for (int chunkX = slot.minChunkX; chunkX <= slot.maxChunkX; chunkX++) {
+            for (int chunkZ = slot.minChunkZ; chunkZ <= slot.maxChunkZ; chunkZ++) {
                 world.getChunkFromChunkCoords(chunkX, chunkZ);
             }
         }
@@ -1122,7 +1164,7 @@ public class PvpQueueManager {
         return z ^ (z >>> 31);
     }
 
-    private List<BlockPos> spawnMatchLootChests(WorldServer world) {
+    private List<BlockPos> spawnMatchLootChests(WorldServer world, ArenaSlot slot) {
         List<ItemStack> lootPool = HeroSMP.PVP_CHEST_LOOT_MANAGER.getLootPool(world.getMinecraftServer());
         List<BlockPos> spawnedPositions = new ArrayList<BlockPos>();
         if (lootPool.isEmpty()) {
@@ -1131,10 +1173,10 @@ public class PvpQueueManager {
 
         ThreadLocalRandom random = ThreadLocalRandom.current();
         int chestsToPlace = random.nextInt(MIN_MATCH_CHESTS, MAX_MATCH_CHESTS + 1);
-        int minX = ARENA_MIN_BLOCK + CHEST_EDGE_PADDING;
-        int maxX = ARENA_MAX_BLOCK - CHEST_EDGE_PADDING;
-        int minZ = ARENA_MIN_BLOCK + CHEST_EDGE_PADDING;
-        int maxZ = ARENA_MAX_BLOCK - CHEST_EDGE_PADDING;
+        int minX = slot.minBlockX + CHEST_EDGE_PADDING;
+        int maxX = slot.maxBlockX - CHEST_EDGE_PADDING;
+        int minZ = slot.minBlockZ + CHEST_EDGE_PADDING;
+        int maxZ = slot.maxBlockZ - CHEST_EDGE_PADDING;
         Set<BlockPos> used = new HashSet<BlockPos>();
         List<TileEntityChest> spawnedChests = new ArrayList<TileEntityChest>();
 
@@ -1142,7 +1184,7 @@ public class PvpQueueManager {
         for (int attempts = 0; attempts < CHEST_PLACEMENT_ATTEMPTS && spawned < chestsToPlace; attempts++) {
             int x = random.nextInt(minX, maxX + 1);
             int z = random.nextInt(minZ, maxZ + 1);
-            BlockPos spawn = findNaturalSpawn(world, x, z);
+            BlockPos spawn = findNaturalSpawn(world, slot, x, z);
             if (spawn == null || !used.add(spawn)) {
                 continue;
             }
@@ -1240,74 +1282,57 @@ public class PvpQueueManager {
         return true;
     }
 
-    private int allocateDimensionId() {
-        int candidate = dimensionCounter.getAndDecrement();
-        while (allocatedDimensions.contains(candidate) || DimensionManager.isDimensionRegistered(candidate) || pendingDimensionCleanup.containsKey(candidate)) {
-            candidate = dimensionCounter.getAndDecrement();
+    private void teardownArenaSlot(MinecraftServer server, ArenaSlot slot) {
+        if (slot == null) {
+            return;
         }
-        allocatedDimensions.add(candidate);
-        return candidate;
-    }
-
-    private void teardownArenaDimension(MinecraftServer server, int dimensionId) {
-        WorldServer world = server.getWorld(dimensionId);
+        WorldServer world = server.getWorld(ARENA_DIMENSION_ID);
         if (world != null) {
-            world.flush();
+            purgeArenaSlot(world, slot);
         }
-
-        DimensionManager.unloadWorld(dimensionId);
-        pendingDimensionCleanup.put(dimensionId, new CleanupState());
-        allocatedDimensions.remove(dimensionId);
+        pendingArenaCleanup.put(arenaSlotKey(slot), new ArenaCleanupState(slot));
+        allocatedArenaSlots.remove(arenaSlotKey(slot));
+        ArenaWorldProvider.clearArenaSlot(slot.slotX, slot.slotZ);
     }
 
     public synchronized void tickCleanup(MinecraftServer server) {
-        if (pendingDimensionCleanup.isEmpty()) {
+        if (pendingArenaCleanup.isEmpty()) {
             return;
         }
 
-        List<Integer> toRemove = new ArrayList<Integer>();
-        for (Map.Entry<Integer, CleanupState> entry : pendingDimensionCleanup.entrySet()) {
-            int dimensionId = entry.getKey();
-            CleanupState state = entry.getValue();
-
-            if (isDimensionInUse(dimensionId)) {
-                state.ticksSinceQueued = 0;
-                state.ticksSinceWorldNull = 0;
-                continue;
-            }
-
-            WorldServer world = server.getWorld(dimensionId);
-            if (world != null) {
-                if (state.ticksSinceQueued % CLEANUP_UNLOAD_RETRY_TICKS == 0) {
-                    DimensionManager.unloadWorld(dimensionId);
-                }
-                state.ticksSinceQueued++;
-                state.ticksSinceWorldNull = 0;
-                continue;
-            }
-
-            if (state.ticksSinceWorldNull < CLEANUP_DELETE_DELAY_TICKS) {
-                state.ticksSinceQueued++;
-                state.ticksSinceWorldNull++;
-                continue;
-            }
-
-            if (DimensionManager.isDimensionRegistered(dimensionId)) {
-                try {
-                    DimensionManager.unregisterDimension(dimensionId);
-                } catch (RuntimeException ignored) {
-                    state.ticksSinceQueued++;
-                    continue;
-                }
-            }
-            deleteDimensionFolder(dimensionId);
-            ArenaWorldProvider.clearArenaSeed(dimensionId);
-            ArenaWorldProvider.clearArenaBiome(dimensionId);
-            toRemove.add(dimensionId);
+        WorldServer world = server.getWorld(ARENA_DIMENSION_ID);
+        if (world == null) {
+            return;
         }
 
-        for (Integer dimensionId : toRemove) {
-            pendingDimensionCleanup.remove(dimensionId);
+        List<Long> toRemove = new ArrayList<Long>();
+        for (Map.Entry<Long, ArenaCleanupState> entry : pendingArenaCleanup.entrySet()) {
+            ArenaCleanupState state = entry.getValue();
+
+            if (isArenaSlotInUse(state.slot)) {
+                state.ticksSinceQueued = 0;
+                continue;
+            }
+
+            if (state.ticksSinceQueued % CLEANUP_UNLOAD_RETRY_TICKS == 0) {
+                unloadArenaSlotChunks(world, state.slot);
+            }
+            if (areArenaSlotChunksLoaded(world, state.slot)) {
+                state.ticksSinceQueued++;
+                continue;
+            }
+
+            if (state.ticksSinceQueued < CLEANUP_DELETE_DELAY_TICKS) {
+                state.ticksSinceQueued++;
+                continue;
+            }
+
+            deleteArenaSlotRegionFile(state.slot);
+            toRemove.add(entry.getKey());
+        }
+
+        for (Long key : toRemove) {
+            pendingArenaCleanup.remove(key);
         }
     }
 
@@ -1322,7 +1347,87 @@ public class PvpQueueManager {
         for (SoloMatch solo : new ArrayList<SoloMatch>(soloMatches.values())) {
             tickSoloMatch(server, solo);
         }
+        tickSpectatorBats(server);
         tickVictorySequences(server);
+    }
+
+    private void tickSpectatorBats(MinecraftServer server) {
+        if (spectators.isEmpty()) {
+            return;
+        }
+
+        for (Map.Entry<UUID, SpectatorSession> entry : new ArrayList<Map.Entry<UUID, SpectatorSession>>(spectators.entrySet())) {
+            EntityPlayerMP spectator = server.getPlayerList().getPlayerByUUID(entry.getKey());
+            SpectatorSession session = entry.getValue();
+            if (spectator == null || spectator.isDead || spectator.interactionManager.getGameType() != GameType.SPECTATOR) {
+                removeSpectatorBat(server, session);
+                continue;
+            }
+
+            WorldServer world = server.getWorld(spectator.dimension);
+            if (world == null) {
+                removeSpectatorBat(server, session);
+                continue;
+            }
+
+            EntityBat bat = getSpectatorBat(world, session);
+            if (bat == null || bat.isDead) {
+                spawnSpectatorBat(world, spectator, session);
+                bat = getSpectatorBat(world, session);
+            }
+            if (bat == null) {
+                continue;
+            }
+
+            bat.setNoAI(false);
+            bat.setNoGravity(true);
+            bat.setIsBatHanging(false);
+            bat.setSilent(true);
+            bat.setEntityInvulnerable(true);
+            bat.setHealth(bat.getMaxHealth());
+            double eyeY = spectator.posY + spectator.getEyeHeight();
+            bat.setPositionAndRotation(spectator.posX, eyeY, spectator.posZ, spectator.rotationYaw, spectator.rotationPitch);
+            bat.rotationYawHead = spectator.rotationYaw;
+            bat.renderYawOffset = spectator.rotationYaw;
+            bat.prevRotationYaw = spectator.rotationYaw;
+            bat.prevRotationYawHead = spectator.rotationYaw;
+            bat.prevRenderYawOffset = spectator.rotationYaw;
+            bat.motionX = 0.0D;
+            bat.motionY = 0.0D;
+            bat.motionZ = 0.0D;
+            bat.fallDistance = 0.0F;
+            syncSpectatorBatVisibility(server, spectator, session, bat);
+        }
+    }
+
+    private void syncSpectatorBatVisibility(MinecraftServer server, EntityPlayerMP owner, SpectatorSession session, EntityBat bat) {
+        SPacketDestroyEntities destroyPacket = new SPacketDestroyEntities(bat.getEntityId());
+        for (EntityPlayerMP player : server.getPlayerList().getPlayers()) {
+            if (player == null || player.dimension != owner.dimension) {
+                continue;
+            }
+            if (!shouldPlayerSeeSpectatorBat(player, owner, session)) {
+                player.connection.sendPacket(destroyPacket);
+            }
+        }
+    }
+
+    private boolean shouldPlayerSeeSpectatorBat(EntityPlayerMP viewer, EntityPlayerMP owner, SpectatorSession session) {
+        if (viewer.getUniqueID().equals(owner.getUniqueID())) {
+            return false;
+        }
+
+        UUID viewerId = viewer.getUniqueID();
+        if (session.target == SpectateTarget.ACTIVE_MATCH) {
+            ActiveMatch match = findMatchById(session.targetId);
+            return match != null && (match.firstPlayer.equals(viewerId) || match.secondPlayer.equals(viewerId) || match.spectators.contains(viewerId));
+        }
+        if (session.target == SpectateTarget.FFA_MATCH) {
+            FfaMatch match = findFfaMatchById(session.targetId);
+            return match != null && (match.playerOrder.contains(viewerId) || match.spectators.contains(viewerId));
+        }
+        SoloMatch solo = findSoloMatchById(session.targetId);
+        return solo != null && (solo.playerId.equals(viewerId) || solo.spectators.contains(viewerId));
     }
 
     private void tickFfaQueue(MinecraftServer server) {
@@ -1365,7 +1470,7 @@ public class PvpQueueManager {
                 pendingVictorySequences.remove(sequence.playerId);
                 pendingReturns.put(sequence.playerId, sequence.returnState);
                 pendingInventoryReturns.put(sequence.playerId, sequence.inventorySnapshot);
-                teardownArenaDimension(server, sequence.dimensionId);
+                teardownArenaSlot(server, sequence.slot);
                 continue;
             }
 
@@ -1379,7 +1484,7 @@ public class PvpQueueManager {
                     restorePlayer(winner, sequence.returnState);
                     sequence.inventorySnapshot.restore(winner);
                 }
-                teardownArenaDimension(server, sequence.dimensionId);
+                teardownArenaSlot(server, sequence.slot);
                 continue;
             }
 
@@ -1397,7 +1502,7 @@ public class PvpQueueManager {
             restorePlayer(winner, sequence.returnState);
             sequence.inventorySnapshot.restore(winner);
             send(winner, TextFormatting.GOLD + "Winner: " + TextFormatting.WHITE + sequence.winnerName + TextFormatting.GRAY + ". Returned to original location.");
-            teardownArenaDimension(server, sequence.dimensionId);
+            teardownArenaSlot(server, sequence.slot);
         }
     }
 
@@ -1432,7 +1537,7 @@ public class PvpQueueManager {
             if (match.phaseTicksRemaining % 20 == 0) {
                 int seconds = Math.max(1, match.phaseTicksRemaining / 20);
                 sendCountdownTitle(server, match, String.valueOf(seconds), TextFormatting.GOLD + "Fight begins soon");
-                playMatchSound(world, SoundEvents.BLOCK_NOTE_HARP, SoundCategory.PLAYERS, 1.0F, 1.0F);
+                playMatchSound(world, match.slot, SoundEvents.BLOCK_NOTE_HARP, SoundCategory.PLAYERS, 1.0F, 1.0F);
             }
             match.phaseTicksRemaining--;
             if (match.phaseTicksRemaining <= 0) {
@@ -1494,7 +1599,7 @@ public class PvpQueueManager {
             if (match.phaseTicksRemaining % 20 == 0) {
                 int seconds = Math.max(1, match.phaseTicksRemaining / 20);
                 sendFfaTitle(server, match, String.valueOf(seconds), TextFormatting.GOLD + "Fight begins soon");
-                playMatchSound(world, SoundEvents.BLOCK_NOTE_HARP, SoundCategory.PLAYERS, 1.0F, 1.0F);
+                playMatchSound(world, match.slot, SoundEvents.BLOCK_NOTE_HARP, SoundCategory.PLAYERS, 1.0F, 1.0F);
             }
             match.phaseTicksRemaining--;
             if (match.phaseTicksRemaining <= 0) {
@@ -1567,7 +1672,7 @@ public class PvpQueueManager {
             if (solo.phaseTicksRemaining % 20 == 0) {
                 int seconds = Math.max(1, solo.phaseTicksRemaining / 20);
                 sendTitle(player, String.valueOf(seconds), TextFormatting.GOLD + "Fight begins soon", 12);
-                playMatchSound(world, SoundEvents.BLOCK_NOTE_HARP, SoundCategory.PLAYERS, 1.0F, 1.0F);
+                playMatchSound(world, solo.slot, SoundEvents.BLOCK_NOTE_HARP, SoundCategory.PLAYERS, 1.0F, 1.0F);
             }
             solo.phaseTicksRemaining--;
             if (solo.phaseTicksRemaining <= 0) {
@@ -1604,7 +1709,7 @@ public class PvpQueueManager {
             player.removePotionEffect(MobEffects.GLOWING);
             restorePlayer(player, solo.returnState);
             solo.inventory.restore(player);
-            teardownArenaDimension(server, solo.dimensionId);
+            teardownArenaSlot(server, solo.slot);
             awaitingKitSelection.remove(solo.playerId);
             soloMatches.remove(solo.playerId);
         }
@@ -1667,7 +1772,7 @@ public class PvpQueueManager {
         match.phaseTicksRemaining = match.roundTicks;
         clearFreezeEffects(server, match);
         sendCountdownTitle(server, match, TextFormatting.GREEN + "FIGHT!", TextFormatting.RED + "Eliminate your opponent");
-        playMatchSound(world, SoundEvents.ENTITY_ENDERDRAGON_GROWL, SoundCategory.HOSTILE, 1.5F, 1.0F);
+        playMatchSound(world, match.slot, SoundEvents.ENTITY_ENDERDRAGON_GROWL, SoundCategory.HOSTILE, 1.5F, 1.0F);
         match.bossBar = createRoundBossBar();
         match.addBossBarPlayers(server);
         for (UUID spectatorId : match.spectators) {
@@ -1686,7 +1791,7 @@ public class PvpQueueManager {
         player.removePotionEffect(MobEffects.SLOWNESS);
         player.removePotionEffect(MobEffects.JUMP_BOOST);
         sendTitle(player, TextFormatting.GREEN + "FIGHT!", TextFormatting.RED + "Debug solo round started", 18);
-        playMatchSound(world, SoundEvents.ENTITY_ENDERDRAGON_GROWL, SoundCategory.HOSTILE, 1.5F, 1.0F);
+        playMatchSound(world, solo.slot, SoundEvents.ENTITY_ENDERDRAGON_GROWL, SoundCategory.HOSTILE, 1.5F, 1.0F);
         solo.bossBar = createRoundBossBar();
         solo.addBossBarPlayer(server);
         for (UUID spectatorId : solo.spectators) {
@@ -1710,7 +1815,7 @@ public class PvpQueueManager {
             }
         }
         sendFfaTitle(server, match, TextFormatting.GREEN + "FIGHT!", TextFormatting.RED + "Eliminate all opponents");
-        playMatchSound(world, SoundEvents.ENTITY_ENDERDRAGON_GROWL, SoundCategory.HOSTILE, 1.5F, 1.0F);
+        playMatchSound(world, match.slot, SoundEvents.ENTITY_ENDERDRAGON_GROWL, SoundCategory.HOSTILE, 1.5F, 1.0F);
         match.bossBar = createRoundBossBar();
         for (UUID playerId : match.playerOrder) {
             EntityPlayerMP player = server.getPlayerList().getPlayerByUUID(playerId);
@@ -1995,7 +2100,7 @@ public class PvpQueueManager {
             player.removePotionEffect(MobEffects.GLOWING);
 
             if (winnerCelebration && playerId.equals(winnerId)) {
-                beginVictorySequence(player, returnState, snapshot, match.dimensionId);
+                beginVictorySequence(player, returnState, snapshot, match.dimensionId, match.slot);
                 continue;
             }
 
@@ -2015,17 +2120,18 @@ public class PvpQueueManager {
         }
 
         if (!winnerCelebration) {
-            teardownArenaDimension(server, match.dimensionId);
+            teardownArenaSlot(server, match.slot);
         }
     }
 
-    private void beginVictorySequence(EntityPlayerMP winner, ReturnState returnState, PlayerInventorySnapshot inventorySnapshot, int dimensionId) {
+    private void beginVictorySequence(EntityPlayerMP winner, ReturnState returnState, PlayerInventorySnapshot inventorySnapshot, int dimensionId, ArenaSlot slot) {
         pendingVictorySequences.put(winner.getUniqueID(), new VictorySequence(
                 winner.getUniqueID(),
                 winner.getName(),
                 returnState,
                 inventorySnapshot,
                 dimensionId,
+                slot,
                 VICTORY_SEQUENCE_TICKS
         ));
         sendTitle(winner, TextFormatting.GOLD + "VICTORY!", TextFormatting.YELLOW + "You won the duel", 30);
@@ -2033,7 +2139,7 @@ public class PvpQueueManager {
         WorldServer world = winner.getServer().getWorld(dimensionId);
         if (world != null) {
             spawnVictoryFirework(world, winner.posX, winner.posY + 0.5D, winner.posZ);
-            playMatchSound(world, SoundEvents.ENTITY_FIREWORK_BLAST, SoundCategory.PLAYERS, 1.2F, 1.0F);
+            playMatchSound(world, slot, SoundEvents.ENTITY_FIREWORK_BLAST, SoundCategory.PLAYERS, 1.2F, 1.0F);
         }
     }
 
@@ -2134,9 +2240,8 @@ public class PvpQueueManager {
         }
     }
 
-    private void playMatchSound(WorldServer world, net.minecraft.util.SoundEvent sound, SoundCategory category, float volume, float pitch) {
-        double center = (ARENA_MIN_BLOCK + ARENA_MAX_BLOCK) / 2.0D;
-        world.playSound(null, center, 80.0D, center, sound, category, volume, pitch);
+    private void playMatchSound(WorldServer world, ArenaSlot slot, net.minecraft.util.SoundEvent sound, SoundCategory category, float volume, float pitch) {
+        world.playSound(null, slot.centerX + 0.5D, 80.0D, slot.centerZ + 0.5D, sound, category, volume, pitch);
     }
 
     private void spawnChestHighlights(WorldServer world, List<BlockPos> chestPositions, List<UUID> highlightIds) {
@@ -2173,6 +2278,68 @@ public class PvpQueueManager {
         highlightIds.clear();
     }
 
+    private void spawnSpectatorBat(WorldServer world, EntityPlayerMP spectator, SpectatorSession session) {
+        removeSpectatorBat(spectator.getServer(), session);
+        EntityBat bat = new EntityBat(world);
+        bat.setNoAI(false);
+        bat.setNoGravity(true);
+        bat.setIsBatHanging(false);
+        bat.setSilent(true);
+        bat.setEntityInvulnerable(true);
+        double eyeY = spectator.posY + spectator.getEyeHeight();
+        bat.setPositionAndRotation(spectator.posX, eyeY, spectator.posZ, spectator.rotationYaw, spectator.rotationPitch);
+        bat.rotationYawHead = spectator.rotationYaw;
+        bat.renderYawOffset = spectator.rotationYaw;
+        bat.prevRotationYaw = spectator.rotationYaw;
+        bat.prevRotationYawHead = spectator.rotationYaw;
+        bat.prevRenderYawOffset = spectator.rotationYaw;
+        bat.motionX = 0.0D;
+        bat.motionY = 0.0D;
+        bat.motionZ = 0.0D;
+        world.spawnEntity(bat);
+        session.proxyBatId = bat.getUniqueID();
+        syncSpectatorBatVisibility(spectator.getServer(), spectator, session, bat);
+    }
+
+    @Nullable
+    private EntityBat getSpectatorBat(WorldServer world, SpectatorSession session) {
+        if (session == null || session.proxyBatId == null) {
+            return null;
+        }
+        Entity entity = world.getEntityFromUuid(session.proxyBatId);
+        return entity instanceof EntityBat ? (EntityBat) entity : null;
+    }
+
+    private void removeSpectatorBat(MinecraftServer server, @Nullable SpectatorSession session) {
+        if (session == null || session.proxyBatId == null) {
+            return;
+        }
+        for (WorldServer world : server.worlds) {
+            if (world == null) {
+                continue;
+            }
+            Entity entity = world.getEntityFromUuid(session.proxyBatId);
+            if (entity != null) {
+                entity.setDead();
+                break;
+            }
+        }
+        session.proxyBatId = null;
+    }
+
+    public synchronized boolean isSpectatorBat(Entity entity) {
+        if (!(entity instanceof EntityBat)) {
+            return false;
+        }
+        UUID entityId = entity.getUniqueID();
+        for (SpectatorSession session : spectators.values()) {
+            if (entityId.equals(session.proxyBatId)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     private void returnSpectatorsForMatch(MinecraftServer server, ActiveMatch match) {
         for (UUID spectatorId : new ArrayList<UUID>(match.spectators)) {
             SpectatorSession session = spectators.remove(spectatorId);
@@ -2180,6 +2347,7 @@ public class PvpQueueManager {
             if (session == null || spectator == null) {
                 continue;
             }
+            removeSpectatorBat(server, session);
             restorePlayer(spectator, session.returnState);
             send(spectator, TextFormatting.YELLOW + "Match ended. You were returned.");
         }
@@ -2193,6 +2361,7 @@ public class PvpQueueManager {
             if (session == null || spectator == null) {
                 continue;
             }
+            removeSpectatorBat(server, session);
             restorePlayer(spectator, session.returnState);
             send(spectator, TextFormatting.YELLOW + "Match ended. You were returned.");
         }
@@ -2206,6 +2375,7 @@ public class PvpQueueManager {
             if (session == null || spectator == null) {
                 continue;
             }
+            removeSpectatorBat(server, session);
             restorePlayer(spectator, session.returnState);
             send(spectator, TextFormatting.YELLOW + "Match ended. You were returned.");
         }
@@ -2238,30 +2408,30 @@ public class PvpQueueManager {
 
     public synchronized void tickArenaSafety(MinecraftServer server) {
         for (ActiveMatch match : new HashSet<ActiveMatch>(playerToMatch.values())) {
-            enforcePlayerInsideArena(server, match.firstPlayer, match.dimensionId);
-            enforcePlayerInsideArena(server, match.secondPlayer, match.dimensionId);
+            enforcePlayerInsideArena(server, match.firstPlayer, match.dimensionId, match.slot);
+            enforcePlayerInsideArena(server, match.secondPlayer, match.dimensionId, match.slot);
         }
         for (FfaMatch match : new HashSet<FfaMatch>(playerToFfaMatch.values())) {
             for (UUID playerId : match.playerOrder) {
-                enforcePlayerInsideArena(server, playerId, match.dimensionId);
+                enforcePlayerInsideArena(server, playerId, match.dimensionId, match.slot);
             }
         }
 
         for (SoloMatch solo : new ArrayList<SoloMatch>(soloMatches.values())) {
-            enforcePlayerInsideArena(server, solo.playerId, solo.dimensionId);
+            enforcePlayerInsideArena(server, solo.playerId, solo.dimensionId, solo.slot);
         }
     }
 
-    private void enforcePlayerInsideArena(MinecraftServer server, UUID playerId, int dimensionId) {
+    private void enforcePlayerInsideArena(MinecraftServer server, UUID playerId, int dimensionId, ArenaSlot slot) {
         EntityPlayerMP player = server.getPlayerList().getPlayerByUUID(playerId);
         if (player == null || player.dimension != dimensionId) {
             return;
         }
 
-        int minX = ARENA_MIN_BLOCK;
-        int maxX = ARENA_MAX_BLOCK;
-        int minZ = ARENA_MIN_BLOCK;
-        int maxZ = ARENA_MAX_BLOCK;
+        int minX = slot.minBlockX;
+        int maxX = slot.maxBlockX;
+        int minZ = slot.minBlockZ;
+        int maxZ = slot.maxBlockZ;
 
         boolean out = player.posX < minX || player.posX > maxX || player.posZ < minZ || player.posZ > maxZ || player.posY < 10;
         if (!out) {
@@ -2276,7 +2446,7 @@ public class PvpQueueManager {
             return;
         }
 
-        BlockPos safe = findNaturalSpawn(world, clampedX, clampedZ);
+        BlockPos safe = findNaturalSpawn(world, slot, clampedX, clampedZ);
         if (safe == null) {
             return;
         }
@@ -2284,27 +2454,50 @@ public class PvpQueueManager {
         player.fallDistance = 0.0F;
     }
 
-    private void deleteDimensionFolder(int dimensionId) {
+    private void purgeArenaSlot(WorldServer world, ArenaSlot slot) {
+        unloadArenaSlotChunks(world, slot);
+        for (Entity entity : new ArrayList<Entity>(world.loadedEntityList)) {
+            if (entity instanceof EntityPlayerMP) {
+                continue;
+            }
+            if (entity.posX >= slot.minBlockX - 2 && entity.posX <= slot.maxBlockX + 2
+                    && entity.posZ >= slot.minBlockZ - 2 && entity.posZ <= slot.maxBlockZ + 2) {
+                entity.setDead();
+            }
+        }
+    }
+
+    private void unloadArenaSlotChunks(WorldServer world, ArenaSlot slot) {
+        for (int chunkX = slot.minChunkX - 1; chunkX <= slot.maxChunkX + 1; chunkX++) {
+            for (int chunkZ = slot.minChunkZ - 1; chunkZ <= slot.maxChunkZ + 1; chunkZ++) {
+                net.minecraft.world.chunk.Chunk chunk = world.getChunkProvider().getLoadedChunk(chunkX, chunkZ);
+                if (chunk != null) {
+                    world.getChunkProvider().queueUnload(chunk);
+                }
+            }
+        }
+    }
+
+    private boolean areArenaSlotChunksLoaded(WorldServer world, ArenaSlot slot) {
+        for (int chunkX = slot.minChunkX - 1; chunkX <= slot.maxChunkX + 1; chunkX++) {
+            for (int chunkZ = slot.minChunkZ - 1; chunkZ <= slot.maxChunkZ + 1; chunkZ++) {
+                if (world.getChunkProvider().getLoadedChunk(chunkX, chunkZ) != null) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    private void deleteArenaSlotRegionFile(ArenaSlot slot) {
         File saveRoot = DimensionManager.getCurrentSaveRootDirectory();
         if (saveRoot == null) {
             return;
         }
 
-        File dimDir = new File(saveRoot, "DIM" + dimensionId);
-        if (!dimDir.exists()) {
-            return;
-        }
-
-        try {
-            Files.walk(dimDir.toPath())
-                    .sorted(Comparator.reverseOrder())
-                    .forEach(path -> {
-                        try {
-                            Files.deleteIfExists(path);
-                        } catch (IOException ignored) {
-                        }
-                    });
-        } catch (IOException ignored) {
+        File regionFile = new File(new File(new File(saveRoot, "DIM" + ARENA_DIMENSION_ID), "region"), "r." + slot.slotX + "." + slot.slotZ + ".mca");
+        if (regionFile.exists()) {
+            regionFile.delete();
         }
     }
 
@@ -2319,19 +2512,19 @@ public class PvpQueueManager {
         return -1;
     }
 
-    private boolean isDimensionInUse(int dimensionId) {
+    private boolean isArenaSlotInUse(ArenaSlot slot) {
         for (ActiveMatch match : playerToMatch.values()) {
-            if (match.dimensionId == dimensionId) {
+            if (arenaSlotKey(match.slot) == arenaSlotKey(slot)) {
                 return true;
             }
         }
         for (FfaMatch match : playerToFfaMatch.values()) {
-            if (match.dimensionId == dimensionId) {
+            if (arenaSlotKey(match.slot) == arenaSlotKey(slot)) {
                 return true;
             }
         }
         for (SoloMatch match : soloMatches.values()) {
-            if (match.dimensionId == dimensionId) {
+            if (arenaSlotKey(match.slot) == arenaSlotKey(slot)) {
                 return true;
             }
         }
@@ -2339,7 +2532,7 @@ public class PvpQueueManager {
     }
 
     private boolean isArenaDimension(int dimensionId) {
-        return dimensionId <= ARENA_DIMENSION_START;
+        return dimensionId == ARENA_DIMENSION_ID;
     }
 
     private void send(EntityPlayerMP player, String message) {
@@ -2367,39 +2560,92 @@ public class PvpQueueManager {
         return getRoundDurationSeconds(server) * 20;
     }
 
+    private int nextMatchId() {
+        return matchCounter.incrementAndGet();
+    }
+
     private static class ArenaAllocation {
         private final int dimensionId;
         private final WorldServer world;
+        private final ArenaSlot slot;
 
-        private ArenaAllocation(int dimensionId, WorldServer world) {
+        private ArenaAllocation(int dimensionId, WorldServer world, ArenaSlot slot) {
             this.dimensionId = dimensionId;
             this.world = world;
+            this.slot = slot;
         }
     }
 
     private static class ArenaPreparedArena {
         private final int dimensionId;
         private final WorldServer world;
+        private final ArenaSlot slot;
         private final BlockPos firstSpawn;
         private final BlockPos secondSpawn;
 
-        private ArenaPreparedArena(int dimensionId, WorldServer world, BlockPos firstSpawn, BlockPos secondSpawn) {
+        private ArenaPreparedArena(int dimensionId, WorldServer world, ArenaSlot slot, BlockPos firstSpawn, BlockPos secondSpawn) {
             this.dimensionId = dimensionId;
             this.world = world;
+            this.slot = slot;
             this.firstSpawn = firstSpawn;
             this.secondSpawn = secondSpawn;
         }
     }
 
-    private static class CleanupState {
+    private static class ArenaCleanupState {
+        private final ArenaSlot slot;
         private int ticksSinceQueued = 0;
-        private int ticksSinceWorldNull = 0;
+
+        private ArenaCleanupState(ArenaSlot slot) {
+            this.slot = slot;
+        }
+    }
+
+    private static class ArenaSlot {
+        private final int slotX;
+        private final int slotZ;
+        private final int minChunkX;
+        private final int maxChunkX;
+        private final int minChunkZ;
+        private final int maxChunkZ;
+        private final int minBlockX;
+        private final int maxBlockX;
+        private final int minBlockZ;
+        private final int maxBlockZ;
+        private final int centerX;
+        private final int centerZ;
+
+        private ArenaSlot(int slotX, int slotZ) {
+            this.slotX = slotX;
+            this.slotZ = slotZ;
+            int baseChunkX = slotX * ARENA_SLOT_CHUNKS;
+            int baseChunkZ = slotZ * ARENA_SLOT_CHUNKS;
+            this.minChunkX = baseChunkX + ARENA_MIN_CHUNK;
+            this.maxChunkX = baseChunkX + ARENA_MAX_CHUNK;
+            this.minChunkZ = baseChunkZ + ARENA_MIN_CHUNK;
+            this.maxChunkZ = baseChunkZ + ARENA_MAX_CHUNK;
+            this.minBlockX = slotX * ARENA_SLOT_BLOCKS + ARENA_MIN_BLOCK;
+            this.maxBlockX = slotX * ARENA_SLOT_BLOCKS + ARENA_MAX_BLOCK;
+            this.minBlockZ = slotZ * ARENA_SLOT_BLOCKS + ARENA_MIN_BLOCK;
+            this.maxBlockZ = slotZ * ARENA_SLOT_BLOCKS + ARENA_MAX_BLOCK;
+            this.centerX = (minBlockX + maxBlockX) / 2;
+            this.centerZ = (minBlockZ + maxBlockZ) / 2;
+        }
+
+        private int toWorldX(int localX) {
+            return slotX * ARENA_SLOT_BLOCKS + localX;
+        }
+
+        private int toWorldZ(int localZ) {
+            return slotZ * ARENA_SLOT_BLOCKS + localZ;
+        }
     }
 
     private static class SpectatorSession {
         private final ReturnState returnState;
         private final SpectateTarget target;
         private final int targetId;
+        private UUID proxyBatId;
 
         private SpectatorSession(ReturnState returnState, SpectateTarget target, int targetId) {
             this.returnState = returnState;
@@ -2420,14 +2666,16 @@ public class PvpQueueManager {
         private final ReturnState returnState;
         private final PlayerInventorySnapshot inventorySnapshot;
         private final int dimensionId;
+        private final ArenaSlot slot;
         private int ticksRemaining;
 
-        private VictorySequence(UUID playerId, String winnerName, ReturnState returnState, PlayerInventorySnapshot inventorySnapshot, int dimensionId, int ticksRemaining) {
+        private VictorySequence(UUID playerId, String winnerName, ReturnState returnState, PlayerInventorySnapshot inventorySnapshot, int dimensionId, ArenaSlot slot, int ticksRemaining) {
             this.playerId = playerId;
             this.winnerName = winnerName;
             this.returnState = returnState;
             this.inventorySnapshot = inventorySnapshot;
             this.dimensionId = dimensionId;
+            this.slot = slot;
             this.ticksRemaining = ticksRemaining;
         }
     }
@@ -2447,6 +2695,7 @@ public class PvpQueueManager {
         private final PlayerInventorySnapshot firstInventory;
         private final PlayerInventorySnapshot secondInventory;
         private final int dimensionId;
+        private final ArenaSlot slot;
         private final BlockPos firstSpawn;
         private final BlockPos secondSpawn;
         private final List<BlockPos> chestPositions;
@@ -2459,7 +2708,7 @@ public class PvpQueueManager {
         private boolean playersRevealed = false;
         private BossInfoServer bossBar;
 
-        private ActiveMatch(int matchId, UUID firstPlayer, UUID secondPlayer, ReturnState firstReturn, ReturnState secondReturn, PlayerInventorySnapshot firstInventory, PlayerInventorySnapshot secondInventory, int dimensionId, BlockPos firstSpawn, BlockPos secondSpawn, List<BlockPos> chestPositions) {
+        private ActiveMatch(int matchId, UUID firstPlayer, UUID secondPlayer, ReturnState firstReturn, ReturnState secondReturn, PlayerInventorySnapshot firstInventory, PlayerInventorySnapshot secondInventory, int dimensionId, ArenaSlot slot, BlockPos firstSpawn, BlockPos secondSpawn, List<BlockPos> chestPositions) {
             this.matchId = matchId;
             this.firstPlayer = firstPlayer;
             this.secondPlayer = secondPlayer;
@@ -2468,6 +2717,7 @@ public class PvpQueueManager {
             this.firstInventory = firstInventory;
             this.secondInventory = secondInventory;
             this.dimensionId = dimensionId;
+            this.slot = slot;
             this.firstSpawn = new BlockPos(firstSpawn);
             this.secondSpawn = new BlockPos(secondSpawn);
             this.chestPositions = new ArrayList<BlockPos>(chestPositions);
@@ -2514,6 +2764,7 @@ public class PvpQueueManager {
     private static class FfaMatch {
         private final int matchId;
         private final int dimensionId;
+        private final ArenaSlot slot;
         private final List<UUID> playerOrder = new ArrayList<UUID>();
         private final Set<UUID> alivePlayers = new HashSet<UUID>();
         private final Map<UUID, ReturnState> returnStates = new HashMap<UUID, ReturnState>();
@@ -2529,18 +2780,21 @@ public class PvpQueueManager {
         private boolean playersRevealed = false;
         private BossInfoServer bossBar;
 
-        private FfaMatch(int matchId, int dimensionId, List<BlockPos> chestPositions) {
+        private FfaMatch(int matchId, int dimensionId, ArenaSlot slot, List<BlockPos> chestPositions) {
             this.matchId = matchId;
             this.dimensionId = dimensionId;
+            this.slot = slot;
             this.chestPositions = new ArrayList<BlockPos>(chestPositions);
         }
     }
 
     private static class SoloMatch {
+        private final int matchId;
         private final UUID playerId;
         private final ReturnState returnState;
         private final PlayerInventorySnapshot inventory;
         private final int dimensionId;
+        private final ArenaSlot slot;
         private final BlockPos spawn;
         private final List<BlockPos> chestPositions;
         private final List<UUID> chestHighlightIds = new ArrayList<UUID>();
@@ -2552,11 +2806,13 @@ public class PvpQueueManager {
         private boolean playersRevealed = false;
         private BossInfoServer bossBar;
 
-        private SoloMatch(UUID playerId, ReturnState returnState, PlayerInventorySnapshot inventory, int dimensionId, BlockPos spawn, List<BlockPos> chestPositions) {
+        private SoloMatch(int matchId, UUID playerId, ReturnState returnState, PlayerInventorySnapshot inventory, int dimensionId, ArenaSlot slot, BlockPos spawn, List<BlockPos> chestPositions) {
+            this.matchId = matchId;
             this.playerId = playerId;
             this.returnState = returnState;
             this.inventory = inventory;
             this.dimensionId = dimensionId;
+            this.slot = slot;
             this.spawn = new BlockPos(spawn);
             this.chestPositions = new ArrayList<BlockPos>(chestPositions);
         }

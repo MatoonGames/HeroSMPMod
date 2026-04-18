@@ -10,35 +10,60 @@ import net.minecraft.world.gen.ChunkGeneratorOverworld;
 import net.minecraft.world.gen.IChunkGenerator;
 
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 public class BoundedOverworldChunkGenerator implements IChunkGenerator {
 
     private final World world;
-    private final IChunkGenerator delegate;
-    private final int minChunk;
-    private final int maxChunk;
+    private final Map<Long, IChunkGenerator> delegates = new HashMap<Long, IChunkGenerator>();
 
-    public BoundedOverworldChunkGenerator(World world, int chunksAcross, long seed) {
+    public BoundedOverworldChunkGenerator(World world) {
         this.world = world;
-        this.delegate = new ChunkGeneratorOverworld(
+    }
+
+    private long slotKey(int slotX, int slotZ) {
+        return (((long) slotX) << 32) ^ (slotZ & 0xFFFFFFFFL);
+    }
+
+    private boolean inArenaBounds(int chunkX, int chunkZ) {
+        int localX = ArenaWorldProvider.getLocalChunkInSlot(chunkX);
+        int localZ = ArenaWorldProvider.getLocalChunkInSlot(chunkZ);
+        return localX >= ArenaWorldProvider.ARENA_MIN_LOCAL_CHUNK
+                && localX <= ArenaWorldProvider.ARENA_MAX_LOCAL_CHUNK
+                && localZ >= ArenaWorldProvider.ARENA_MIN_LOCAL_CHUNK
+                && localZ <= ArenaWorldProvider.ARENA_MAX_LOCAL_CHUNK;
+    }
+
+    private IChunkGenerator delegateFor(int chunkX, int chunkZ) {
+        int slotX = ArenaWorldProvider.getArenaSlotXForChunk(chunkX);
+        int slotZ = ArenaWorldProvider.getArenaSlotZForChunk(chunkZ);
+        Long seed = ArenaWorldProvider.getArenaSlotSeed(slotX, slotZ);
+        if (seed == null) {
+            return null;
+        }
+
+        long key = slotKey(slotX, slotZ);
+        IChunkGenerator cached = delegates.get(key);
+        if (cached != null) {
+            return cached;
+        }
+
+        IChunkGenerator delegate = new ChunkGeneratorOverworld(
                 world,
-                seed,
+                seed.longValue(),
                 world.getWorldInfo().isMapFeaturesEnabled(),
                 world.getWorldInfo().getGeneratorOptions()
         );
-        int size = Math.max(2, chunksAcross);
-        this.minChunk = -size / 2;
-        this.maxChunk = this.minChunk + size - 1;
-    }
-
-    private boolean inBounds(int chunkX, int chunkZ) {
-        return chunkX >= minChunk && chunkX <= maxChunk && chunkZ >= minChunk && chunkZ <= maxChunk;
+        delegates.put(key, delegate);
+        return delegate;
     }
 
     @Override
     public Chunk generateChunk(int x, int z) {
-        if (!inBounds(x, z)) {
+        IChunkGenerator delegate = delegateFor(x, z);
+        if (delegate == null || !inArenaBounds(x, z)) {
             Chunk chunk = new Chunk(this.world, x, z);
             byte[] biomeArray = chunk.getBiomeArray();
             byte plains = (byte) Biome.getIdForBiome(Biomes.PLAINS);
@@ -53,14 +78,16 @@ public class BoundedOverworldChunkGenerator implements IChunkGenerator {
 
     @Override
     public void populate(int x, int z) {
-        if (inBounds(x, z)) {
+        IChunkGenerator delegate = delegateFor(x, z);
+        if (delegate != null && inArenaBounds(x, z)) {
             delegate.populate(x, z);
         }
     }
 
     @Override
     public boolean generateStructures(Chunk chunkIn, int x, int z) {
-        if (inBounds(x, z)) {
+        IChunkGenerator delegate = delegateFor(x, z);
+        if (delegate != null && inArenaBounds(x, z)) {
             return delegate.generateStructures(chunkIn, x, z);
         }
         return false;
@@ -70,7 +97,8 @@ public class BoundedOverworldChunkGenerator implements IChunkGenerator {
     public List<Biome.SpawnListEntry> getPossibleCreatures(EnumCreatureType creatureType, BlockPos pos) {
         int chunkX = pos.getX() >> 4;
         int chunkZ = pos.getZ() >> 4;
-        if (!inBounds(chunkX, chunkZ)) {
+        IChunkGenerator delegate = delegateFor(chunkX, chunkZ);
+        if (delegate == null || !inArenaBounds(chunkX, chunkZ)) {
             return Collections.emptyList();
         }
         return delegate.getPossibleCreatures(creatureType, pos);
@@ -78,18 +106,21 @@ public class BoundedOverworldChunkGenerator implements IChunkGenerator {
 
     @Override
     public BlockPos getNearestStructurePos(World worldIn, String structureName, BlockPos position, boolean findUnexplored) {
-        return delegate.getNearestStructurePos(worldIn, structureName, position, findUnexplored);
+        IChunkGenerator delegate = delegateFor(position.getX() >> 4, position.getZ() >> 4);
+        return delegate == null ? null : delegate.getNearestStructurePos(worldIn, structureName, position, findUnexplored);
     }
 
     @Override
     public void recreateStructures(Chunk chunkIn, int x, int z) {
-        if (inBounds(x, z)) {
+        IChunkGenerator delegate = delegateFor(x, z);
+        if (delegate != null && inArenaBounds(x, z)) {
             delegate.recreateStructures(chunkIn, x, z);
         }
     }
 
     @Override
     public boolean isInsideStructure(World worldIn, String structureName, BlockPos pos) {
-        return delegate.isInsideStructure(worldIn, structureName, pos);
+        IChunkGenerator delegate = delegateFor(pos.getX() >> 4, pos.getZ() >> 4);
+        return delegate != null && delegate.isInsideStructure(worldIn, structureName, pos);
     }
 }

@@ -2,6 +2,8 @@ package com.matoon.herosmp.npc;
 
 import com.matoon.herosmp.HeroSMP;
 import net.minecraft.entity.player.EntityPlayerMP;
+import net.minecraftforge.event.entity.living.LivingAttackEvent;
+import net.minecraftforge.event.entity.living.LivingHurtEvent;
 import net.minecraftforge.event.entity.player.PlayerContainerEvent;
 import net.minecraftforge.event.entity.player.PlayerInteractEvent;
 import net.minecraftforge.fml.common.FMLCommonHandler;
@@ -68,6 +70,20 @@ public class PvpQueueEvents {
             return;
         }
         if (HeroSMP.PVP_QUEUE_MANAGER.handleChestHighlightInteract((EntityPlayerMP) event.getEntityPlayer(), event.getTarget())) {
+            event.setCanceled(true);
+        }
+    }
+
+    @SubscribeEvent
+    public void onLivingAttack(LivingAttackEvent event) {
+        if (HeroSMP.PVP_QUEUE_MANAGER.isSpectatorBat(event.getEntity())) {
+            event.setCanceled(true);
+        }
+    }
+
+    @SubscribeEvent
+    public void onLivingHurt(LivingHurtEvent event) {
+        if (HeroSMP.PVP_QUEUE_MANAGER.isSpectatorBat(event.getEntity())) {
             event.setCanceled(true);
         }
     }

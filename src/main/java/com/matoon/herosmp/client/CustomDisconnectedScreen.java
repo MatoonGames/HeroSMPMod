@@ -9,7 +9,9 @@ import net.minecraft.util.text.TextComponentString;
 import net.minecraft.util.ResourceLocation;
 import org.lwjgl.opengl.GL11;
 
+import java.awt.Desktop;
 import java.io.IOException;
+import java.net.URI;
 
 public class CustomDisconnectedScreen extends GuiScreen {
 
@@ -41,7 +43,11 @@ public class CustomDisconnectedScreen extends GuiScreen {
     @Override
     protected void actionPerformed(GuiButton button) throws IOException {
         if (button.id == 0) {
-            mc.displayGuiScreen(new McefBrowserScreen(this, "https://discordapp.com/servers/matoon-community-917570600770342923"));
+            try {
+                Desktop.getDesktop().browse(new URI("https://discordapp.com/servers/matoon-community-917570600770342923"));
+            } catch (Exception e) {
+                e.printStackTrace();
+            }
         } else if (button.id == 1) {
             mc.displayGuiScreen(new GuiMultiplayer(this.parentScreen));
         }

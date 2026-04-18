@@ -4,64 +4,80 @@ import net.minecraft.init.Biomes;
 import net.minecraft.world.DimensionType;
 import net.minecraft.world.WorldProvider;
 import net.minecraft.world.biome.Biome;
-import net.minecraft.world.biome.BiomeProviderSingle;
 import net.minecraft.world.gen.IChunkGenerator;
 import net.minecraftforge.common.DimensionManager;
 
 import java.util.HashMap;
 import java.util.Map;
-import java.util.concurrent.ThreadLocalRandom;
-import java.util.concurrent.atomic.AtomicLong;
 
 public class ArenaWorldProvider extends WorldProvider {
     public static final int ARENA_CHUNKS_ACROSS = 10;
     public static final int ARENA_RADIUS_BLOCKS = (ARENA_CHUNKS_ACROSS * 16) / 2;
-    private static final Map<Integer, Long> DIMENSION_SEEDS = new HashMap<Integer, Long>();
-    private static final Map<Integer, Integer> DIMENSION_BIOMES = new HashMap<Integer, Integer>();
-    private static final AtomicLong FALLBACK_SEED_COUNTER = new AtomicLong(System.nanoTime());
+    public static final int SLOT_REGION_CHUNKS = 32;
+    public static final int SLOT_REGION_BLOCKS = SLOT_REGION_CHUNKS * 16;
+    public static final int ARENA_MIN_LOCAL_CHUNK = (SLOT_REGION_CHUNKS - ARENA_CHUNKS_ACROSS) / 2;
+    public static final int ARENA_MAX_LOCAL_CHUNK = ARENA_MIN_LOCAL_CHUNK + ARENA_CHUNKS_ACROSS - 1;
+    public static final int ARENA_MIN_LOCAL_BLOCK = ARENA_MIN_LOCAL_CHUNK * 16;
+    public static final int ARENA_MAX_LOCAL_BLOCK = ARENA_MAX_LOCAL_CHUNK * 16 + 15;
+    private static final Map<Long, Long> SLOT_SEEDS = new HashMap<Long, Long>();
+    private static final Map<Long, Integer> SLOT_BIOMES = new HashMap<Long, Integer>();
 
-    public static synchronized void setArenaSeed(int dimensionId, long seed) {
-        DIMENSION_SEEDS.put(dimensionId, seed);
+    public static synchronized void setArenaSlotSeed(int slotX, int slotZ, long seed) {
+        SLOT_SEEDS.put(slotKey(slotX, slotZ), seed);
     }
 
-    public static synchronized void setArenaBiome(int dimensionId, Biome biome) {
+    public static synchronized void setArenaSlotBiome(int slotX, int slotZ, Biome biome) {
+        long key = slotKey(slotX, slotZ);
         if (biome == null) {
-            DIMENSION_BIOMES.remove(dimensionId);
+            SLOT_BIOMES.remove(key);
             return;
         }
-        DIMENSION_BIOMES.put(dimensionId, Biome.getIdForBiome(biome));
+        SLOT_BIOMES.put(key, Biome.getIdForBiome(biome));
     }
 
-    public static synchronized void clearArenaSeed(int dimensionId) {
-        DIMENSION_SEEDS.remove(dimensionId);
+    public static synchronized void clearArenaSlot(int slotX, int slotZ) {
+        long key = slotKey(slotX, slotZ);
+        SLOT_SEEDS.remove(key);
+        SLOT_BIOMES.remove(key);
     }
 
-    public static synchronized void clearArenaBiome(int dimensionId) {
-        DIMENSION_BIOMES.remove(dimensionId);
+    public static synchronized Long getArenaSlotSeed(int slotX, int slotZ) {
+        return SLOT_SEEDS.get(slotKey(slotX, slotZ));
     }
 
-    public static synchronized long getArenaSeed(int dimensionId, long fallback) {
-        Long seed = DIMENSION_SEEDS.get(dimensionId);
-        return seed == null ? fallback : seed;
+    public static synchronized Biome getArenaSlotBiome(int slotX, int slotZ) {
+        Integer id = SLOT_BIOMES.get(slotKey(slotX, slotZ));
+        return id == null ? Biomes.PLAINS : Biome.getBiome(id, Biomes.PLAINS);
     }
 
-    private static synchronized Long consumeArenaSeed(int dimensionId) {
-        return DIMENSION_SEEDS.remove(dimensionId);
+    public static int getArenaSlotXForChunk(int chunkX) {
+        return Math.floorDiv(chunkX, SLOT_REGION_CHUNKS);
     }
 
-    private static synchronized Biome consumeArenaBiome(int dimensionId) {
-        Integer id = DIMENSION_BIOMES.remove(dimensionId);
-        if (id == null) {
-            return null;
-        }
-        return Biome.getBiome(id);
+    public static int getArenaSlotZForChunk(int chunkZ) {
+        return Math.floorDiv(chunkZ, SLOT_REGION_CHUNKS);
+    }
+
+    public static int getLocalChunkInSlot(int chunkCoordinate) {
+        return Math.floorMod(chunkCoordinate, SLOT_REGION_CHUNKS);
+    }
+
+    public static int getArenaSlotXForBlock(int blockX) {
+        return Math.floorDiv(blockX, SLOT_REGION_BLOCKS);
+    }
+
+    public static int getArenaSlotZForBlock(int blockZ) {
+        return Math.floorDiv(blockZ, SLOT_REGION_BLOCKS);
+    }
+
+    private static long slotKey(int slotX, int slotZ) {
+        return (((long) slotX) << 32) ^ (slotZ & 0xFFFFFFFFL);
     }
 
     @Override
     protected void init() {
         super.init();
-        Biome assigned = consumeArenaBiome(getDimension());
-        this.biomeProvider = new BiomeProviderSingle(assigned != null ? assigned : Biomes.PLAINS);
+        this.biomeProvider = new ArenaBiomeProvider();
     }
 
     @Override
@@ -75,21 +91,7 @@ public class ArenaWorldProvider extends WorldProvider {
 
     @Override
     public IChunkGenerator createChunkGenerator() {
-        long fallback = mix64(
-                this.world.getSeed()
-                        ^ (341873128712L * (long) getDimension())
-                        ^ ThreadLocalRandom.current().nextLong()
-                        ^ FALLBACK_SEED_COUNTER.getAndIncrement()
-        );
-        Long assigned = consumeArenaSeed(getDimension());
-        long seed = assigned != null ? assigned.longValue() : fallback;
-        return new BoundedOverworldChunkGenerator(this.world, ARENA_CHUNKS_ACROSS, seed);
-    }
-
-    private static long mix64(long z) {
-        z = (z ^ (z >>> 30)) * 0xBF58476D1CE4E5B9L;
-        z = (z ^ (z >>> 27)) * 0x94D049BB133111EBL;
-        return z ^ (z >>> 31);
+        return new BoundedOverworldChunkGenerator(this.world);
     }
 
     @Override

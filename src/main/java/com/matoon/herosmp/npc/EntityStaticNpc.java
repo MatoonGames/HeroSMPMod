@@ -1,6 +1,8 @@
 package com.matoon.herosmp.npc;
 
 import com.matoon.herosmp.HeroSMP;
+import com.matoon.herosmp.network.ModNetwork;
+import com.matoon.herosmp.network.PacketOpenNpcEditor;
 import net.minecraft.entity.EntityCreature;
 import net.minecraft.entity.SharedMonsterAttributes;
 import net.minecraft.entity.player.EntityPlayer;
@@ -25,6 +27,7 @@ public class EntityStaticNpc extends EntityCreature {
     private static final DataParameter<String> MODE = EntityDataManager.createKey(EntityStaticNpc.class, DataSerializers.STRING);
     private static final DataParameter<String> COMMAND = EntityDataManager.createKey(EntityStaticNpc.class, DataSerializers.STRING);
     private static final DataParameter<String> NPC_KEY = EntityDataManager.createKey(EntityStaticNpc.class, DataSerializers.STRING);
+    private static final DataParameter<String> DISPLAY_ITEM = EntityDataManager.createKey(EntityStaticNpc.class, DataSerializers.STRING);
 
     public EntityStaticNpc(World worldIn) {
         super(worldIn);
@@ -41,6 +44,7 @@ public class EntityStaticNpc extends EntityCreature {
         this.dataManager.register(MODE, NpcMode.COMMAND.name());
         this.dataManager.register(COMMAND, "");
         this.dataManager.register(NPC_KEY, "npc_1");
+        this.dataManager.register(DISPLAY_ITEM, "");
     }
 
     @Override
@@ -68,6 +72,20 @@ public class EntityStaticNpc extends EntityCreature {
     @Override
     public boolean processInteract(EntityPlayer player, EnumHand hand) {
         if (world.isRemote || hand != EnumHand.MAIN_HAND) {
+            return true;
+        }
+
+        if (player.isCreative() && player.isSneaking() && player instanceof EntityPlayerMP) {
+            EntityPlayerMP editor = (EntityPlayerMP) player;
+            ModNetwork.CHANNEL.sendTo(new PacketOpenNpcEditor(
+                    this.getEntityId(),
+                    getNpcKey(),
+                    getCustomNameTag(),
+                    getSkinOwner(),
+                    getMode().name(),
+                    getCommand(),
+                    getDisplayItemId()
+            ), editor);
             return true;
         }
 
@@ -105,6 +123,7 @@ public class EntityStaticNpc extends EntityCreature {
         setSkinOwner(compound.getString("SkinOwner"));
         setMode(NpcMode.fromString(compound.getString("NpcMode")));
         setCommand(compound.getString("NpcCommand"));
+        setDisplayItemId(compound.getString("DisplayItem"));
         String key = compound.getString("NpcKey");
         if (key != null && !key.trim().isEmpty()) {
             setNpcKey(key);
@@ -122,6 +141,7 @@ public class EntityStaticNpc extends EntityCreature {
         compound.setString("NpcMode", getMode().name());
         compound.setString("NpcCommand", getCommand());
         compound.setString("NpcKey", getNpcKey());
+        compound.setString("DisplayItem", getDisplayItemId());
     }
 
     @Override
@@ -179,6 +199,14 @@ public class EntityStaticNpc extends EntityCreature {
             return;
         }
         this.dataManager.set(NPC_KEY, npcKey.trim());
+    }
+
+    public String getDisplayItemId() {
+        return this.dataManager.get(DISPLAY_ITEM);
+    }
+
+    public void setDisplayItemId(String itemId) {
+        this.dataManager.set(DISPLAY_ITEM, itemId == null ? "" : itemId.trim());
     }
 
     private String getOfflineProfileId(String name) {
