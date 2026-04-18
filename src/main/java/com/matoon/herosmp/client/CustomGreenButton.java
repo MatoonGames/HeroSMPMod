@@ -14,6 +14,7 @@ public class CustomGreenButton extends GuiButton {
     public void drawButton(Minecraft mc, int mouseX, int mouseY, float partialTicks) {
         if (this.visible) {
             mc.getTextureManager().bindTexture(BUTTON_TEXTURES);
+            this.hovered = mouseX >= this.x && mouseY >= this.y && mouseX < this.x + this.width && mouseY < this.y + this.height;
 
             // Check if the button is hovered and set color accordingly
             if (this.hovered) {

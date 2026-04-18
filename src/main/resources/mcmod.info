@@ -11,6 +11,6 @@
     "logoFile": "assets/herosmp/logo.png",
     "updateUrl": "",
     "screenshots": [],
-    "dependencies": []
+    "dependencies": ["after:mcef"]
   }
 ]

@@ -33,7 +33,7 @@ public class MultiplayerScoreboardHandler {
         String heroText = TextFormatting.DARK_BLUE + "" + TextFormatting.BOLD + "Hero SMP";
         int textWidth = mc.fontRenderer.getStringWidth(heroText);
         int boxWidth = textWidth + 20; // Add some padding to the box width
-        int boxHeight = 70;
+        int boxHeight = 55;
 
         // Draw background with transparency
         GL11.glPushMatrix();
@@ -60,14 +60,10 @@ public class MultiplayerScoreboardHandler {
             mc.fontRenderer.drawString(playerCount, centerX - (playerCountWidth + boxWidth) / 2, centerY - 15, 0xFFFFFF);
         }
 
-        // Display "Level: ", centered
-        String levelText = TextFormatting.BOLD + "Level: " + TextFormatting.RESET + mc.player.experienceLevel;
-        mc.fontRenderer.drawString(levelText, centerX - mc.fontRenderer.getStringWidth(levelText) - 5, centerY, 0xFFFFFF);
-
         // Display the server IP, centered
         String serverIP = "HEROSMP.PRO";
         int serverIPWidth = mc.fontRenderer.getStringWidth(serverIP);
-        mc.fontRenderer.drawString(serverIP, centerX - (serverIPWidth + boxWidth) / 2, centerY + 15, 0xFFFFFF);
+        mc.fontRenderer.drawString(serverIP, centerX - (serverIPWidth + boxWidth) / 2, centerY, 0xFFFFFF);
     }
 
     // Minecraft method for drawing rectangles in 1.12.2

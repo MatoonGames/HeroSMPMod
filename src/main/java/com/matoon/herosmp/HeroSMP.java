@@ -1,13 +1,16 @@
 package com.matoon.herosmp;
 
-import com.matoon.herosmp.level.LevelHandler;
-import net.minecraftforge.common.MinecraftForge;
+import com.matoon.herosmp.npc.PvpQueueManager;
+import com.matoon.herosmp.npc.command.CommandHeroNpc;
+import com.matoon.herosmp.npc.command.CommandPvpMenu;
+import com.matoon.herosmp.npc.command.CommandReturn;
+import com.matoon.herosmp.npc.kit.KitManager;
+import com.matoon.herosmp.npc.loot.PvpChestLootManager;
 import net.minecraftforge.common.config.Configuration;
 import net.minecraftforge.fml.common.Mod;
 import net.minecraftforge.fml.common.SidedProxy;
 import net.minecraftforge.fml.common.event.FMLPreInitializationEvent;
-import net.minecraftforge.fml.relauncher.Side;
-import net.minecraftforge.fml.relauncher.SideOnly;
+import net.minecraftforge.fml.common.event.FMLServerStartingEvent;
 
 import java.io.File;
 
@@ -18,32 +21,34 @@ public class HeroSMP {
     public static final String NAME = "Hero SMP";
     public static final String VERSION = "1.0";
 
-    // Config fields
-    public static Configuration config;
-    public static boolean enableGUI = true;  // Default value for GUI enabled
-    public static boolean guiMultiplayerOnly = true;  // Default: multiplayer-only
-    public static boolean enableScoreboard = true;  // Default value for scoreboard visibility
+    public static final PvpQueueManager PVP_QUEUE_MANAGER = new PvpQueueManager();
+    public static final KitManager KIT_MANAGER = new KitManager();
+    public static final PvpChestLootManager PVP_CHEST_LOOT_MANAGER = new PvpChestLootManager();
 
-    // Proxy references for client and server
+    public static Configuration config;
+    public static boolean enableGUI = true;
+    public static boolean guiMultiplayerOnly = true;
+    public static boolean enableScoreboard = true;
+
     @SidedProxy(clientSide = "com.matoon.herosmp.client.ClientProxy", serverSide = "com.matoon.herosmp.server.ServerProxy")
     public static CommonProxy proxy;
 
     @Mod.EventHandler
     public void preInit(FMLPreInitializationEvent event) {
-        // Initialize the config
         File configFile = new File(event.getModConfigurationDirectory(), MODID + ".cfg");
         config = new Configuration(configFile);
-
-        // Load the config
         loadConfig();
-
-        // Initialize client-side or server-side proxies
         proxy.preInit(event);
+    }
 
-        // Load level rewards on the server side only
-        if (event.getSide().isServer()) {
-            LevelHandler.loadLevelRewards(config);
-        }
+    @Mod.EventHandler
+    public void serverStarting(FMLServerStartingEvent event) {
+        proxy.serverStarting(event);
+        // Register commands directly as a safety net so dedicated/integrated command wiring
+        // remains available even if a proxy registration path is skipped.
+        event.registerServerCommand(new CommandHeroNpc());
+        event.registerServerCommand(new CommandReturn());
+        event.registerServerCommand(new CommandPvpMenu());
     }
 
     public static void loadConfig() {

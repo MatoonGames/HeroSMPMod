@@ -1,0 +1,7 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(find \"D:\\\\GameMods\\\\MinecraftMods\\\\HeroSMP/src/main/java\" -name \"*.java\" -exec grep -l \"WorldProvider\\\\|ChunkGenerator\\\\|dimension\" {} \\\\;)"
+    ]
+  }
+}
