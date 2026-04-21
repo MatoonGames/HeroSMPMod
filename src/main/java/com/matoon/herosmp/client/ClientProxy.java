@@ -7,6 +7,7 @@ import com.matoon.herosmp.registry.ModEntities;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.resources.IResourcePack;
 import net.minecraftforge.common.MinecraftForge;
+import net.minecraftforge.fml.common.event.FMLInitializationEvent;
 import net.minecraftforge.fml.common.event.FMLPreInitializationEvent;
 import net.minecraftforge.fml.relauncher.ReflectionHelper;
 
@@ -28,6 +29,21 @@ public class ClientProxy extends CommonProxy {
             packs.add(new HungerGamesMusicResourcePack(musicDir));
         } catch (ReflectionHelper.UnableToFindFieldException e) {
             e.printStackTrace();
+        }
+    }
+
+    /**
+     * After all mods have initialised, reload resources so the dynamic sounds.json
+     * from HungerGamesMusicResourcePack is picked up by the SoundHandler.
+     * Without this call Minecraft never re-reads sounds.json and the phase music
+     * events are never registered, causing all music packets to be silently ignored.
+     */
+    @Override
+    public void init(FMLInitializationEvent event) {
+        super.init(event);
+        Minecraft mc = Minecraft.getMinecraft();
+        if (mc != null) {
+            mc.refreshResources();
         }
     }
 }

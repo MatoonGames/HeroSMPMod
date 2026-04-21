@@ -55,6 +55,7 @@ public class HeroSMP {
 
     @Mod.EventHandler
     public void init(FMLInitializationEvent event) {
+        proxy.init(event);
         LucraftCoreIntegration.init(event);
     }
 

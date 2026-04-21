@@ -39,8 +39,9 @@ public class HungerGamesMusicResourcePack implements IResourcePack {
 
         if ("sounds.json".equals(path)) {
             String json = generateSoundsJson();
-            if (json == null) throw new FileNotFoundException("No HG music tracks found");
-            return new ByteArrayInputStream(json.getBytes("UTF-8"));
+            // Return empty JSON object when no tracks exist so the SoundHandler
+            // loads cleanly without errors.
+            return new ByteArrayInputStream((json != null ? json : "{}").getBytes("UTF-8"));
         }
 
         if (path.startsWith("sounds/hg_music/")) {
@@ -56,7 +57,9 @@ public class HungerGamesMusicResourcePack implements IResourcePack {
         String domain = domain(location);
         String path   = path(location);
         if (!"herosmp".equals(domain)) return false;
-        if ("sounds.json".equals(path)) return hasAnyOggFiles();
+        // Always report sounds.json as existing so Minecraft picks it up on every
+        // resource reload, even before any .ogg files have been placed.
+        if ("sounds.json".equals(path)) return true;
         if (path.startsWith("sounds/hg_music/")) return resolveOggFile(path) != null;
         return false;
     }

@@ -4,10 +4,15 @@ import com.matoon.herosmp.hungergames.map.*;
 import com.matoon.herosmp.hungergames.music.HungerGamesMusicManager;
 import com.matoon.herosmp.hungergames.world.HungerGamesWorldProvider;
 import com.matoon.herosmp.npc.pvp.FixedTeleporter;
+import net.minecraft.entity.player.EntityPlayer;
 import net.minecraft.entity.player.EntityPlayerMP;
+import net.minecraft.entity.player.InventoryPlayer;
 import net.minecraft.init.Items;
 import net.minecraft.inventory.Container;
 import net.minecraft.inventory.ContainerChest;
+import net.minecraft.inventory.ContainerRepair;
+import net.minecraft.world.IInteractionObject;
+import net.minecraft.util.text.ITextComponent;
 import net.minecraft.item.ItemStack;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.util.math.BlockPos;
@@ -32,6 +37,7 @@ public class HungerGamesWorldManager {
     private static final int HG_BASE_DIMENSION_ID   = -8000;
     private static final int HG_DIMENSION_TYPE_BASE_ID = 17800;
     private static final String HG_DIMENSION_TYPE_PREFIX = "herosmp_hg_";
+    private static final String LOBBY_MAP_NAME = "Lobby";
 
     private final AtomicInteger dimensionIdCounter = new AtomicInteger(1);
     private final AtomicInteger matchIdCounter     = new AtomicInteger(1);
@@ -43,6 +49,17 @@ public class HungerGamesWorldManager {
     private final Map<UUID, String>                          pendingChatInputs = new HashMap<>();
     private final Map<UUID, Integer>                         pendingHGSpectators = new HashMap<>();
     private final Map<UUID, Integer>                         spectatorSetupCountdown = new HashMap<>();
+    // Players waiting for state restore after changeDimension() completes (2-tick delay).
+    private final Map<UUID, Integer>                         pendingHGReturns = new HashMap<>();
+    // Item being edited in the anvil property editor: UUID → ItemStack being edited.
+    private final Map<UUID, ItemStack>                       pendingLootPropertyEdit = new HashMap<>();
+    // The loot inventory currently open for a player (for tab-switch support).
+    private final Map<UUID, HungerGamesMapLootInventory>     openLootInventories = new HashMap<>();
+
+    // Shared lobby dimension — created when the first player queues (if a Lobby map exists).
+    private int     lobbyDimensionId = Integer.MIN_VALUE; // MIN_VALUE = not allocated
+    private final Set<UUID> playersInLobby = new HashSet<>();
+    private BlockPos lobbySpawnPoint = null;
 
     private HungerGamesMapManager mapManager;
     private HungerGamesMusicManager musicManager;
@@ -67,8 +84,20 @@ public class HungerGamesWorldManager {
             sendMessage(player, TextFormatting.YELLOW + "You are already in the queue!");
             return;
         }
+        if (com.matoon.herosmp.HeroSMP.PVP_QUEUE_MANAGER.isPlayerInPvpSession(id)) {
+            sendMessage(player, TextFormatting.RED + "You cannot join Hunger Games while in a PvP match!");
+            return;
+        }
+
+        // Check for an already-running match still in LOBBY phase with open slots.
+        if (tryLateJoinExistingMatch(player)) return;
+
         queue.addLast(id);
         queuedPlayers.add(id);
+
+        // If a Lobby map exists, send this player into the shared lobby dimension.
+        sendToLobbyIfAvailable(player);
+
         sendMessage(player, TextFormatting.GREEN + "Joined Hunger Games queue! "
             + TextFormatting.GRAY + "(" + queuedPlayers.size() + "/" + maxPlayers + ")");
 
@@ -82,6 +111,44 @@ public class HungerGamesWorldManager {
         }
     }
 
+    /**
+     * If there is an active match in LOBBY phase with open slots, slots this player
+     * into it immediately rather than putting them in the queue.
+     * Returns true if the player was placed into an existing match.
+     */
+    private boolean tryLateJoinExistingMatch(EntityPlayerMP player) {
+        for (HungerGamesMatch match : activeMatches.values()) {
+            if (!match.canLateJoin()) continue;
+
+            MinecraftServer server = player.getServer();
+            int dimId = match.getDimensionId();
+            WorldServer hgWorld = server.getWorld(dimId);
+            if (hgWorld == null) continue;
+
+            // Pick a spawn point: reuse the map config spawn list if available.
+            HungerGamesMapManager mgr = getMapManager(server);
+            HungerGamesMapConfig cfg = mgr.loadMapConfig(match.getTemplateName());
+            List<BlockPos> roundSpawns = cfg.getRoundSpawns().isEmpty()
+                ? generateSpawnPoints(match.getPlayerOrder().size() + 1)
+                : cfg.getRoundSpawns();
+            BlockPos spawnPoint = roundSpawns.get(match.getPlayerOrder().size() % roundSpawns.size());
+            BlockPos lobbySpawn = cfg.getLobbySpawn() != null ? cfg.getLobbySpawn() : roundSpawns.get(0);
+
+            PlayerDataIsolationManager.savePlayerState(player);
+            PlayerDataIsolationManager.clearPlayerState(player);
+            teleportToHGWorld(player, hgWorld, lobbySpawn);
+            player.setGameType(GameType.SURVIVAL);
+            match.lateJoin(server, player, spawnPoint);
+
+            sendMessage(player, TextFormatting.GREEN + "Joined an in-progress lobby — Match #"
+                + match.getMatchId() + "! "
+                + TextFormatting.GRAY + "(" + match.getPlayerOrder().size() + " players)");
+            match.broadcastJoin(server, player.getName());
+            return true;
+        }
+        return false;
+    }
+
     public synchronized void dequeuePlayer(EntityPlayerMP player) {
         UUID id = player.getUniqueID();
         if (!queuedPlayers.remove(id)) {
@@ -91,6 +158,12 @@ public class HungerGamesWorldManager {
         queue.remove(id);
         sendMessage(player, TextFormatting.YELLOW + "Left the Hunger Games queue.");
         if (queuedPlayers.size() < minPlayers) currentQueueCountdown = -1;
+        // Return the player from the lobby dimension if they were sent there.
+        if (playersInLobby.remove(id)) {
+            player.setEntityInvulnerable(false);
+            returnPlayerFromHG(player);
+            if (playersInLobby.isEmpty()) destroyLobbyDimension(player.getServer());
+        }
     }
 
     // -------------------------------------------------------------------------
@@ -136,6 +209,20 @@ public class HungerGamesWorldManager {
             }
         }
 
+        // Delayed state restore: apply saved overworld state 2 ticks after changeDimension()
+        // completes, giving the client time to finish loading the dimension before we
+        // push inventory / capability packets.
+        for (Map.Entry<UUID, Integer> entry : new ArrayList<>(pendingHGReturns.entrySet())) {
+            UUID id = entry.getKey();
+            int count = entry.getValue() - 1;
+            if (count > 0) { pendingHGReturns.put(id, count); continue; }
+            pendingHGReturns.remove(id);
+            EntityPlayerMP player = server.getPlayerList().getPlayerByUUID(id);
+            if (player == null) { PlayerDataIsolationManager.clearStoredState(id); continue; }
+            PlayerDataIsolationManager.restorePlayerState(player);
+            sendMessage(player, TextFormatting.GREEN + "Returned from Hunger Games.");
+        }
+
         for (HungerGamesMatch match : new ArrayList<>(activeMatches.values())) {
             match.tick(server);
             if (match.isEnded() && match.getPhase() == HungerGamesMatch.GamePhase.ENDING) {
@@ -150,22 +237,91 @@ public class HungerGamesWorldManager {
 
     private void startMatchFromQueue(MinecraftServer server) {
         List<EntityPlayerMP> players = new ArrayList<>();
+        Set<UUID> lobbyPlayers = new HashSet<>();
         while (!queue.isEmpty() && players.size() < maxPlayers) {
             UUID id = queue.removeFirst();
             queuedPlayers.remove(id);
             EntityPlayerMP p = server.getPlayerList().getPlayerByUUID(id);
-            if (p != null && !p.isDead) players.add(p);
+            if (p != null && !p.isDead) {
+                players.add(p);
+                if (playersInLobby.remove(id)) lobbyPlayers.add(id);
+            }
         }
         currentQueueCountdown = -1;
 
         if (players.size() < minPlayers) {
             for (EntityPlayerMP p : players) {
                 sendMessage(p, TextFormatting.RED + "Not enough players! Returning to queue...");
-                queuePlayer(p);
+                // Return lobby players to overworld before re-queuing.
+                if (lobbyPlayers.contains(p.getUniqueID())) returnPlayerFromHG(p);
+                else queuePlayer(p);
             }
+            if (playersInLobby.isEmpty()) destroyLobbyDimension(server);
             return;
         }
-        startMatch(server, players, null);
+        // Destroy the lobby dim now — all its players are moving to the match dim.
+        destroyLobbyDimension(server);
+        startMatchFromLobby(server, players, lobbyPlayers);
+    }
+
+    /**
+     * Like startMatch but for players coming from the lobby dimension.
+     * Their overworld state is already saved, so we skip savePlayerState and just clear + teleport.
+     */
+    private void startMatchFromLobby(MinecraftServer server, List<EntityPlayerMP> players, Set<UUID> lobbyPlayers) {
+        HungerGamesMapManager mgr = getMapManager(server);
+        String selectedMap = defaultMapName != null ? defaultMapName : mgr.pickRandomMap();
+        int dimensionId = allocateDimensionId();
+        if (selectedMap != null) {
+            File worldDir = server.getWorld(0).getSaveHandler().getWorldDirectory().getAbsoluteFile();
+            mgr.copyMapWorldToDir(selectedMap, new File(worldDir, "DIM" + dimensionId));
+        }
+        DimensionType dimType = registerHGDimension(dimensionId);
+        if (dimType == null) {
+            // Fallback: return everyone to overworld
+            for (EntityPlayerMP p : players) returnPlayerFromHG(p);
+            return;
+        }
+        if (!DimensionManager.isDimensionRegistered(dimensionId)) {
+            try { DimensionManager.registerDimension(dimensionId, dimType); }
+            catch (RuntimeException e) { e.printStackTrace(); for (EntityPlayerMP p : players) returnPlayerFromHG(p); return; }
+        }
+        try { DimensionManager.initDimension(dimensionId); } catch (RuntimeException e) { e.printStackTrace(); }
+        WorldServer hgWorld = server.getWorld(dimensionId);
+        if (hgWorld == null) { for (EntityPlayerMP p : players) returnPlayerFromHG(p); return; }
+
+        HungerGamesMapConfig cfg = selectedMap != null ? mgr.loadMapConfig(selectedMap) : new HungerGamesMapConfig("default");
+        int matchId = matchIdCounter.getAndIncrement();
+        HungerGamesMatch match = new HungerGamesMatch(matchId, dimensionId, selectedMap != null ? selectedMap : "default", players.size());
+        match.setLootPools(cfg.getLootPhase1(), cfg.getLootPhase2(), cfg.getLootPhase3(), cfg.getLootAllPhases());
+        match.setBreakableBlocks(cfg.getBreakableBlocks());
+        match.setMapCenter(cfg.getMapCenter());
+        match.setWorldBorderStartRange(cfg.getWorldBorderStartRange());
+
+        List<BlockPos> roundSpawns = cfg.getRoundSpawns().isEmpty()
+            ? generateSpawnPoints(players.size()) : cfg.getRoundSpawns();
+        BlockPos lobbySpawn = cfg.getLobbySpawn() != null ? cfg.getLobbySpawn() : roundSpawns.get(0);
+        match.setLobbySpawnPoint(lobbySpawn);
+
+        for (int i = 0; i < players.size(); i++) {
+            EntityPlayerMP player = players.get(i);
+            BlockPos roundSpawn = roundSpawns.get(i % roundSpawns.size());
+            // State is already saved for lobby players; save now for non-lobby players.
+            if (!lobbyPlayers.contains(player.getUniqueID())) {
+                PlayerDataIsolationManager.savePlayerState(player);
+            } else {
+                // Remove lobby invulnerability — the match will apply its own.
+                player.setEntityInvulnerable(false);
+            }
+            PlayerDataIsolationManager.clearPlayerState(player);
+            match.addPlayer(player.getUniqueID(), roundSpawn);
+            teleportToHGWorld(player, hgWorld, lobbySpawn);
+            player.setGameType(GameType.SURVIVAL);
+            match.sendBorderToPlayer(server, player);
+        }
+        if (musicManager != null) match.setMusicManager(musicManager);
+        activeMatches.put(matchId, match);
+        match.startMatch(server);
     }
 
     public synchronized int startMatch(MinecraftServer server, List<EntityPlayerMP> players, @Nullable String mapName) {
@@ -202,7 +358,7 @@ public class HungerGamesWorldManager {
         HungerGamesMatch match = new HungerGamesMatch(
             matchId, dimensionId, selectedMap != null ? selectedMap : "default", players.size());
 
-        match.setLootPool(cfg.getLootPool());
+        match.setLootPools(cfg.getLootPhase1(), cfg.getLootPhase2(), cfg.getLootPhase3(), cfg.getLootAllPhases());
         match.setBreakableBlocks(cfg.getBreakableBlocks());
         match.setMapCenter(cfg.getMapCenter());
         match.setWorldBorderStartRange(cfg.getWorldBorderStartRange());
@@ -222,6 +378,7 @@ public class HungerGamesWorldManager {
             match.addPlayer(player.getUniqueID(), roundSpawn);
             teleportToHGWorld(player, hgWorld, lobbySpawn);
             player.setGameType(GameType.SURVIVAL);
+            match.sendBorderToPlayer(server, player);
         }
 
         if (musicManager != null) match.setMusicManager(musicManager);
@@ -316,7 +473,11 @@ public class HungerGamesWorldManager {
         configureSessions.put(id, session);
 
         sendMessage(player, TextFormatting.GOLD + "Entered configure mode: " + TextFormatting.WHITE + mapName);
-        sendMessage(player, TextFormatting.GRAY + "Hotbar: [1] Spawns  [2] Lobby  [3] Loot  [4] Map Center  [5] Breakable Blocks");
+        if (LOBBY_MAP_NAME.equals(mapName)) {
+            sendMessage(player, TextFormatting.GRAY + "Hotbar: [1] Lobby Spawn");
+        } else {
+            sendMessage(player, TextFormatting.GRAY + "Hotbar: [1] Spawns  [2] Lobby  [3] Loot  [4] Map Center  [5] Breakable Blocks");
+        }
         sendMessage(player, TextFormatting.GRAY + "Use /heropvp hg debug endconfigure to save & exit.");
     }
 
@@ -349,7 +510,8 @@ public class HungerGamesWorldManager {
                 + (cfg.getLobbySpawn() != null ? "lobby set" : "no lobby") + ", "
                 + (cfg.getMapCenter() != null ? "center set" : "no center") + ", "
                 + "border " + cfg.getWorldBorderStartRange() + ", "
-                + cfg.getLootPool().size() + " loot, "
+                + (cfg.getLootPhase1().size() + cfg.getLootPhase2().size()
+                   + cfg.getLootPhase3().size() + cfg.getLootAllPhases().size()) + " loot, "
                 + cfg.getBreakableBlocks().size() + " breakable blocks.");
         }
 
@@ -449,15 +611,21 @@ public class HungerGamesWorldManager {
         if (config.getMapCenter() == null || config.getWorldBorderStartRange() <= 0) return;
         WorldBorder border = world.getWorldBorder();
         border.setCenter(config.getMapCenter().getX(), config.getMapCenter().getZ());
-        border.setSize(config.getWorldBorderStartRange() * 2);
+        border.setTransition(config.getWorldBorderStartRange() * 2);
     }
 
     private void openLootPoolEditor(EntityPlayerMP player, HungerGamesConfigureMapSession session) {
+        HungerGamesMapConfig cfg = session.getPendingConfig();
         HungerGamesMapLootInventory inv = new HungerGamesMapLootInventory(session.getMapName());
-        List<ItemStack> pool = session.getPendingConfig().getLootPool();
-        for (int i = 0; i < inv.getSizeInventory() && i < pool.size(); i++) {
-            inv.setInventorySlotContents(i, pool.get(i).copy());
-        }
+        inv.loadTabContents(cfg.getLootPhase1(), cfg.getLootPhase2(),
+                            cfg.getLootPhase3(), cfg.getLootAllPhases());
+        // Wire up tab-switch callback: when a player clicks a tab button, switch
+        // the active tab in the inventory and push the updated contents to the client.
+        inv.setTabClickCallback(tabIndex -> {
+            inv.setActiveTab(tabIndex);
+            if (player.openContainer != null) player.openContainer.detectAndSendChanges();
+        });
+        openLootInventories.put(player.getUniqueID(), inv);
         player.displayGUIChest(inv);
     }
 
@@ -473,22 +641,150 @@ public class HungerGamesWorldManager {
     public synchronized void handleLootInventoryClose(EntityPlayerMP player, Container container) {
         if (!(container instanceof ContainerChest)) return;
         ContainerChest chest = (ContainerChest) container;
-        HungerGamesConfigureMapSession session = configureSessions.get(player.getUniqueID());
-        if (session == null) return;
-
-        List<ItemStack> items = new ArrayList<>();
-        for (int i = 0; i < chest.getLowerChestInventory().getSizeInventory(); i++) {
-            ItemStack stack = chest.getLowerChestInventory().getStackInSlot(i);
-            if (!stack.isEmpty()) items.add(stack.copy());
-        }
+        UUID id = player.getUniqueID();
+        HungerGamesConfigureMapSession session = configureSessions.get(id);
+        if (session == null) { openLootInventories.remove(id); return; }
 
         if (chest.getLowerChestInventory() instanceof HungerGamesMapLootInventory) {
-            session.getPendingConfig().setLootPool(items);
-            sendMessage(player, TextFormatting.GREEN + "Loot pool updated: " + items.size() + " item types.");
+            HungerGamesMapLootInventory inv = (HungerGamesMapLootInventory) chest.getLowerChestInventory();
+            openLootInventories.remove(id);
+
+            // Check for a staged item (edit request).
+            ItemStack staged = inv.getStagingItem();
+
+            // Save all four tab pools to config.
+            HungerGamesMapConfig cfg = session.getPendingConfig();
+            int total = 0;
+            List<ItemStack> p1  = inv.getTabItems(0); cfg.setLootPhase1(p1);    total += p1.size();
+            List<ItemStack> p2  = inv.getTabItems(1); cfg.setLootPhase2(p2);    total += p2.size();
+            List<ItemStack> p3  = inv.getTabItems(2); cfg.setLootPhase3(p3);    total += p3.size();
+            List<ItemStack> all = inv.getTabItems(3); cfg.setLootAllPhases(all); total += all.size();
+            sendMessage(player, TextFormatting.GREEN + "Loot pools saved: " + total + " item types across all phases.");
+
+            // Open anvil editor for the staged item after saving.
+            if (!staged.isEmpty()) {
+                openLootEntryEditor(player, staged, session);
+            }
         } else if (chest.getLowerChestInventory() instanceof HungerGamesMapBreakableInventory) {
+            List<ItemStack> items = new ArrayList<>();
+            for (int i = 0; i < chest.getLowerChestInventory().getSizeInventory(); i++) {
+                ItemStack stack = chest.getLowerChestInventory().getStackInSlot(i);
+                if (!stack.isEmpty()) items.add(stack.copy());
+            }
             session.getPendingConfig().setBreakableBlocks(items);
             sendMessage(player, TextFormatting.GREEN + "Breakable blocks updated: " + items.size() + " block types.");
         }
+    }
+
+    /**
+     * Handle a tab-click inside the loot inventory.
+     * Called from the RightClickBlock / RightClickItem event handler when slot 0–3 is clicked
+     * via the dedicated loot tab handler in HungerGamesEvents.
+     */
+    public synchronized void handleLootTabClick(EntityPlayerMP player, int tabIndex) {
+        HungerGamesMapLootInventory inv = openLootInventories.get(player.getUniqueID());
+        if (inv == null) return;
+        inv.setActiveTab(tabIndex);
+        // Force a client-side inventory update.
+        player.openContainer.detectAndSendChanges();
+    }
+
+    private void openLootEntryEditor(EntityPlayerMP player, ItemStack item,
+                                     HungerGamesConfigureMapSession session) {
+        UUID id = player.getUniqueID();
+        pendingLootPropertyEdit.put(id, item.copy());
+        // Tell the player the current property values so they know what to type.
+        sendMessage(player, TextFormatting.YELLOW + "Anvil opened. Rename the item to set properties:");
+        sendMessage(player, TextFormatting.GRAY + "Format: w:<weight> gmax:<globalMax> cmax:<perChestMax> min:<minCount> max:<maxCount>");
+        sendMessage(player, TextFormatting.AQUA + "Current: " + HungerGamesLootEntry.toAnvilString(item));
+
+        WorldServer world = player.getServer().getWorld(player.dimension);
+        BlockPos pos = player.getPosition();
+        final ItemStack itemCopy = item.copy();
+        final HungerGamesWorldManager mgr = this;
+
+        player.displayGui(new IInteractionObject() {
+            @Override
+            public Container createContainer(InventoryPlayer inv, EntityPlayer p) {
+                ContainerRepair repair = new ContainerRepair(inv, world, pos, (EntityPlayerMP) p) {
+                    @Override
+                    public boolean canInteractWith(EntityPlayer e) { return true; }
+                    @Override
+                    public void onContainerClosed(EntityPlayer e) {
+                        super.onContainerClosed(e);
+                        if (e instanceof EntityPlayerMP) {
+                            mgr.applyLootEntryEdit((EntityPlayerMP) e, getSlot(2).getStack(), session);
+                        }
+                    }
+                };
+                // Prime the input slot with the item to edit.
+                repair.getSlot(0).putStack(itemCopy.copy());
+                return repair;
+            }
+            @Override
+            public String getGuiID() { return "minecraft:anvil"; }
+            @Override
+            public ITextComponent getDisplayName() {
+                return new net.minecraft.util.text.TextComponentString("Edit Loot Entry");
+            }
+            @Override
+            public boolean hasCustomName() { return true; }
+            @Override
+            public String getName() { return "Edit Loot Entry"; }
+        });
+    }
+
+    private synchronized void applyLootEntryEdit(EntityPlayerMP player, ItemStack outputStack,
+                                                  HungerGamesConfigureMapSession session) {
+        UUID id = player.getUniqueID();
+        ItemStack original = pendingLootPropertyEdit.remove(id);
+        if (original == null || session == null) return;
+
+        // If the output slot is empty (player didn't rename), keep original unchanged.
+        ItemStack resultItem = (outputStack != null && !outputStack.isEmpty()) ? outputStack : original;
+
+        // Parse the renamed display name as a property string and apply to the original item.
+        String displayName = resultItem.hasDisplayName() ? resultItem.getDisplayName() : "";
+        ItemStack updated = HungerGamesLootEntry.applyAnvilString(original, displayName);
+
+        // Find and replace the item in the appropriate config phase list.
+        HungerGamesMapConfig cfg = session.getPendingConfig();
+        boolean replaced = replaceInList(cfg, updated, original);
+        if (!replaced) {
+            // Item wasn't found in any pool — add it to All Phases as a fallback.
+            List<ItemStack> all = cfg.getLootAllPhases();
+            all.add(updated);
+            cfg.setLootAllPhases(all);
+        }
+
+        sendMessage(player, TextFormatting.GREEN + "Loot entry updated: "
+            + HungerGamesLootEntry.toAnvilString(updated));
+
+        // Re-open the loot editor so the player can continue editing.
+        openLootPoolEditor(player, session);
+    }
+
+    private boolean replaceInList(HungerGamesMapConfig cfg, ItemStack updated, ItemStack original) {
+        // Try each phase list; replace the first matching item (same item type).
+        List<ItemStack>[] phases = new List[] {
+            cfg.getLootPhase1(), cfg.getLootPhase2(), cfg.getLootPhase3(), cfg.getLootAllPhases()
+        };
+        for (int pi = 0; pi < phases.length; pi++) {
+            List<ItemStack> phase = phases[pi];
+            for (int i = 0; i < phase.size(); i++) {
+                if (ItemStack.areItemsEqual(phase.get(i), original)) {
+                    phase.set(i, updated);
+                    switch (pi) {
+                        case 0: cfg.setLootPhase1(phase);    break;
+                        case 1: cfg.setLootPhase2(phase);    break;
+                        case 2: cfg.setLootPhase3(phase);    break;
+                        case 3: cfg.setLootAllPhases(phase); break;
+                    }
+                    return true;
+                }
+            }
+        }
+        return false;
     }
 
     public boolean isInConfigureMode(UUID playerId) {
@@ -496,20 +792,30 @@ public class HungerGamesWorldManager {
     }
 
     private void giveConfigureTools(EntityPlayerMP player) {
-        player.inventory.setInventorySlotContents(0,
-            createConfigTool(new ItemStack(Items.ENDER_PEARL),  TextFormatting.GREEN  + "Set Round Spawn", "round_spawn"));
-        player.inventory.setInventorySlotContents(1,
-            createConfigTool(new ItemStack(Items.COMPASS),      TextFormatting.AQUA   + "Set Lobby Spawn", "lobby_spawn"));
-        player.inventory.setInventorySlotContents(2,
-            createConfigTool(new ItemStack(Items.EMERALD),      TextFormatting.YELLOW + "Loot Pool",        "loot_pool"));
-        player.inventory.setInventorySlotContents(3,
-            createConfigTool(new ItemStack(Items.WOODEN_AXE),  TextFormatting.GOLD   + "Set Map Center / Border Range", "map_center"));
-        player.inventory.setInventorySlotContents(4,
-            createConfigTool(new ItemStack(Items.IRON_PICKAXE), TextFormatting.AQUA  + "Breakable Blocks", "breakable_blocks"));
+        HungerGamesConfigureMapSession session = configureSessions.get(player.getUniqueID());
+        boolean isLobby = session != null && LOBBY_MAP_NAME.equals(session.getMapName());
+
+        if (isLobby) {
+            // Lobby only needs a spawn point — no round spawns, loot, border, or breakables.
+            player.inventory.setInventorySlotContents(0,
+                createConfigTool(new ItemStack(Items.COMPASS), TextFormatting.AQUA + "Set Lobby Spawn", "lobby_spawn"));
+        } else {
+            player.inventory.setInventorySlotContents(0,
+                createConfigTool(new ItemStack(Items.ENDER_PEARL),  TextFormatting.GREEN  + "Set Round Spawn", "round_spawn"));
+            player.inventory.setInventorySlotContents(1,
+                createConfigTool(new ItemStack(Items.COMPASS),      TextFormatting.AQUA   + "Set Lobby Spawn", "lobby_spawn"));
+            player.inventory.setInventorySlotContents(2,
+                createConfigTool(new ItemStack(Items.EMERALD),      TextFormatting.YELLOW + "Loot Pool",        "loot_pool"));
+            player.inventory.setInventorySlotContents(3,
+                createConfigTool(new ItemStack(Items.WOODEN_AXE),  TextFormatting.GOLD   + "Set Map Center / Border Range", "map_center"));
+            player.inventory.setInventorySlotContents(4,
+                createConfigTool(new ItemStack(Items.IRON_PICKAXE), TextFormatting.AQUA  + "Breakable Blocks", "breakable_blocks"));
+        }
     }
 
     private static ItemStack createConfigTool(ItemStack base, String displayName, String toolId) {
         base.setStackDisplayName(displayName);
+        if (!base.hasTagCompound()) base.setTagCompound(new net.minecraft.nbt.NBTTagCompound());
         base.getTagCompound().setString("HGConfigTool", toolId);
         return base;
     }
@@ -582,6 +888,13 @@ public class HungerGamesWorldManager {
         pendingChatInputs.remove(id);
         pendingHGSpectators.remove(id);
         spectatorSetupCountdown.remove(id);
+        pendingHGReturns.remove(id);
+        playersInLobby.remove(id);
+        // If last lobby player logged out, clean up the lobby dim.
+        if (playersInLobby.isEmpty() && lobbyDimensionId != Integer.MIN_VALUE
+                && queuedPlayers.isEmpty()) {
+            destroyLobbyDimension(player.getServer());
+        }
 
         // Remove from match (player is eliminated), but KEEP stored state so
         // handlePlayerLogin can restore them to the overworld on reconnect.
@@ -619,8 +932,8 @@ public class HungerGamesWorldManager {
 
         player.changeDimension(world.provider.getDimension(),
             new FixedTeleporter(world, pos[0], pos[1], pos[2], rot[0], rot[1]));
-        PlayerDataIsolationManager.restorePlayerState(player);
-        sendMessage(player, TextFormatting.GREEN + "You have been returned from Hunger Games.");
+        // Queue delayed state restore (same pattern as returnPlayerFromHG).
+        pendingHGReturns.put(id, 2);
     }
 
     // -------------------------------------------------------------------------
@@ -643,12 +956,27 @@ public class HungerGamesWorldManager {
         HungerGamesMatch match = findMatchByPlayer(id);
         if (match != null) {
             match.clearPlayerUi(player);
-            match.removePlayer(id);
+            // Use fullyRemovePlayer so playerOrder is also cleared; this ensures
+            // findMatchByPlayer() no longer returns this match, allowing re-queue.
+            match.fullyRemovePlayer(id);
+            // Clear any pending spectator setup so the player can re-queue immediately.
+            pendingHGSpectators.remove(id);
+            spectatorSetupCountdown.remove(id);
             returnPlayerFromHG(player);
             return true;
         }
 
         if (PlayerDataIsolationManager.hasStoredState(id)) {
+            pendingHGSpectators.remove(id);
+            spectatorSetupCountdown.remove(id);
+            // If player was in the lobby, remove them from lobby tracking.
+            if (playersInLobby.remove(id)) {
+                player.setEntityInvulnerable(false);
+                queuedPlayers.remove(id);
+                queue.remove(id);
+                if (queuedPlayers.size() < minPlayers) currentQueueCountdown = -1;
+                if (playersInLobby.isEmpty()) destroyLobbyDimension(server);
+            }
             returnPlayerFromHG(player);
             return true;
         }
@@ -658,6 +986,26 @@ public class HungerGamesWorldManager {
 
     public boolean isPlayerInMatch(UUID playerId) {
         return findMatchByPlayer(playerId) != null;
+    }
+
+    public boolean isPlayerInLobby(UUID playerId) {
+        return playersInLobby.contains(playerId);
+    }
+
+    /** Returns true if the player is queued for or actively in a Hunger Games match or in the lobby. */
+    public synchronized boolean isPlayerInMatchOrQueue(UUID playerId) {
+        return queuedPlayers.contains(playerId) || isPlayerInMatch(playerId) || playersInLobby.contains(playerId);
+    }
+
+    /**
+     * Returns the dimension ID of the HG match (or lobby) the player is in, or 0 if not in HG.
+     * Used to allow the initial teleport-in without triggering the escape check.
+     */
+    public synchronized int getPlayerMatchDimension(UUID playerId) {
+        HungerGamesMatch match = findMatchByPlayer(playerId);
+        if (match != null) return match.getDimensionId();
+        if (playersInLobby.contains(playerId) && lobbyDimensionId != Integer.MIN_VALUE) return lobbyDimensionId;
+        return 0;
     }
 
     public boolean isHGSpectatorBat(net.minecraft.entity.Entity entity) {
@@ -685,6 +1033,54 @@ public class HungerGamesWorldManager {
     }
 
     // -------------------------------------------------------------------------
+    // Lobby dimension
+    // -------------------------------------------------------------------------
+
+    /**
+     * If a map named "Lobby" exists, save this player's state and teleport them
+     * into the shared lobby dimension, creating it first if necessary.
+     */
+    private void sendToLobbyIfAvailable(EntityPlayerMP player) {
+        MinecraftServer server = player.getServer();
+        HungerGamesMapManager mgr = getMapManager(server);
+        if (!mgr.getMapDir(LOBBY_MAP_NAME).exists()) return; // No lobby map configured
+
+        // Create lobby dimension on first use.
+        if (lobbyDimensionId == Integer.MIN_VALUE) {
+            lobbyDimensionId = allocateDimensionId();
+            File worldDir = server.getWorld(0).getSaveHandler().getWorldDirectory().getAbsoluteFile();
+            mgr.copyMapWorldToDir(LOBBY_MAP_NAME, new File(worldDir, "DIM" + lobbyDimensionId));
+            DimensionType dimType = registerHGDimension(lobbyDimensionId);
+            if (dimType == null) { lobbyDimensionId = Integer.MIN_VALUE; return; }
+            if (!DimensionManager.isDimensionRegistered(lobbyDimensionId)) {
+                try { DimensionManager.registerDimension(lobbyDimensionId, dimType); }
+                catch (RuntimeException e) { e.printStackTrace(); lobbyDimensionId = Integer.MIN_VALUE; return; }
+            }
+            try { DimensionManager.initDimension(lobbyDimensionId); } catch (RuntimeException e) { e.printStackTrace(); }
+            // Load lobby spawn from config.
+            HungerGamesMapConfig lobbyCfg = mgr.loadMapConfig(LOBBY_MAP_NAME);
+            lobbySpawnPoint = lobbyCfg.getLobbySpawn() != null ? lobbyCfg.getLobbySpawn() : new BlockPos(0, 64, 0);
+        }
+
+        WorldServer lobbyWorld = server.getWorld(lobbyDimensionId);
+        if (lobbyWorld == null) return;
+
+        PlayerDataIsolationManager.savePlayerState(player);
+        PlayerDataIsolationManager.clearPlayerState(player);
+        teleportToHGWorld(player, lobbyWorld, lobbySpawnPoint);
+        player.setGameType(GameType.SURVIVAL);
+        player.setEntityInvulnerable(true);
+        playersInLobby.add(player.getUniqueID());
+    }
+
+    private void destroyLobbyDimension(MinecraftServer server) {
+        if (lobbyDimensionId == Integer.MIN_VALUE) return;
+        destroyHGDimension(server, lobbyDimensionId);
+        lobbyDimensionId = Integer.MIN_VALUE;
+        lobbySpawnPoint = null;
+    }
+
+    // -------------------------------------------------------------------------
     // Teleportation
     // -------------------------------------------------------------------------
 
@@ -705,12 +1101,14 @@ public class HungerGamesWorldManager {
         if (returnWorld == null) {
             returnWorld = player.getServer().getWorld(0);
             returnPos   = new double[]{0, 64, 0};
+            returnRot   = new float[]{0, 0};
         }
         player.changeDimension(returnDim,
             new FixedTeleporter(returnWorld, returnPos[0], returnPos[1], returnPos[2],
                 returnRot[0], returnRot[1]));
-        PlayerDataIsolationManager.restorePlayerState(player);
-        sendMessage(player, TextFormatting.GREEN + "Returned from Hunger Games.");
+        // Delay state restore by 2 ticks so the client finishes the dimension transition
+        // before inventory/capability packets arrive (prevents invisible-player / missing-items bug).
+        pendingHGReturns.put(id, 2);
     }
 
     // -------------------------------------------------------------------------
@@ -798,5 +1196,5 @@ public class HungerGamesWorldManager {
 
     public Map<Integer, HungerGamesMatch> getActiveMatches()              { return new HashMap<>(activeMatches); }
     public int                             getQueueSize()                  { return queuedPlayers.size(); }
-    public List<String>                    getAvailableMaps(MinecraftServer s) { return getMapManager(s).getAvailableMaps(); }
+    public List<String>                    getAvailableMaps(MinecraftServer s) { return getMapManager(s).getPlayableMaps(); }
 }

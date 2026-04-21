@@ -6,14 +6,18 @@ import net.minecraft.entity.Entity;
 import net.minecraft.entity.player.EntityPlayerMP;
 import net.minecraft.item.ItemStack;
 import net.minecraft.util.math.BlockPos;
+import net.minecraft.util.text.TextComponentString;
+import net.minecraft.util.text.TextFormatting;
 import java.util.UUID;
 import net.minecraftforge.event.ServerChatEvent;
+import net.minecraftforge.event.entity.EntityTravelToDimensionEvent;
 import net.minecraftforge.event.entity.living.LivingAttackEvent;
 import net.minecraftforge.event.entity.living.LivingDeathEvent;
 import net.minecraftforge.event.entity.living.LivingHurtEvent;
 import net.minecraftforge.event.entity.player.PlayerContainerEvent;
 import net.minecraftforge.event.entity.player.PlayerInteractEvent;
 import net.minecraftforge.event.world.BlockEvent;
+import net.minecraftforge.fml.common.eventhandler.EventPriority;
 import net.minecraftforge.fml.common.eventhandler.SubscribeEvent;
 import net.minecraftforge.fml.common.gameevent.PlayerEvent;
 import net.minecraftforge.fml.common.gameevent.TickEvent;
@@ -33,9 +37,15 @@ public class HungerGamesEvents {
 
     @SubscribeEvent
     public void onPlayerDeath(LivingDeathEvent event) {
-        if (event.getEntity() instanceof EntityPlayerMP) {
-            HeroSMP.HUNGER_GAMES_MANAGER.handlePlayerDeath((EntityPlayerMP) event.getEntity());
+        if (!(event.getEntity() instanceof EntityPlayerMP)) return;
+        EntityPlayerMP player = (EntityPlayerMP) event.getEntity();
+        // Players waiting in the HG Lobby just respawn there — they are not eliminated.
+        if (HeroSMP.HUNGER_GAMES_MANAGER.isPlayerInLobby(player.getUniqueID())) {
+            event.setCanceled(true);
+            player.setHealth(player.getMaxHealth());
+            return;
         }
+        HeroSMP.HUNGER_GAMES_MANAGER.handlePlayerDeath(player);
     }
 
     @SubscribeEvent
@@ -153,6 +163,30 @@ public class HungerGamesEvents {
         if (!(event.getPlayer() instanceof EntityPlayerMP)) return;
         HeroSMP.HUNGER_GAMES_MANAGER.trackBlockPlaced(
                 event.getPlayer().getUniqueID(), event.getPos());
+    }
+
+    /**
+     * Prevent players in a Hunger Games match from leaving the HG dimension via
+     * dimension-travel items like the Heroes Expansion Tesseract.
+     * If they somehow still escape, HungerGamesMatch.tick() will eliminate them.
+     */
+    @SubscribeEvent(priority = EventPriority.HIGH)
+    public void onDimensionTravel(EntityTravelToDimensionEvent event) {
+        if (!(event.getEntity() instanceof EntityPlayerMP)) {
+            return;
+        }
+        EntityPlayerMP player = (EntityPlayerMP) event.getEntity();
+        UUID id = player.getUniqueID();
+        if (HeroSMP.HUNGER_GAMES_MANAGER.isPlayerInMatch(id)) {
+            // Allow travel into the player's assigned HG dimension (initial teleport-in).
+            int matchDim = HeroSMP.HUNGER_GAMES_MANAGER.getPlayerMatchDimension(id);
+            if (matchDim != 0 && event.getDimension() == matchDim) {
+                return;
+            }
+            event.setCanceled(true);
+            player.sendMessage(new TextComponentString(
+                TextFormatting.RED + "You cannot leave the Hunger Games dimension during a match!"));
+        }
     }
 
     /**

@@ -126,6 +126,9 @@ public class PvpQueueManager {
     private final Map<UUID, BlockPos> chestHighlightTargets = new HashMap<UUID, BlockPos>();
     private final Map<UUID, SpectatorSession> spectators = new HashMap<UUID, SpectatorSession>();
     private final Map<UUID, VictorySequence> pendingVictorySequences = new HashMap<UUID, VictorySequence>();
+    /** Players who have been assigned a match but have not yet arrived in the arena dimension.
+     *  Dimension-escape checks are suppressed for these players. */
+    private final Set<UUID> pendingArenaArrivals = new HashSet<UUID>();
     private final AtomicInteger matchCounter = new AtomicInteger(0);
     private final AtomicLong arenaSeedSequence = new AtomicLong(System.nanoTime());
     private final Set<Long> allocatedArenaSlots = new HashSet<Long>();
@@ -145,6 +148,11 @@ public class PvpQueueManager {
 
         if (queuedPlayers.contains(playerId) || ffaQueuedPlayers.contains(playerId)) {
             send(player, TextFormatting.YELLOW + "You are already queued. " + TextFormatting.GRAY + "Position: " + getQueuePosition(playerId));
+            return;
+        }
+
+        if (HeroSMP.HUNGER_GAMES_MANAGER.isPlayerInMatchOrQueue(playerId)) {
+            send(player, TextFormatting.RED + "You cannot queue for PvP while in a Hunger Games match!");
             return;
         }
 
@@ -176,6 +184,10 @@ public class PvpQueueManager {
         }
         if (queuedPlayers.contains(playerId) || ffaQueuedPlayers.contains(playerId)) {
             send(player, TextFormatting.YELLOW + "You are already queued.");
+            return;
+        }
+        if (HeroSMP.HUNGER_GAMES_MANAGER.isPlayerInMatchOrQueue(playerId)) {
+            send(player, TextFormatting.RED + "You cannot queue for PvP while in a Hunger Games match!");
             return;
         }
 
@@ -441,10 +453,13 @@ public class PvpQueueManager {
 
         ReturnState returnState = ReturnState.capture(player);
         PlayerInventorySnapshot inventorySnapshot = PlayerInventorySnapshot.capture(player);
+        PvpPlayerStateSavedData.get(player.getServer()).saveState(player);
         HeroSMP.KIT_MANAGER.clearPlayerInventory(player);
+        player.setGameType(GameType.SURVIVAL);
         List<BlockPos> chestPositions = spawnMatchLootChests(preparedArena.world, preparedArena.slot);
         soloMatches.put(playerId, new SoloMatch(nextMatchId(), playerId, returnState, inventorySnapshot, preparedArena.dimensionId, preparedArena.slot, preparedArena.firstSpawn, chestPositions));
 
+        pendingArenaArrivals.add(playerId);
         preGenerateSpawnArea(preparedArena.world, preparedArena.firstSpawn.getX(), preparedArena.firstSpawn.getZ(), 4);
         teleportToArena(player, preparedArena.world, preparedArena.firstSpawn.getX() + 0.5D, preparedArena.firstSpawn.getY(), preparedArena.firstSpawn.getZ() + 0.5D, 90.0F);
         openKitSelection(player);
@@ -470,6 +485,7 @@ public class PvpQueueManager {
         player.removePotionEffect(MobEffects.GLOWING);
         restorePlayer(player, soloMatch.returnState);
         soloMatch.inventory.restore(player);
+        clearPersistedState(player);
         teardownArenaSlot(player.getServer(), soloMatch.slot);
         send(player, TextFormatting.GREEN + "Exited debug solo arena.");
     }
@@ -538,8 +554,14 @@ public class PvpQueueManager {
         ReturnState secondReturn = ReturnState.capture(second);
         PlayerInventorySnapshot firstInventory = PlayerInventorySnapshot.capture(first);
         PlayerInventorySnapshot secondInventory = PlayerInventorySnapshot.capture(second);
+        // Persist state to disk so it survives a server crash
+        PvpPlayerStateSavedData stateData = PvpPlayerStateSavedData.get(first.getServer());
+        stateData.saveState(first);
+        stateData.saveState(second);
         HeroSMP.KIT_MANAGER.clearPlayerInventory(first);
         HeroSMP.KIT_MANAGER.clearPlayerInventory(second);
+        first.setGameType(GameType.SURVIVAL);
+        second.setGameType(GameType.SURVIVAL);
 
         List<BlockPos> chestPositions = spawnMatchLootChests(preparedArena.world, preparedArena.slot);
         ActiveMatch match = new ActiveMatch(
@@ -561,6 +583,8 @@ public class PvpQueueManager {
 
         preGenerateSpawnArea(preparedArena.world, preparedArena.firstSpawn.getX(), preparedArena.firstSpawn.getZ(), 4);
         preGenerateSpawnArea(preparedArena.world, preparedArena.secondSpawn.getX(), preparedArena.secondSpawn.getZ(), 4);
+        pendingArenaArrivals.add(first.getUniqueID());
+        pendingArenaArrivals.add(second.getUniqueID());
         teleportToArena(first, preparedArena.world, preparedArena.firstSpawn.getX() + 0.5D, preparedArena.firstSpawn.getY(), preparedArena.firstSpawn.getZ() + 0.5D, 90.0F);
         teleportToArena(second, preparedArena.world, preparedArena.secondSpawn.getX() + 0.5D, preparedArena.secondSpawn.getY(), preparedArena.secondSpawn.getZ() + 0.5D, -90.0F);
 
@@ -622,6 +646,7 @@ public class PvpQueueManager {
 
         List<BlockPos> chestPositions = spawnMatchLootChests(preparedArena.world, preparedArena.slot);
         FfaMatch match = new FfaMatch(nextMatchId(), preparedArena.dimensionId, preparedArena.slot, chestPositions);
+        PvpPlayerStateSavedData ffaStateData = PvpPlayerStateSavedData.get(players.get(0).getServer());
         for (int i = 0; i < players.size(); i++) {
             EntityPlayerMP player = players.get(i);
             UUID playerId = player.getUniqueID();
@@ -632,7 +657,9 @@ public class PvpQueueManager {
             match.spawns.put(playerId, new BlockPos(spawn));
             match.alivePlayers.add(playerId);
             playerToFfaMatch.put(playerId, match);
+            ffaStateData.saveState(player);
             HeroSMP.KIT_MANAGER.clearPlayerInventory(player);
+            player.setGameType(GameType.SURVIVAL);
         }
 
         for (UUID playerId : match.playerOrder) {
@@ -640,6 +667,7 @@ public class PvpQueueManager {
             if (player == null) {
                 continue;
             }
+            pendingArenaArrivals.add(playerId);
             BlockPos spawn = match.spawns.get(playerId);
             preGenerateSpawnArea(preparedArena.world, spawn.getX(), spawn.getZ(), 4);
             float yaw = (float) (Math.atan2(0.5D - (spawn.getZ() + 0.5D), 0.5D - (spawn.getX() + 0.5D)) * 180.0D / Math.PI) - 90.0F;
@@ -806,6 +834,25 @@ public class PvpQueueManager {
             return;
         }
 
+        // Crash-recovery: player has a persisted PVP state but no in-memory record
+        // (e.g. the server crashed while they were in an arena).
+        PvpPlayerStateSavedData stateData = PvpPlayerStateSavedData.get(player.getServer());
+        if (stateData.hasState(player.getUniqueID())) {
+            int returnDim    = stateData.getReturnDimension(player.getUniqueID());
+            double[] pos     = stateData.getReturnPosition(player.getUniqueID());
+            float[]  rot     = stateData.getReturnRotation(player.getUniqueID());
+            WorldServer returnWorld = player.getServer().getWorld(returnDim);
+            if (returnWorld == null) {
+                returnWorld = player.getServer().getWorld(0);
+                pos = new double[]{returnWorld.getSpawnPoint().getX(), returnWorld.getSpawnPoint().getY(), returnWorld.getSpawnPoint().getZ()};
+                rot = new float[]{0, 0};
+            }
+            moveToDimension(player, returnWorld, pos[0], pos[1], pos[2], rot[0], rot[1]);
+            stateData.restoreAndClear(player);
+            send(player, TextFormatting.GREEN + "Returned to your original location after server restart.");
+            return;
+        }
+
         if (isArenaDimension(player.dimension)) {
             SpectatorSession session = spectators.remove(player.getUniqueID());
             removeSpectatorBat(player.getServer(), session);
@@ -827,6 +874,7 @@ public class PvpQueueManager {
         PlayerInventorySnapshot snapshot = pendingInventoryReturns.remove(player.getUniqueID());
         if (snapshot != null) {
             snapshot.restore(player);
+            PvpPlayerStateSavedData.get(player.getServer()).clearState(player.getUniqueID());
             restored = true;
         }
 
@@ -878,6 +926,7 @@ public class PvpQueueManager {
             if (loserId != null && participant.getUniqueID().equals(loserId)) {
                 restorePlayer(participant, returnState);
                 inventorySnapshot.restore(participant);
+                clearPersistedState(participant);
                 send(participant, TextFormatting.RED + "Defeat." + TextFormatting.GRAY + " Returned to original location.");
                 continue;
             }
@@ -889,12 +938,19 @@ public class PvpQueueManager {
 
             restorePlayer(participant, returnState);
             inventorySnapshot.restore(participant);
+            clearPersistedState(participant);
             send(participant, TextFormatting.GREEN + "Duel complete. " + TextFormatting.GRAY + "Returned to original location.");
         }
 
         if (!winnerCelebration) {
             teardownArenaSlot(server, match.slot);
         }
+    }
+
+    /** Remove the on-disk state entry for a player after a normal match end. */
+    private void clearPersistedState(EntityPlayerMP player) {
+        PvpPlayerStateSavedData.get(player.getServer()).clearState(player.getUniqueID());
+        pendingArenaArrivals.remove(player.getUniqueID());
     }
 
     private void restorePlayer(EntityPlayerMP player, ReturnState returnState) {
@@ -1483,6 +1539,7 @@ public class PvpQueueManager {
                 } else {
                     restorePlayer(winner, sequence.returnState);
                     sequence.inventorySnapshot.restore(winner);
+                    clearPersistedState(winner);
                 }
                 teardownArenaSlot(server, sequence.slot);
                 continue;
@@ -1501,6 +1558,7 @@ public class PvpQueueManager {
             winner.removePotionEffect(MobEffects.GLOWING);
             restorePlayer(winner, sequence.returnState);
             sequence.inventorySnapshot.restore(winner);
+            clearPersistedState(winner);
             send(winner, TextFormatting.GOLD + "Winner: " + TextFormatting.WHITE + sequence.winnerName + TextFormatting.GRAY + ". Returned to original location.");
             teardownArenaSlot(server, sequence.slot);
         }
@@ -1709,6 +1767,7 @@ public class PvpQueueManager {
             player.removePotionEffect(MobEffects.GLOWING);
             restorePlayer(player, solo.returnState);
             solo.inventory.restore(player);
+            clearPersistedState(player);
             teardownArenaSlot(server, solo.slot);
             awaitingKitSelection.remove(solo.playerId);
             soloMatches.remove(solo.playerId);
@@ -2422,6 +2481,79 @@ public class PvpQueueManager {
         }
     }
 
+    /**
+     * If a player has escaped to a completely different dimension (e.g. via the
+     * Heroes Expansion Tesseract), forfeit their match so it doesn't run forever.
+     * This runs every tick, so escape is detected within ~1 server tick.
+     */
+    public synchronized void tickDimensionEscapeCheck(MinecraftServer server) {
+        for (ActiveMatch match : new HashSet<ActiveMatch>(playerToMatch.values())) {
+            checkDimensionEscape(server, match.firstPlayer, match.dimensionId, "1v1");
+            checkDimensionEscape(server, match.secondPlayer, match.dimensionId, "1v1");
+        }
+        for (FfaMatch match : new HashSet<FfaMatch>(playerToFfaMatch.values())) {
+            for (UUID playerId : new ArrayList<UUID>(match.playerOrder)) {
+                checkDimensionEscape(server, playerId, match.dimensionId, "FFA");
+            }
+        }
+        for (SoloMatch solo : new ArrayList<SoloMatch>(soloMatches.values())) {
+            checkDimensionEscape(server, solo.playerId, solo.dimensionId, "Solo");
+        }
+    }
+
+    private void checkDimensionEscape(MinecraftServer server, UUID playerId, int expectedDim, String matchType) {
+        EntityPlayerMP player = server.getPlayerList().getPlayerByUUID(playerId);
+        if (player == null) return;
+
+        // If the player has arrived in the arena dimension, clear the pending flag.
+        if (player.dimension == expectedDim) {
+            pendingArenaArrivals.remove(playerId);
+            return;
+        }
+
+        // Still waiting for initial teleport to complete — not an escape.
+        if (pendingArenaArrivals.contains(playerId)) return;
+
+        // Player is in a different dimension after having arrived — forfeit.
+        pendingArenaArrivals.remove(playerId);
+        send(player, TextFormatting.RED + "You left the arena dimension and forfeited the " + matchType + " match.");
+
+        ActiveMatch activeMatch = playerToMatch.get(playerId);
+        if (activeMatch != null) {
+            UUID winnerId = activeMatch.getOpponent(playerId);
+            EntityPlayerMP winner = server.getPlayerList().getPlayerByUUID(winnerId);
+            if (winner != null) {
+                send(winner, TextFormatting.GREEN + "Victory! " + TextFormatting.GRAY + "Your opponent escaped the arena.");
+            }
+            endMatch(server, activeMatch, playerId);
+            return;
+        }
+
+        FfaMatch ffaMatch = playerToFfaMatch.get(playerId);
+        if (ffaMatch != null) {
+            eliminateFfaPlayer(server, ffaMatch, playerId, false,
+                TextFormatting.YELLOW + player.getName() + " escaped the arena.");
+            return;
+        }
+
+        SoloMatch soloMatch = soloMatches.get(playerId);
+        if (soloMatch != null) {
+            // End solo debug match
+            removeChestHighlights(server.getWorld(soloMatch.dimensionId), soloMatch.chestHighlightIds);
+            soloMatch.clearBossBar(server);
+            returnSpectatorsForSolo(server, soloMatch);
+            player.removePotionEffect(MobEffects.SLOWNESS);
+            player.removePotionEffect(MobEffects.JUMP_BOOST);
+            player.removePotionEffect(MobEffects.GLOWING);
+            restorePlayer(player, soloMatch.returnState);
+            soloMatch.inventory.restore(player);
+            clearPersistedState(player);
+            teardownArenaSlot(server, soloMatch.slot);
+            awaitingKitSelection.remove(playerId);
+            soloMatches.remove(playerId);
+        }
+    }
+
     private void enforcePlayerInsideArena(MinecraftServer server, UUID playerId, int dimensionId, ArenaSlot slot) {
         EntityPlayerMP player = server.getPlayerList().getPlayerByUUID(playerId);
         if (player == null || player.dimension != dimensionId) {
@@ -2533,6 +2665,21 @@ public class PvpQueueManager {
 
     private boolean isArenaDimension(int dimensionId) {
         return dimensionId == ARENA_DIMENSION_ID;
+    }
+
+    /** Returns true if the player has been sent to an arena but has not yet arrived there. */
+    public synchronized boolean isPendingArenaArrival(UUID playerId) {
+        return pendingArenaArrivals.contains(playerId);
+    }
+
+    /** Returns true if the player is currently queued for or in any PvP session. */
+    public synchronized boolean isPlayerInPvpSession(UUID playerId) {
+        return playerToMatch.containsKey(playerId)
+                || playerToFfaMatch.containsKey(playerId)
+                || soloMatches.containsKey(playerId)
+                || queuedPlayers.contains(playerId)
+                || ffaQueuedPlayers.contains(playerId)
+                || spectators.containsKey(playerId);
     }
 
     private void send(EntityPlayerMP player, String message) {

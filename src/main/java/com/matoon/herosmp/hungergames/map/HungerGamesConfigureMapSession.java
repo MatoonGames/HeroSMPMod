@@ -17,7 +17,10 @@ public class HungerGamesConfigureMapSession {
         this.pendingConfig = new HungerGamesMapConfig(mapName);
         existing.getRoundSpawns().forEach(pendingConfig::addRoundSpawn);
         pendingConfig.setLobbySpawn(existing.getLobbySpawn());
-        pendingConfig.setLootPool(new ArrayList<>(existing.getLootPool()));
+        pendingConfig.setLootPhase1(existing.getLootPhase1());
+        pendingConfig.setLootPhase2(existing.getLootPhase2());
+        pendingConfig.setLootPhase3(existing.getLootPhase3());
+        pendingConfig.setLootAllPhases(existing.getLootAllPhases());
         pendingConfig.setBreakableBlocks(new ArrayList<>(existing.getBreakableBlocks()));
         pendingConfig.setMapCenter(existing.getMapCenter());
         pendingConfig.setWorldBorderStartRange(existing.getWorldBorderStartRange());

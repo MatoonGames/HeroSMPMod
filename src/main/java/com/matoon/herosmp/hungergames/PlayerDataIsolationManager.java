@@ -1,5 +1,6 @@
 package com.matoon.herosmp.hungergames;
 
+import net.minecraft.entity.SharedMonsterAttributes;
 import net.minecraft.entity.player.EntityPlayerMP;
 import net.minecraft.item.ItemStack;
 import net.minecraft.nbt.NBTTagCompound;
@@ -187,6 +188,15 @@ public class PlayerDataIsolationManager {
 
         // Clear capabilities
         clearCapabilities(player);
+
+        // Reset max health attribute (InfinityCraft/LucraftCore can modify this via the Gauntlet).
+        try {
+            player.getEntityAttribute(SharedMonsterAttributes.MAX_HEALTH).setBaseValue(20.0);
+            player.setHealth(player.getMaxHealth());
+        } catch (Exception e) {
+            System.err.println("[HeroSMP] PlayerDataIsolationManager: could not reset max health for "
+                    + player.getName() + ": " + e.getMessage());
+        }
     }
 
     /**

@@ -16,7 +16,13 @@ public class HungerGamesMapConfig {
     private final String mapName;
     private final List<BlockPos> roundSpawns = new ArrayList<>();
     private BlockPos lobbySpawn = null;
-    private final List<ItemStack> lootPool = new ArrayList<>();
+
+    // Per-phase loot pools. Items may carry HGLoot NBT properties (weight, globalMax, etc.)
+    private final List<ItemStack> lootPhase1    = new ArrayList<>();
+    private final List<ItemStack> lootPhase2    = new ArrayList<>();
+    private final List<ItemStack> lootPhase3    = new ArrayList<>();
+    private final List<ItemStack> lootAllPhases = new ArrayList<>();
+
     private final List<ItemStack> breakableBlocks = new ArrayList<>();
     private BlockPos mapCenter = null;
     private int worldBorderStartRange = 200;
@@ -28,7 +34,10 @@ public class HungerGamesMapConfig {
     public String getMapName() { return mapName; }
     public List<BlockPos> getRoundSpawns() { return new ArrayList<>(roundSpawns); }
     public BlockPos getLobbySpawn() { return lobbySpawn; }
-    public List<ItemStack> getLootPool() { return new ArrayList<>(lootPool); }
+    public List<ItemStack> getLootPhase1()    { return new ArrayList<>(lootPhase1); }
+    public List<ItemStack> getLootPhase2()    { return new ArrayList<>(lootPhase2); }
+    public List<ItemStack> getLootPhase3()    { return new ArrayList<>(lootPhase3); }
+    public List<ItemStack> getLootAllPhases() { return new ArrayList<>(lootAllPhases); }
     public List<ItemStack> getBreakableBlocks() { return new ArrayList<>(breakableBlocks); }
     public BlockPos getMapCenter() { return mapCenter; }
     public int getWorldBorderStartRange() { return worldBorderStartRange; }
@@ -47,10 +56,15 @@ public class HungerGamesMapConfig {
         return roundSpawns.stream().anyMatch(p -> p.equals(pos));
     }
 
-    public void setLootPool(List<ItemStack> items) {
-        lootPool.clear();
-        for (ItemStack stack : items) {
-            if (!stack.isEmpty()) lootPool.add(stack.copy());
+    public void setLootPhase1(List<ItemStack> items)    { copyInto(lootPhase1, items); }
+    public void setLootPhase2(List<ItemStack> items)    { copyInto(lootPhase2, items); }
+    public void setLootPhase3(List<ItemStack> items)    { copyInto(lootPhase3, items); }
+    public void setLootAllPhases(List<ItemStack> items) { copyInto(lootAllPhases, items); }
+
+    private static void copyInto(List<ItemStack> target, List<ItemStack> source) {
+        target.clear();
+        for (ItemStack stack : source) {
+            if (!stack.isEmpty()) target.add(stack.copy());
         }
     }
 
@@ -82,14 +96,10 @@ public class HungerGamesMapConfig {
             nbt.setTag("LobbySpawn", tag);
         }
 
-        NBTTagList lootList = new NBTTagList();
-        for (int i = 0; i < lootPool.size(); i++) {
-            NBTTagCompound tag = new NBTTagCompound();
-            tag.setInteger("Slot", i);
-            lootPool.get(i).writeToNBT(tag);
-            lootList.appendTag(tag);
-        }
-        nbt.setTag("LootPool", lootList);
+        nbt.setTag("LootPhase1",    serializeLoot(lootPhase1));
+        nbt.setTag("LootPhase2",    serializeLoot(lootPhase2));
+        nbt.setTag("LootPhase3",    serializeLoot(lootPhase3));
+        nbt.setTag("LootAllPhases", serializeLoot(lootAllPhases));
 
         if (mapCenter != null) {
             NBTTagCompound tag = new NBTTagCompound();
@@ -114,7 +124,10 @@ public class HungerGamesMapConfig {
 
     public void fromNBT(NBTTagCompound nbt) {
         roundSpawns.clear();
-        lootPool.clear();
+        lootPhase1.clear();
+        lootPhase2.clear();
+        lootPhase3.clear();
+        lootAllPhases.clear();
         breakableBlocks.clear();
         lobbySpawn = null;
         mapCenter = null;
@@ -131,12 +144,15 @@ public class HungerGamesMapConfig {
             lobbySpawn = new BlockPos(tag.getInteger("X"), tag.getInteger("Y"), tag.getInteger("Z"));
         }
 
-        NBTTagList lootList = nbt.getTagList("LootPool", 10);
-        for (int i = 0; i < lootList.tagCount(); i++) {
-            NBTTagCompound tag = lootList.getCompoundTagAt(i);
-            ItemStack stack = new ItemStack(tag);
-            if (!stack.isEmpty()) lootPool.add(stack);
+        // Migrate old single loot pool → AllPhases
+        if (nbt.hasKey("LootPool") && !nbt.hasKey("LootAllPhases")) {
+            deserializeLoot(nbt.getTagList("LootPool", 10), lootAllPhases);
         }
+
+        deserializeLoot(nbt.getTagList("LootPhase1",    10), lootPhase1);
+        deserializeLoot(nbt.getTagList("LootPhase2",    10), lootPhase2);
+        deserializeLoot(nbt.getTagList("LootPhase3",    10), lootPhase3);
+        deserializeLoot(nbt.getTagList("LootAllPhases", 10), lootAllPhases);
 
         if (nbt.hasKey("MapCenter")) {
             NBTTagCompound tag = nbt.getCompoundTag("MapCenter");
@@ -150,6 +166,25 @@ public class HungerGamesMapConfig {
             NBTTagCompound tag = breakableList.getCompoundTagAt(i);
             ItemStack stack = new ItemStack(tag);
             if (!stack.isEmpty()) breakableBlocks.add(stack);
+        }
+    }
+
+    private static NBTTagList serializeLoot(List<ItemStack> pool) {
+        NBTTagList list = new NBTTagList();
+        for (int i = 0; i < pool.size(); i++) {
+            NBTTagCompound tag = new NBTTagCompound();
+            tag.setInteger("Slot", i);
+            pool.get(i).writeToNBT(tag);
+            list.appendTag(tag);
+        }
+        return list;
+    }
+
+    private static void deserializeLoot(NBTTagList list, List<ItemStack> target) {
+        for (int i = 0; i < list.tagCount(); i++) {
+            NBTTagCompound tag = list.getCompoundTagAt(i);
+            ItemStack stack = new ItemStack(tag);
+            if (!stack.isEmpty()) target.add(stack);
         }
     }
 

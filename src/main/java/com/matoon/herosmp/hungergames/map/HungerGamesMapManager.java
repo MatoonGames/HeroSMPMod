@@ -35,8 +35,15 @@ public class HungerGamesMapManager {
         return maps;
     }
 
-    public String pickRandomMap() {
+    /** Returns all maps eligible for actual HG matches — excludes reserved names like "Lobby". */
+    public List<String> getPlayableMaps() {
         List<String> maps = getAvailableMaps();
+        maps.removeIf(name -> name.equalsIgnoreCase("Lobby"));
+        return maps;
+    }
+
+    public String pickRandomMap() {
+        List<String> maps = getPlayableMaps();
         return maps.isEmpty() ? null : maps.get(random.nextInt(maps.size()));
     }
 

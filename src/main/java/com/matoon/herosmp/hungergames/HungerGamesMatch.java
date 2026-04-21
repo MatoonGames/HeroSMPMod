@@ -1,5 +1,6 @@
 package com.matoon.herosmp.hungergames;
 
+import com.matoon.herosmp.hungergames.map.HungerGamesLootEntry;
 import com.matoon.herosmp.hungergames.music.HungerGamesMusicManager;
 import com.matoon.herosmp.npc.pvp.FixedTeleporter;
 import net.minecraft.block.Block;
@@ -11,6 +12,9 @@ import net.minecraft.item.ItemBlock;
 import net.minecraft.item.ItemStack;
 import net.minecraft.network.play.server.SPacketDestroyEntities;
 import net.minecraft.network.play.server.SPacketDisplayObjective;
+import net.minecraft.network.play.server.SPacketScoreboardObjective;
+import net.minecraft.network.play.server.SPacketUpdateScore;
+import net.minecraft.network.play.server.SPacketWorldBorder;
 import net.minecraft.scoreboard.ScoreCriteria;
 import net.minecraft.scoreboard.ScoreObjective;
 import net.minecraft.scoreboard.Scoreboard;
@@ -68,7 +72,10 @@ public class HungerGamesMatch {
     // -------------------------------------------------------------------------
 
     private BlockPos        lobbySpawnPoint;
-    private List<ItemStack> lootPool              = new ArrayList<>();
+    private List<ItemStack> lootPhase1    = new ArrayList<>();
+    private List<ItemStack> lootPhase2    = new ArrayList<>();
+    private List<ItemStack> lootPhase3    = new ArrayList<>();
+    private List<ItemStack> lootAllPhases = new ArrayList<>();
     private Set<String>     breakableBlockNames   = new HashSet<>();
     private BlockPos        mapCenter             = null;
     private int             worldBorderStartRange = 0;
@@ -102,7 +109,10 @@ public class HungerGamesMatch {
     private int                     musicLoopTicker   = 0;
     private static final int MUSIC_LOOP_TICKS = 3600; // 3 minutes
 
-    // Scoreboard (uses the server's ServerScoreboard so packet sending is automatic)
+    // Scoreboard — uses a match-local Scoreboard so packets are never sent to the
+    // whole server.  We manually push SPacketScoreboardObjective / SPacketUpdateScore
+    // / SPacketDisplayObjective only to players in this match.
+    private final Scoreboard              localBoard  = new Scoreboard();
     private ScoreObjective                boardObjective;
     private String                        boardObjName;
     private int                           sbTicker  = 0;
@@ -126,7 +136,12 @@ public class HungerGamesMatch {
     public void setMusicManager(HungerGamesMusicManager mgr) { this.musicManager = mgr; }
 
     public void setLobbySpawnPoint(BlockPos pos)    { this.lobbySpawnPoint = pos; }
-    public void setLootPool(List<ItemStack> pool)   { lootPool = new ArrayList<>(pool); }
+    public void setLootPools(List<ItemStack> p1, List<ItemStack> p2, List<ItemStack> p3, List<ItemStack> all) {
+        lootPhase1    = new ArrayList<>(p1);
+        lootPhase2    = new ArrayList<>(p2);
+        lootPhase3    = new ArrayList<>(p3);
+        lootAllPhases = new ArrayList<>(all);
+    }
     public void setMapCenter(BlockPos center)       { this.mapCenter = center; }
     public void setWorldBorderStartRange(int range) { this.worldBorderStartRange = range; }
     public void setBreakableBlocks(List<ItemStack> items) {
@@ -158,6 +173,8 @@ public class HungerGamesMatch {
     }
 
     public void removePlayer(UUID id)      { alivePlayers.remove(id); }
+    /** Fully removes a player who is voluntarily leaving — clears both tracking lists. */
+    public void fullyRemovePlayer(UUID id) { alivePlayers.remove(id); playerOrder.remove(id); }
     public void addSpectator(UUID id)      { spectators.add(id); }
     public void removeSpectator(UUID id)   { spectators.remove(id); }
 
@@ -203,6 +220,19 @@ public class HungerGamesMatch {
 
         tickSpectatorBats(server);
         updateBossBar();
+
+        // Forfeit any alive player who has escaped to a different dimension (e.g. Tesseract).
+        if (phase == GamePhase.GRACE_PERIOD || phase == GamePhase.ACTIVE) {
+            for (UUID id : new ArrayList<>(alivePlayers)) {
+                EntityPlayerMP p = server.getPlayerList().getPlayerByUUID(id);
+                if (p != null && p.dimension != dimensionId) {
+                    // Player left the HG dimension — eliminate them.
+                    p.sendMessage(new net.minecraft.util.text.TextComponentString(
+                        net.minecraft.util.text.TextFormatting.RED + "You left the Hunger Games dimension and were eliminated!"));
+                    removePlayer(id);
+                }
+            }
+        }
 
         if (musicManager != null && currentMusicPhase != null && currentMusicTrack != null) {
             if (++musicLoopTicker >= MUSIC_LOOP_TICKS) {
@@ -286,7 +316,7 @@ public class HungerGamesMatch {
         phase = GamePhase.GRACE_PERIOD;
         phaseTicksRemaining = GRACE_PERIOD_TICKS;
         sendPhaseMusic(server, HungerGamesMusicManager.PHASE1);
-        if (!lootPool.isEmpty()) fillChestsWithLoot(server);
+        fillChestsWithLoot(server, 1);
         for (UUID id : new ArrayList<>(alivePlayers)) {
             EntityPlayerMP p = server.getPlayerList().getPlayerByUUID(id);
             if (p != null) p.setEntityInvulnerable(true);
@@ -328,8 +358,10 @@ public class HungerGamesMatch {
 
         if (activePhase == 1 && activePhaseElapsed >= PHASE1_END_TICKS) {
             activePhase = 2;
-            fillChestsWithLoot(server);
-            applyWorldBorder(server, worldBorderStartRange);
+            fillChestsWithLoot(server, 2);
+            // Shrink at exactly 0.5 blocks/second: distance = worldBorderStartRange (half the diameter).
+            long phase2Ms = (long)(worldBorderStartRange) * 2000L;
+            applyWorldBorder(server, worldBorderStartRange, phase2Ms);
             sendPhaseMusic(server, HungerGamesMusicManager.PHASE2);
             broadcastMessage(server, TextFormatting.GOLD + "" + TextFormatting.BOLD
                 + "Phase 2! Border is closing! Chests refilled!");
@@ -337,8 +369,10 @@ public class HungerGamesMatch {
 
         if (activePhase == 2 && activePhaseElapsed >= PHASE2_END_TICKS) {
             activePhase = 3;
-            fillChestsWithLoot(server);
-            applyWorldBorder(server, 20);
+            fillChestsWithLoot(server, 3);
+            // Shrink at exactly 0.5 blocks/second: distance = worldBorderStartRange - 20.
+            long phase3Ms = (long)(Math.max(worldBorderStartRange - 20, 1)) * 2000L;
+            applyWorldBorder(server, 20, phase3Ms);
             sendPhaseMusic(server, HungerGamesMusicManager.PHASE3);
             broadcastMessage(server, TextFormatting.DARK_RED + "" + TextFormatting.BOLD
                 + "Phase 3! Final push! Chests refilled!");
@@ -351,16 +385,54 @@ public class HungerGamesMatch {
     }
 
     private void applyWorldBorder(MinecraftServer server, int diameter) {
+        applyWorldBorder(server, diameter, 0);
+    }
+
+    /**
+     * Set (or transition) the HG world border diameter.
+     * Uses WorldBorder.setTransition() which controls the actual visible border,
+     * NOT setSize() which only affects worldSize (the chunk-loading limit).
+     *
+     * Vanilla's PlayerList border listener is only registered for worlds[0] (overworld),
+     * so we must manually push SPacketWorldBorder to every player in this match.
+     *
+     * @param diameter   Target diameter in blocks.
+     * @param transitionMs Time in milliseconds for a gradual shrink (0 = instant).
+     */
+    private void applyWorldBorder(MinecraftServer server, int diameter, long transitionMs) {
         if (mapCenter == null || worldBorderStartRange <= 0) return;
         WorldServer hgWorld = server.getWorld(dimensionId);
         if (hgWorld == null) return;
         WorldBorder border = hgWorld.getWorldBorder();
         border.setCenter(mapCenter.getX(), mapCenter.getZ());
-        border.setSize(diameter);
-        border.setDamageAmount(0.5);
+        if (transitionMs > 0) {
+            border.setTransition(border.getDiameter(), diameter, transitionMs);
+        } else {
+            border.setTransition(diameter);
+        }
+        border.setDamageAmount(0.2);
         border.setDamageBuffer(5.0);
         border.setWarningDistance(20);
-        border.setWarningTime(30);
+        border.setWarningTime(60);
+        // Push the full border state to every player currently in this match dimension.
+        // This is required because vanilla only auto-syncs the overworld border.
+        SPacketWorldBorder pkt = new SPacketWorldBorder(border, SPacketWorldBorder.Action.INITIALIZE);
+        for (EntityPlayerMP p : getAllPresentPlayers(server)) {
+            if (p.dimension == dimensionId) p.connection.sendPacket(pkt);
+        }
+    }
+
+    /**
+     * Sends the current HG world border state to a single player.
+     * Call this after teleporting a player into the HG dimension so they immediately
+     * see the border instead of inheriting the overworld's (enormous) border.
+     */
+    public void sendBorderToPlayer(MinecraftServer server, EntityPlayerMP player) {
+        if (mapCenter == null || worldBorderStartRange <= 0) return;
+        WorldServer hgWorld = server.getWorld(dimensionId);
+        if (hgWorld == null) return;
+        player.connection.sendPacket(
+            new SPacketWorldBorder(hgWorld.getWorldBorder(), SPacketWorldBorder.Action.INITIALIZE));
     }
 
     private void tickEnding(MinecraftServer server) {
@@ -385,48 +457,131 @@ public class HungerGamesMatch {
     // Chest loot fill
     // -------------------------------------------------------------------------
 
-    private void fillChestsWithLoot(MinecraftServer server) {
+    /**
+     * Fill all loaded chests in the HG dimension with phase-appropriate loot.
+     *
+     * @param phase Active game phase (1, 2, or 3). Phase N items and All-Phases items
+     *              are combined into the effective pool for every fill cycle.
+     *
+     * Per-item properties (stored in HGLoot NBT via HungerGamesLootEntry):
+     *   weight      — relative selection probability (higher = more likely)
+     *   globalMax   — max total copies spawned across ALL chests this cycle (0 = unlimited)
+     *   perChestMax — max copies in a single chest this cycle
+     *   minCount    — minimum stack size placed
+     *   maxCount    — maximum stack size placed
+     */
+    private void fillChestsWithLoot(MinecraftServer server, int phase) {
         WorldServer hgWorld = server.getWorld(dimensionId);
-        if (hgWorld == null || lootPool.isEmpty()) return;
+        if (hgWorld == null) return;
 
+        // Build effective pool = current phase pool + all-phases pool (always combined).
+        List<ItemStack> phasePool;
+        switch (phase) {
+            case 2:  phasePool = lootPhase2; break;
+            case 3:  phasePool = lootPhase3; break;
+            default: phasePool = lootPhase1; break;
+        }
+        List<ItemStack> effectivePool = new ArrayList<>(phasePool);
+        effectivePool.addAll(lootAllPhases);
+        if (effectivePool.isEmpty()) return;
+
+        // Build weighted candidate list: each item appears `weight` times.
+        List<ItemStack> weighted = new ArrayList<>();
+        for (ItemStack entry : effectivePool) {
+            int w = HungerGamesLootEntry.getWeight(entry);
+            for (int i = 0; i < w; i++) weighted.add(entry);
+        }
+        if (weighted.isEmpty()) return;
+
+        // Collect chests.
         List<TileEntityChest> chests = new ArrayList<>();
         for (TileEntity te : new ArrayList<>(hgWorld.loadedTileEntityList))
             if (te instanceof TileEntityChest) chests.add((TileEntityChest) te);
+        if (chests.isEmpty()) return;
+
+        // globalSpawned tracks total copies placed this cycle, keyed by item identity.
+        Map<ItemStack, Integer> globalSpawned = new IdentityHashMap<>();
+        // Pre-populate so the map knows about every entry.
+        for (ItemStack entry : effectivePool) globalSpawned.put(entry, 0);
 
         for (TileEntityChest chest : chests) {
-            int itemCount = 3 + rand.nextInt(5);
+            // Clear the chest.
             for (int i = 0; i < chest.getSizeInventory(); i++) chest.setInventorySlotContents(i, ItemStack.EMPTY);
-            Set<Integer> used = new HashSet<>();
+
+            int itemCount = 3 + rand.nextInt(5); // 3–7 item placements per chest
+            Set<Integer> usedSlots = new HashSet<>();
+            Map<ItemStack, Integer> perChestSpawned = new IdentityHashMap<>();
+
             for (int j = 0; j < itemCount; j++) {
-                int slot, tries = 0;
+                // Pick a slot.
+                int slot = -1, tries = 0;
                 do { slot = rand.nextInt(chest.getSizeInventory()); tries++; }
-                while (used.contains(slot) && tries < 30);
-                if (!used.contains(slot)) {
-                    used.add(slot);
-                    ItemStack item = lootPool.get(rand.nextInt(lootPool.size())).copy();
-                    int maxCount = Math.min(item.getMaxStackSize(), 4);
-                    item.setCount(1 + (maxCount > 1 ? rand.nextInt(maxCount) : 0));
-                    chest.setInventorySlotContents(slot, item);
+                while (usedSlots.contains(slot) && tries < 40);
+                if (usedSlots.contains(slot)) continue; // all slots exhausted
+
+                // Pick a candidate respecting globalMax and perChestMax.
+                // Shuffle a copy of the weighted list to avoid always picking the same item
+                // when multiple are at cap.
+                List<ItemStack> candidates = new ArrayList<>(weighted);
+                java.util.Collections.shuffle(candidates, rand);
+
+                ItemStack chosen = null;
+                for (ItemStack candidate : candidates) {
+                    int gmax  = HungerGamesLootEntry.getGlobalMax(candidate);
+                    int cmax  = HungerGamesLootEntry.getPerChestMax(candidate);
+                    int gSpawned = globalSpawned.getOrDefault(candidate, 0);
+                    int cSpawned = perChestSpawned.getOrDefault(candidate, 0);
+
+                    if (gmax > 0 && gSpawned >= gmax) continue;  // global cap reached
+                    if (cSpawned >= cmax) continue;               // per-chest cap reached
+                    chosen = candidate;
+                    break;
                 }
+                if (chosen == null) continue; // all items at cap
+
+                // Determine stack size.
+                int minC = HungerGamesLootEntry.getMinCount(chosen);
+                int maxC = Math.min(HungerGamesLootEntry.getMaxCount(chosen), chosen.getMaxStackSize());
+                if (minC > maxC) maxC = minC;
+                int count = minC + (maxC > minC ? rand.nextInt(maxC - minC + 1) : 0);
+
+                // Place item (without HGLoot NBT tag so the player gets a clean item).
+                ItemStack placed = chosen.copy();
+                if (placed.hasTagCompound()) placed.getTagCompound().removeTag("HGLoot");
+                placed.setCount(count);
+                // Remove display name override from the HGLoot entry if there is one,
+                // restoring the item's natural name on the placed stack.
+                if (placed.hasTagCompound() && placed.getTagCompound().hasKey("display")) {
+                    placed.getTagCompound().getCompoundTag("display").removeTag("Name");
+                }
+                chest.setInventorySlotContents(slot, placed);
+                usedSlots.add(slot);
+
+                // Update spawn counts.
+                globalSpawned.put(chosen, globalSpawned.getOrDefault(chosen, 0) + 1);
+                perChestSpawned.put(chosen, perChestSpawned.getOrDefault(chosen, 0) + 1);
             }
         }
     }
 
     // -------------------------------------------------------------------------
-    // Scoreboard — uses the server's ServerScoreboard so packet sending is
-    // handled automatically for all connected clients.
+    // Scoreboard — uses a match-local Scoreboard so packets never reach players
+    // outside this match.  All packets are sent manually to match participants.
     // -------------------------------------------------------------------------
 
     private void initScoreboard(MinecraftServer server) {
         boardObjName = "hg" + matchId; // ≤16 chars
-        Scoreboard sb = server.getEntityWorld().getScoreboard();
 
-        ScoreObjective old = sb.getObjective(boardObjName);
-        if (old != null) sb.removeObjective(old);
+        ScoreObjective old = localBoard.getObjective(boardObjName);
+        if (old != null) localBoard.removeObjective(old);
 
         ScoreCriteria criteria = new ScoreCriteria("hg_" + boardObjName);
-        boardObjective = sb.addScoreObjective(boardObjName, criteria);
+        boardObjective = localBoard.addScoreObjective(boardObjName, criteria);
         boardObjective.setDisplayName(TextFormatting.GOLD + "The Hero Games");
+
+        // Send the objective creation packet to all participants.
+        SPacketScoreboardObjective addObjPacket = new SPacketScoreboardObjective(boardObjective, 0);
+        for (EntityPlayerMP p : getAllPresentPlayers(server)) p.connection.sendPacket(addObjPacket);
 
         lastSbState.clear();
         syncScoreboard(server);
@@ -473,13 +628,12 @@ public class HungerGamesMatch {
     }
 
     /**
-     * Diffs and syncs the scoreboard with the server scoreboard.
-     * Stale entry names (e.g. player died, phase changed) force a full rebuild
-     * of the objective to clear them from client displays.
+     * Diffs and syncs the local scoreboard, pushing packets only to match participants.
+     * Stale entry names (e.g. player died, phase changed) force a full rebuild so
+     * old entries are cleared from the client sidebar.
      */
     private void syncScoreboard(MinecraftServer server) {
         if (boardObjective == null) return;
-        Scoreboard sb = server.getEntityWorld().getScoreboard();
         Map<String, Integer> newState = buildSbState();
 
         boolean firstSync = lastSbState.isEmpty();
@@ -488,26 +642,36 @@ public class HungerGamesMatch {
             if (!newState.containsKey(name)) { staleExists = true; break; }
         }
 
+        List<EntityPlayerMP> participants = getAllPresentPlayers(server);
+
         if (staleExists) {
-            sb.removeObjective(boardObjective);
+            // Remove old objective on all clients, then re-create it.
+            SPacketScoreboardObjective removeObjPacket = new SPacketScoreboardObjective(boardObjective, 1);
+            for (EntityPlayerMP p : participants) p.connection.sendPacket(removeObjPacket);
+
+            localBoard.removeObjective(boardObjective);
             ScoreCriteria criteria = new ScoreCriteria("hg_" + boardObjName);
-            boardObjective = sb.addScoreObjective(boardObjName, criteria);
+            boardObjective = localBoard.addScoreObjective(boardObjName, criteria);
             boardObjective.setDisplayName(TextFormatting.GOLD + "The Hero Games");
-            for (Map.Entry<String, Integer> e : newState.entrySet())
-                sb.getOrCreateScore(e.getKey(), boardObjective).setScorePoints(e.getValue());
-        } else if (firstSync) {
-            for (Map.Entry<String, Integer> e : newState.entrySet())
-                sb.getOrCreateScore(e.getKey(), boardObjective).setScorePoints(e.getValue());
-        } else {
-            for (Map.Entry<String, Integer> e : newState.entrySet()) {
-                Integer prev = lastSbState.get(e.getKey());
-                if (!e.getValue().equals(prev))
-                    sb.getOrCreateScore(e.getKey(), boardObjective).setScorePoints(e.getValue());
+
+            SPacketScoreboardObjective addObjPacket = new SPacketScoreboardObjective(boardObjective, 0);
+            for (EntityPlayerMP p : participants) p.connection.sendPacket(addObjPacket);
+        }
+
+        // Push score updates for changed (or all, on first sync) entries.
+        for (Map.Entry<String, Integer> e : newState.entrySet()) {
+            if (firstSync || staleExists || !e.getValue().equals(lastSbState.get(e.getKey()))) {
+                net.minecraft.scoreboard.Score score = localBoard.getOrCreateScore(e.getKey(), boardObjective);
+                score.setScorePoints(e.getValue());
+                // SPacketUpdateScore(Score) uses Action.CHANGE automatically.
+                SPacketUpdateScore scorePacket = new SPacketUpdateScore(score);
+                for (EntityPlayerMP p : participants) p.connection.sendPacket(scorePacket);
             }
         }
 
-        // Always re-push the display packet to players currently in the HG dimension.
-        // This recovers from dimension-change resets on the client side.
+        // Always re-push the display-in-sidebar packet.  This also handles newly joined
+        // spectators and players who just changed dimension (dimension changes reset the
+        // client-side scoreboard display slot).
         if (boardObjective != null) {
             SPacketDisplayObjective display = new SPacketDisplayObjective(1, boardObjective);
             for (UUID id : playerOrder) {
@@ -526,19 +690,35 @@ public class HungerGamesMatch {
 
     private void cleanupScoreboard(MinecraftServer server) {
         if (boardObjective == null) return;
-        // Clear sidebar display for each participant individually
-        SPacketDisplayObjective clearPacket = new SPacketDisplayObjective(1, null);
+        // Remove the objective on every participant's client (clears their sidebar).
+        SPacketScoreboardObjective removePacket = new SPacketScoreboardObjective(boardObjective, 1);
         for (UUID id : playerOrder) {
             EntityPlayerMP p = server.getPlayerList().getPlayerByUUID(id);
-            if (p != null) p.connection.sendPacket(clearPacket);
+            if (p != null) p.connection.sendPacket(removePacket);
         }
         for (UUID id : spectators) {
             EntityPlayerMP p = server.getPlayerList().getPlayerByUUID(id);
-            if (p != null) p.connection.sendPacket(clearPacket);
+            if (p != null) p.connection.sendPacket(removePacket);
         }
-        server.getEntityWorld().getScoreboard().removeObjective(boardObjective);
+        localBoard.removeObjective(boardObjective);
         boardObjective = null;
         lastSbState.clear();
+    }
+
+    /**
+     * Sends the full local scoreboard state (objective definition + all scores +
+     * sidebar display slot) to a single player.  Used when a spectator first joins
+     * so they immediately see the sidebar without waiting for the next syncScoreboard tick.
+     */
+    private void sendScoreboardToPlayer(EntityPlayerMP player) {
+        if (boardObjective == null) return;
+        player.connection.sendPacket(new SPacketScoreboardObjective(boardObjective, 0));
+        for (Map.Entry<String, Integer> e : lastSbState.entrySet()) {
+            net.minecraft.scoreboard.Score score = localBoard.getOrCreateScore(e.getKey(), boardObjective);
+            score.setScorePoints(e.getValue());
+            player.connection.sendPacket(new SPacketUpdateScore(score));
+        }
+        player.connection.sendPacket(new SPacketDisplayObjective(1, boardObjective));
     }
 
     /** Removes this player from the boss bar, clears their sidebar scoreboard, and removes grace-period invulnerability. */
@@ -546,7 +726,7 @@ public class HungerGamesMatch {
         UUID id = player.getUniqueID();
         if (bossBar != null) bossBar.removePlayer(player);
         if (boardObjective != null)
-            player.connection.sendPacket(new SPacketDisplayObjective(1, null));
+            player.connection.sendPacket(new SPacketScoreboardObjective(boardObjective, 1));
         player.setEntityInvulnerable(false);
         if (musicManager != null) musicManager.stopMusicForPlayer(player);
         if (spectatorBatIds.containsKey(id)) removeSpectatorBat(player.getServer(), id);
@@ -578,8 +758,8 @@ public class HungerGamesMatch {
         player.sendPlayerAbilities();
 
         if (bossBar != null) bossBar.addPlayer(player);
-        if (boardObjective != null)
-            player.connection.sendPacket(new SPacketDisplayObjective(1, boardObjective));
+        if (boardObjective != null) sendScoreboardToPlayer(player);
+        sendBorderToPlayer(server, player);
         if (musicManager != null && currentMusicPhase != null && currentMusicTrack != null)
             musicManager.sendSpecificTrack(currentMusicPhase, currentMusicTrack, player);
         spawnSpectatorBat(hgWorld, player, id);
@@ -742,6 +922,10 @@ public class HungerGamesMatch {
         if (musicManager != null) musicManager.stopMusicForAll(getAllPresentPlayers(server));
         for (UUID specId : new ArrayList<>(spectatorBatIds.keySet())) removeSpectatorBat(server, specId);
         cleanupScoreboard(server);
+        // Reset the world border to a safe large value so departing players aren't
+        // damaged and the next match in this dimension slot starts clean.
+        WorldServer hgWorld = server.getWorld(dimensionId);
+        if (hgWorld != null) hgWorld.getWorldBorder().setTransition(60000000);
         if (bossBar != null) {
             for (UUID id : playerOrder) {
                 EntityPlayerMP p = server.getPlayerList().getPlayerByUUID(id);
@@ -770,6 +954,38 @@ public class HungerGamesMatch {
     public boolean isActive()   { return phase == GamePhase.COUNTDOWN || phase == GamePhase.GRACE_PERIOD || phase == GamePhase.ACTIVE; }
     public boolean isEnded()    { return phase == GamePhase.ENDING; }
     public boolean isPvPEnabled() { return phase == GamePhase.ACTIVE; }
+
+    /** Announces to all current match participants that a new player joined the lobby. */
+    public void broadcastJoin(MinecraftServer server, String playerName) {
+        broadcastMessage(server, TextFormatting.AQUA + playerName
+            + TextFormatting.GREEN + " joined the lobby! ("
+            + playerOrder.size() + " players)");
+        // Sync scoreboard so new player name appears.
+        syncScoreboard(server);
+    }
+
+    /** True if the match is still in LOBBY phase and has room for more players. */
+    public boolean canLateJoin() {
+        return phase == GamePhase.LOBBY && playerOrder.size() < maxPlayers;
+    }
+
+    /**
+     * Adds a late-joining player into an already-running LOBBY phase.
+     * The player is saved, cleared, teleported to the lobby spawn, given invulnerability,
+     * shown the scoreboard/boss bar, and queued for a spawn point on countdown.
+     * Returns the spawn point assigned to the player (from the round spawn list).
+     */
+    public BlockPos lateJoin(MinecraftServer server, EntityPlayerMP player, BlockPos spawnPoint) {
+        UUID id = player.getUniqueID();
+        cachedNames.put(id, player.getName());
+        addPlayer(id, spawnPoint);
+        player.setEntityInvulnerable(true);
+        if (bossBar != null) bossBar.addPlayer(player);
+        if (boardObjective != null) sendScoreboardToPlayer(player);
+        sendBorderToPlayer(server, player);
+        sendPhaseMusic(server, HungerGamesMusicManager.LOBBY);
+        return spawnPoint;
+    }
 
     // -------------------------------------------------------------------------
     // Game phase enum

@@ -2,24 +2,31 @@ package com.matoon.herosmp.npc;
 
 import com.matoon.herosmp.HeroSMP;
 import net.minecraft.entity.player.EntityPlayerMP;
+import net.minecraftforge.event.entity.EntityTravelToDimensionEvent;
+import java.util.UUID;
 import net.minecraftforge.event.entity.living.LivingAttackEvent;
+import net.minecraftforge.event.entity.living.LivingDeathEvent;
 import net.minecraftforge.event.entity.living.LivingHurtEvent;
 import net.minecraftforge.event.entity.player.PlayerContainerEvent;
 import net.minecraftforge.event.entity.player.PlayerInteractEvent;
 import net.minecraftforge.fml.common.FMLCommonHandler;
-import net.minecraftforge.event.entity.living.LivingDeathEvent;
+import net.minecraftforge.fml.common.eventhandler.EventPriority;
 import net.minecraftforge.fml.common.eventhandler.SubscribeEvent;
 import net.minecraftforge.fml.common.gameevent.PlayerEvent;
 import net.minecraftforge.fml.common.gameevent.TickEvent;
 
 public class PvpQueueEvents {
 
-    @SubscribeEvent
+    @SubscribeEvent(priority = EventPriority.HIGH)
     public void onDeath(LivingDeathEvent event) {
         if (!(event.getEntityLiving() instanceof EntityPlayerMP)) {
             return;
         }
-        HeroSMP.PVP_QUEUE_MANAGER.handlePlayerDeath((EntityPlayerMP) event.getEntityLiving());
+        try {
+            HeroSMP.PVP_QUEUE_MANAGER.handlePlayerDeath((EntityPlayerMP) event.getEntityLiving());
+        } catch (Exception e) {
+            System.err.println("[HeroSMP] Exception in PVP death handler: " + e.getMessage());
+        }
     }
 
     @SubscribeEvent
@@ -74,6 +81,29 @@ public class PvpQueueEvents {
         }
     }
 
+    /**
+     * Prevent players in a PVP match from leaving to another dimension via items
+     * like the Heroes Expansion Tesseract.  Cancelling this event stops the
+     * dimension change before it happens, keeping the arena fully contained.
+     */
+    @SubscribeEvent(priority = EventPriority.HIGH)
+    public void onDimensionTravel(EntityTravelToDimensionEvent event) {
+        if (!(event.getEntity() instanceof EntityPlayerMP)) {
+            return;
+        }
+        EntityPlayerMP player = (EntityPlayerMP) event.getEntity();
+        UUID playerId = player.getUniqueID();
+        if (HeroSMP.PVP_QUEUE_MANAGER.isPlayerInPvpSession(playerId)) {
+            // Allow the initial teleport into the arena (player is in pending arrivals).
+            if (HeroSMP.PVP_QUEUE_MANAGER.isPendingArenaArrival(playerId)) {
+                return;
+            }
+            event.setCanceled(true);
+            player.sendMessage(new net.minecraft.util.text.TextComponentString(
+                net.minecraft.util.text.TextFormatting.RED + "You cannot leave the arena during a match!"));
+        }
+    }
+
     @SubscribeEvent
     public void onLivingAttack(LivingAttackEvent event) {
         if (HeroSMP.PVP_QUEUE_MANAGER.isSpectatorBat(event.getEntity())) {
@@ -96,6 +126,7 @@ public class PvpQueueEvents {
         if (FMLCommonHandler.instance().getMinecraftServerInstance() != null) {
             HeroSMP.PVP_QUEUE_MANAGER.tickMatchProgress(FMLCommonHandler.instance().getMinecraftServerInstance());
             HeroSMP.PVP_QUEUE_MANAGER.tickArenaSafety(FMLCommonHandler.instance().getMinecraftServerInstance());
+            HeroSMP.PVP_QUEUE_MANAGER.tickDimensionEscapeCheck(FMLCommonHandler.instance().getMinecraftServerInstance());
             HeroSMP.PVP_QUEUE_MANAGER.tickCleanup(FMLCommonHandler.instance().getMinecraftServerInstance());
         }
     }
