@@ -2,9 +2,16 @@ package com.matoon.herosmp.client;
 
 import com.matoon.herosmp.CommonProxy;
 import com.matoon.herosmp.events.EventHandler;
+import com.matoon.herosmp.hungergames.music.HungerGamesMusicResourcePack;
 import com.matoon.herosmp.registry.ModEntities;
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.resources.IResourcePack;
 import net.minecraftforge.common.MinecraftForge;
 import net.minecraftforge.fml.common.event.FMLPreInitializationEvent;
+import net.minecraftforge.fml.relauncher.ReflectionHelper;
+
+import java.io.File;
+import java.util.List;
 
 public class ClientProxy extends CommonProxy {
     @Override
@@ -12,5 +19,15 @@ public class ClientProxy extends CommonProxy {
         super.preInit(event);
         ModEntities.registerRenderers();
         MinecraftForge.EVENT_BUS.register(new EventHandler());
+
+        File musicDir = new File(event.getModConfigurationDirectory().getParentFile(), "herosmp_hg_music");
+        try {
+            List<IResourcePack> packs = ReflectionHelper.getPrivateValue(
+                Minecraft.class, Minecraft.getMinecraft(),
+                "defaultResourcePacks", "field_110449_ao");
+            packs.add(new HungerGamesMusicResourcePack(musicDir));
+        } catch (ReflectionHelper.UnableToFindFieldException e) {
+            e.printStackTrace();
+        }
     }
 }

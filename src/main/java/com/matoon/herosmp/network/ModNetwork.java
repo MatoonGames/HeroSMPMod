@@ -20,5 +20,6 @@ public final class ModNetwork {
         CHANNEL.registerMessage(PacketPvpMenuAction.Handler.class, PacketPvpMenuAction.class, id++, Side.SERVER);
         CHANNEL.registerMessage(PacketOpenNpcEditor.Handler.class, PacketOpenNpcEditor.class, id++, Side.CLIENT);
         CHANNEL.registerMessage(PacketSaveNpcEditor.Handler.class, PacketSaveNpcEditor.class, id++, Side.SERVER);
+        CHANNEL.registerMessage(PacketHGMusicControl.Handler.class, PacketHGMusicControl.class, id++, Side.CLIENT);
     }
 }

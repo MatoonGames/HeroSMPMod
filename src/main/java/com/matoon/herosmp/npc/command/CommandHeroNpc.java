@@ -40,7 +40,7 @@ public class CommandHeroNpc extends CommandBase {
 
     @Override
     public String getUsage(ICommandSender sender) {
-        return "/heropvp spawn <x> <y> <z> <skinOwner> <name...> | mode <npcKey> <command|pvp_queue> | setcommand <npcKey> <command...> | info <npcKey> | kit <create|remove|list> ... | lootmenu | debugsolo | debugexit | roundtime <seconds>";
+        return "/heropvp spawn <x> <y> <z> <skinOwner> <name...> | mode <npcKey> <command|pvp_queue> | setcommand <npcKey> <command...> | info <npcKey> | kit <create|remove|list> ... | lootmenu | debugsolo | debugexit | roundtime <seconds> | hg debug <configuremap <map>|endconfigure|solo>";
     }
 
     @Override
@@ -82,6 +82,9 @@ public class CommandHeroNpc extends CommandBase {
                 return;
             case "roundtime":
                 handleRoundTime(server, sender, args);
+                return;
+            case "hg":
+                handleHg(server, sender, args);
                 return;
             default:
                 throw new WrongUsageException(getUsage(sender));
@@ -234,6 +237,53 @@ public class CommandHeroNpc extends CommandBase {
         HeroSMP.PVP_QUEUE_MANAGER.exitDebugSoloMatch(player);
     }
 
+    private void handleHg(MinecraftServer server, ICommandSender sender, String[] args) throws CommandException {
+        if (args.length >= 3 && "debug".equalsIgnoreCase(args[1])) {
+            EntityPlayerMP player = getPlayerSender(sender);
+            String sub = args[2].toLowerCase(Locale.ROOT);
+            if ("configuremap".equals(sub) && args.length >= 4) {
+                try {
+                    HeroSMP.HUNGER_GAMES_MANAGER.startConfigureMapSession(server, player, buildString(args, 3));
+                } catch (Exception e) {
+                    e.printStackTrace();
+                    throw new CommandException("configuremap failed: " + e.getClass().getSimpleName() + ": " + e.getMessage());
+                }
+                return;
+            }
+            if ("endconfigure".equals(sub)) {
+                try {
+                    HeroSMP.HUNGER_GAMES_MANAGER.endConfigureMapSession(server, player, true);
+                } catch (Exception e) {
+                    e.printStackTrace();
+                    throw new CommandException("endconfigure failed: " + e.getClass().getSimpleName() + ": " + e.getMessage());
+                }
+                return;
+            }
+            if ("solo".equals(sub)) {
+                try {
+                    HeroSMP.HUNGER_GAMES_MANAGER.startSoloMatch(server, player);
+                } catch (Exception e) {
+                    e.printStackTrace();
+                    throw new CommandException("solo failed: " + e.getClass().getSimpleName() + ": " + e.getMessage());
+                }
+                return;
+            }
+            if ("listmaps".equals(sub)) {
+                java.util.List<String> maps = HeroSMP.HUNGER_GAMES_MANAGER.getAvailableMaps(server);
+                if (maps.isEmpty()) {
+                    sender.sendMessage(new TextComponentString("No HG maps found. Drop world folders into herosmp_hg_maps/."));
+                } else {
+                    sender.sendMessage(new TextComponentString("HG maps (" + maps.size() + "):"));
+                    for (String map : maps) {
+                        sender.sendMessage(new TextComponentString("  - " + map));
+                    }
+                }
+                return;
+            }
+        }
+        sender.sendMessage(new TextComponentString("Usage: /heropvp hg debug <configuremap <map>|endconfigure|solo|listmaps>"));
+    }
+
     private void handleRoundTime(MinecraftServer server, ICommandSender sender, String[] args) throws CommandException {
         if (args.length != 2) {
             throw new WrongUsageException("/heropvp roundtime <seconds>");
@@ -309,7 +359,15 @@ public class CommandHeroNpc extends CommandBase {
     @Override
     public List<String> getTabCompletions(MinecraftServer server, ICommandSender sender, String[] args, @Nullable BlockPos targetPos) {
         if (args.length == 1) {
-            return getListOfStringsMatchingLastWord(args, Arrays.asList("spawn", "mode", "setcommand", "info", "kit", "lootmenu", "debugsolo", "debugexit", "roundtime"));
+            return getListOfStringsMatchingLastWord(args, Arrays.asList("spawn", "mode", "setcommand", "info", "kit", "lootmenu", "debugsolo", "debugexit", "roundtime", "hg"));
+        }
+
+        if (args.length == 2 && "hg".equalsIgnoreCase(args[0])) {
+            return getListOfStringsMatchingLastWord(args, Collections.singletonList("debug"));
+        }
+
+        if (args.length == 3 && "hg".equalsIgnoreCase(args[0]) && "debug".equalsIgnoreCase(args[1])) {
+            return getListOfStringsMatchingLastWord(args, Arrays.asList("configuremap", "endconfigure", "solo", "listmaps"));
         }
 
         if (args.length == 2 && "kit".equalsIgnoreCase(args[0])) {

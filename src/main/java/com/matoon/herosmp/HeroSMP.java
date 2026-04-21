@@ -1,5 +1,7 @@
 package com.matoon.herosmp;
 
+import com.matoon.herosmp.hungergames.HungerGamesWorldManager;
+import com.matoon.herosmp.integration.LucraftCoreIntegration;
 import com.matoon.herosmp.npc.PvpQueueManager;
 import com.matoon.herosmp.npc.command.CommandHeroNpc;
 import com.matoon.herosmp.npc.command.CommandPvpMenu;
@@ -9,6 +11,7 @@ import com.matoon.herosmp.npc.loot.PvpChestLootManager;
 import net.minecraftforge.common.config.Configuration;
 import net.minecraftforge.fml.common.Mod;
 import net.minecraftforge.fml.common.SidedProxy;
+import net.minecraftforge.fml.common.event.FMLInitializationEvent;
 import net.minecraftforge.fml.common.event.FMLPreInitializationEvent;
 import net.minecraftforge.fml.common.event.FMLServerStartingEvent;
 
@@ -24,6 +27,7 @@ public class HeroSMP {
     public static final PvpQueueManager PVP_QUEUE_MANAGER = new PvpQueueManager();
     public static final KitManager KIT_MANAGER = new KitManager();
     public static final PvpChestLootManager PVP_CHEST_LOOT_MANAGER = new PvpChestLootManager();
+    public static final HungerGamesWorldManager HUNGER_GAMES_MANAGER = new HungerGamesWorldManager();
 
     public static Configuration config;
     public static boolean enableGUI = true;
@@ -38,7 +42,20 @@ public class HeroSMP {
         File configFile = new File(event.getModConfigurationDirectory(), MODID + ".cfg");
         config = new Configuration(configFile);
         loadConfig();
+
+        File mapsDir = new File(event.getModConfigurationDirectory().getParentFile(), "herosmp_hg_maps");
+        HUNGER_GAMES_MANAGER.initMapsDirectory(mapsDir);
+
+        File musicDir = new File(event.getModConfigurationDirectory().getParentFile(), "herosmp_hg_music");
+        HUNGER_GAMES_MANAGER.initMusicDirectory(musicDir);
+
         proxy.preInit(event);
+        LucraftCoreIntegration.preInit(event);
+    }
+
+    @Mod.EventHandler
+    public void init(FMLInitializationEvent event) {
+        LucraftCoreIntegration.init(event);
     }
 
     @Mod.EventHandler
@@ -49,6 +66,7 @@ public class HeroSMP {
         event.registerServerCommand(new CommandHeroNpc());
         event.registerServerCommand(new CommandReturn());
         event.registerServerCommand(new CommandPvpMenu());
+        event.registerServerCommand(new com.matoon.herosmp.hungergames.command.CommandHungerGames());
     }
 
     public static void loadConfig() {

@@ -1140,7 +1140,7 @@ public class PvpQueueManager {
         int chunkZ = z >> 4;
         for (int dx = -radiusChunks; dx <= radiusChunks; dx++) {
             for (int dz = -radiusChunks; dz <= radiusChunks; dz++) {
-                world.getChunkFromChunkCoords(chunkX + dx, chunkZ + dz);
+                world.getChunk(chunkX + dx, chunkZ + dz);
             }
         }
     }
@@ -1148,7 +1148,7 @@ public class PvpQueueManager {
     private void preGenerateEntireArena(WorldServer world, ArenaSlot slot) {
         for (int chunkX = slot.minChunkX; chunkX <= slot.maxChunkX; chunkX++) {
             for (int chunkZ = slot.minChunkZ; chunkZ <= slot.maxChunkZ; chunkZ++) {
-                world.getChunkFromChunkCoords(chunkX, chunkZ);
+                world.getChunk(chunkX, chunkZ);
             }
         }
     }

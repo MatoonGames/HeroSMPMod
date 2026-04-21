@@ -11,6 +11,6 @@
     "logoFile": "assets/herosmp/logo.png",
     "updateUrl": "",
     "screenshots": [],
-    "dependencies": ["after:mcef"]
+    "dependencies": ["required-after:lucraft_core", "required-after:heroesexpansion", "required-after:infinity"]
   }
 ]

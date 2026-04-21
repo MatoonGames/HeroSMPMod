@@ -1,5 +1,6 @@
 package com.matoon.herosmp;
 
+import com.matoon.herosmp.hungergames.events.HungerGamesEvents;
 import com.matoon.herosmp.npc.PvpQueueEvents;
 import com.matoon.herosmp.npc.command.CommandHeroNpc;
 import com.matoon.herosmp.npc.command.CommandPvpMenu;
@@ -15,6 +16,7 @@ public class CommonProxy {
         ModEntities.registerEntities();
         ModNetwork.init();
         MinecraftForge.EVENT_BUS.register(new PvpQueueEvents());
+        MinecraftForge.EVENT_BUS.register(new HungerGamesEvents());
     }
 
     public void serverStarting(FMLServerStartingEvent event) {

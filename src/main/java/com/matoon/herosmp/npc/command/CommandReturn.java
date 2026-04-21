@@ -35,6 +35,9 @@ public class CommandReturn extends CommandBase {
         if (!(entity instanceof EntityPlayerMP)) {
             throw new CommandException("This command can only be used by a player.");
         }
-        HeroSMP.PVP_QUEUE_MANAGER.handleReturnCommand((EntityPlayerMP) entity);
+        EntityPlayerMP player = (EntityPlayerMP) entity;
+        if (!HeroSMP.HUNGER_GAMES_MANAGER.tryReturnPlayer(server, player)) {
+            HeroSMP.PVP_QUEUE_MANAGER.handleReturnCommand(player);
+        }
     }
 }

@@ -58,7 +58,7 @@ public class RenderStaticNpc extends RenderBiped<EntityStaticNpc> {
         }
 
         GameProfile requested = new GameProfile((UUID) null, skinOwner);
-        GameProfile resolved = TileEntitySkull.updateGameprofile(requested);
+        GameProfile resolved = TileEntitySkull.updateGameProfile(requested);
         UUID profileId = resolved != null && resolved.getId() != null
                 ? resolved.getId()
                 : UUID.nameUUIDFromBytes(("OfflinePlayer:" + skinOwner).getBytes(java.nio.charset.StandardCharsets.UTF_8));

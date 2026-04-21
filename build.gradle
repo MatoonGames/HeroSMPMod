@@ -2,12 +2,14 @@ buildscript {
     repositories {
         jcenter()
         maven { url = "http://files.minecraftforge.net/maven" }
+        mavenCentral()
     }
     dependencies {
         classpath 'net.minecraftforge.gradle:ForgeGradle:2.3-SNAPSHOT'
     }
 }
 apply plugin: 'net.minecraftforge.gradle.forge'
+
 //Only edit below this line, the above code adds and enables the necessary things for Forge to be setup.
 
 version="1.0"
@@ -20,7 +22,7 @@ compileJava {
 }
 
 minecraft {
-    version = "1.12.2-14.23.5.2811"
+    version = "1.12.2-14.23.5.2847"
     runDir = "run"
 
     // the mappings can be changed at any time, and must be in the following format.
@@ -28,7 +30,7 @@ minecraft {
     // stable_#            stables are built at the discretion of the MCP team.
     // Use non-default mappings at your own risk. they may not always work.
     // simply re-run your setup task after changing the mappings to update your workspace.
-    mappings = "snapshot_20171003"
+    mappings = "snapshot_20180814"
     // makeObfSourceJar = false // an Srg named sources jar is made by default. uncomment this to disable.
 
 
@@ -66,7 +68,9 @@ repositories {
 
 dependencies {
 
-    compile files('libs/mcef-deobf.jar')
+    compile files('libs/LucraftCore-deobf.jar')
+    compile files('libs/HeroesExpansion-deobf.jar')
+    compile files('libs/InfinityCraft-deobf.jar')
 
     // deobfProvided "refinedstorage:refinedstorage:${rs_version}:deobf"
 
