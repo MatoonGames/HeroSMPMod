@@ -1,49 +1,60 @@
 package com.matoon.herosmp.hungergames.map;
 
+import net.minecraft.entity.player.EntityPlayer;
+import net.minecraft.entity.player.InventoryPlayer;
 import net.minecraft.init.Blocks;
 import net.minecraft.init.Items;
+import net.minecraft.inventory.Container;
 import net.minecraft.inventory.InventoryBasic;
 import net.minecraft.item.ItemStack;
+import net.minecraft.nbt.NBTTagCompound;
+import net.minecraft.nbt.NBTTagList;
+import net.minecraft.nbt.NBTTagString;
+import net.minecraft.world.IInteractionObject;
+import net.minecraft.util.text.ITextComponent;
+import net.minecraft.util.text.TextComponentString;
 import net.minecraft.util.text.TextFormatting;
 
 import java.util.ArrayList;
 import java.util.List;
-import java.util.function.Consumer;
 
 /**
- * Tabbed chest inventory for the HG loot pool editor.
+ * Tabbed, paged chest inventory for the HG loot pool editor.
  *
- * Row 0 layout (slots 0–8):
- *   0 = Phase 1 tab      (Book)
- *   1 = Phase 2 tab      (Book)
- *   2 = Phase 3 tab      (Book)
- *   3 = All Phases tab   (Book)
- *   4–7 = Gray glass pane fillers
- *   8 = Staging slot — drag an item here, close the chest, and the property editor opens.
+ * Row 0 (slots 0-8):
+ *   0-3  = Phase tab buttons — click to switch tab
+ *   4-8  = Gray glass pane fillers
  *
- * Rows 1–5 (slots 9–53): 45 editable loot item slots for the active tab.
- *
- * Tab switching is triggered by the WorldManager when it detects a tab button click
- * (the manager intercepts `setInventorySlotContents` calls from slot 0–3).
+ * Rows 1-5 (slots 9-53):
+ *   9-50 = Loot item grid (42 slots per page, 6 rows × 7 cols + partial)
+ *          Actually laid out as 42 sequential slots across the 5 rows,
+ *          leaving the last 3 slots of the last row for pagination.
+ *   51   = Previous page button
+ *   52   = Page indicator (read-only)
+ *   53   = Next page button
  */
-public class HungerGamesMapLootInventory extends InventoryBasic {
+public class HungerGamesMapLootInventory extends InventoryBasic implements IInteractionObject {
 
-    public static final int SIZE = 54;
-    public static final int GRID_START = 9;  // first editable slot
-    public static final int GRID_SIZE  = 45; // rows 1–5
+    public static final int SIZE        = 54;
+    public static final int GRID_START  = 9;
+    public static final int PAGE_SIZE   = 42;   // slots 9-50 are the grid
+    public static final int SLOT_PREV   = 51;
+    public static final int SLOT_PAGE   = 52;
+    public static final int SLOT_NEXT   = 53;
 
-    private static final String[] TAB_NAMES = { "Phase 1", "Phase 2", "Phase 3", "All Phases" };
+    // Keep GRID_SIZE as legacy alias so WorldManager compile doesn't break
+    public static final int GRID_SIZE   = PAGE_SIZE;
+
+    private static final String[] TAB_NAMES = {"Phase 1", "Phase 2", "Phase 3", "All Phases"};
 
     private final String mapName;
-    private int activeTab = 0; // 0=Phase1, 1=Phase2, 2=Phase3, 3=AllPhases
+    private int activeTab = 0;
 
-    // In-memory contents for each tab (items only, not the tab buttons / fillers).
+    // One page index per tab so switching tabs remembers the position.
+    private final int[] tabPage = new int[4];
+
     @SuppressWarnings("unchecked")
     private final List<ItemStack>[] tabContents = new List[4];
-
-    // Called when a player clicks a tab button (slots 0–3). The consumer receives
-    // the new tab index so the WorldManager can refresh the client-side inventory.
-    private Consumer<Integer> tabClickCallback = null;
 
     public HungerGamesMapLootInventory(String mapName) {
         super("HG Loot Pool: " + mapName, false, SIZE);
@@ -53,34 +64,12 @@ public class HungerGamesMapLootInventory extends InventoryBasic {
         refreshGrid();
     }
 
-    public void setTabClickCallback(Consumer<Integer> callback) {
-        this.tabClickCallback = callback;
+    // IInteractionObject
+    @Override public Container createContainer(InventoryPlayer playerInv, EntityPlayer player) {
+        return new HungerGamesLootContainer(playerInv, this);
     }
-
-    /**
-     * Intercept slot writes from the container so we can detect when a player
-     * clicks a tab button (slots 0–3) or a filler/staging slot (4–8).
-     * The container calls setInventorySlotContents when the player picks up or
-     * places an item in a slot. When the player clicks a tab button that has no
-     * item on their cursor, vanilla swaps the cursor (empty) into the slot, which
-     * triggers this method with an empty stack — we use that to switch tabs.
-     */
-    @Override
-    public void setInventorySlotContents(int index, ItemStack stack) {
-        if (index >= 0 && index <= 3) {
-            // Tab button clicked — switch tab and restore button (ignore the incoming stack).
-            if (tabClickCallback != null) tabClickCallback.accept(index);
-            else setActiveTab(index);
-            buildHeader(); // Ensure header is always restored correctly.
-            return;
-        }
-        if (index >= 4 && index <= 7) {
-            // Filler slot — prevent players from removing the filler panes.
-            return;
-        }
-        // Slots 8–53: normal behaviour (staging slot and loot grid).
-        super.setInventorySlotContents(index, stack);
-    }
+    @Override public String getGuiID() { return "minecraft:container"; }
+    @Override public ITextComponent getDisplayName() { return new TextComponentString(getName()); }
 
     public String getMapName() { return mapName; }
     public int getActiveTab()  { return activeTab; }
@@ -89,10 +78,6 @@ public class HungerGamesMapLootInventory extends InventoryBasic {
     // Loading
     // -------------------------------------------------------------------------
 
-    /**
-     * Populate all four tab contents from saved config data.
-     * Must be called after construction, before opening the GUI.
-     */
     public void loadTabContents(List<ItemStack> p1, List<ItemStack> p2,
                                 List<ItemStack> p3, List<ItemStack> all) {
         copyList(tabContents[0], p1);
@@ -103,13 +88,9 @@ public class HungerGamesMapLootInventory extends InventoryBasic {
     }
 
     // -------------------------------------------------------------------------
-    // Tab switching
+    // Tab / page switching
     // -------------------------------------------------------------------------
 
-    /**
-     * Flush the current grid into the active tab's content list, switch tabs,
-     * then repopulate the grid with the new tab's items.
-     */
     public void setActiveTab(int tab) {
         if (tab < 0 || tab > 3) return;
         flushGridToTab(activeTab);
@@ -118,11 +99,24 @@ public class HungerGamesMapLootInventory extends InventoryBasic {
         buildHeader();
     }
 
+    public void prevPage() {
+        flushGridToTab(activeTab);
+        if (tabPage[activeTab] > 0) tabPage[activeTab]--;
+        refreshGrid();
+    }
+
+    public void nextPage() {
+        flushGridToTab(activeTab);
+        int maxPage = maxPage();
+        if (tabPage[activeTab] < maxPage) tabPage[activeTab]++;
+        refreshGrid();
+    }
+
     // -------------------------------------------------------------------------
-    // Read-back helpers (called by WorldManager on chest close)
+    // Read-back helpers
     // -------------------------------------------------------------------------
 
-    /** Flush in-progress grid edits, then return items for the specified tab. */
+    /** Flush active grid then return all items for the requested tab (all pages). */
     public List<ItemStack> getTabItems(int tab) {
         if (tab == activeTab) flushGridToTab(activeTab);
         List<ItemStack> result = new ArrayList<>();
@@ -132,64 +126,124 @@ public class HungerGamesMapLootInventory extends InventoryBasic {
         return result;
     }
 
-    /**
-     * Returns the item in the staging slot (slot 8) if it is not the empty-marker paper.
-     * Returns ItemStack.EMPTY if nothing meaningful is staged.
-     */
-    public ItemStack getStagingItem() {
-        ItemStack staged = getStackInSlot(8);
-        if (staged.isEmpty() || staged.getItem() == Items.PAPER) return ItemStack.EMPTY;
-        return staged.copy();
+    // -------------------------------------------------------------------------
+    // Internal
+    // -------------------------------------------------------------------------
+
+    private int maxPage() {
+        int size = tabContents[activeTab].size();
+        return size == 0 ? 0 : (size - 1) / PAGE_SIZE;
     }
 
-    /** Reset the staging slot to its empty-marker state. */
-    public void clearStaging() {
-        super.setInventorySlotContents(8, makeStagingMarker());
+    private int pageOffset() {
+        return tabPage[activeTab] * PAGE_SIZE;
     }
-
-    // -------------------------------------------------------------------------
-    // Internal helpers
-    // -------------------------------------------------------------------------
 
     private void buildHeader() {
         for (int i = 0; i < 4; i++) {
             ItemStack tab = new ItemStack(Items.BOOK);
-            if (i == activeTab) {
-                tab.setStackDisplayName(TextFormatting.GOLD + "[" + TAB_NAMES[i] + "]");
-            } else {
-                tab.setStackDisplayName(TextFormatting.GRAY + TAB_NAMES[i]);
-            }
+            tab.setStackDisplayName(i == activeTab
+                    ? TextFormatting.GOLD + "[" + TAB_NAMES[i] + "]"
+                    : TextFormatting.GRAY + TAB_NAMES[i]);
             super.setInventorySlotContents(i, tab);
         }
-        // Filler glass panes (slots 4–7)
-        ItemStack filler = new ItemStack(Blocks.STAINED_GLASS_PANE, 1, 7); // gray
-        filler.setStackDisplayName(TextFormatting.DARK_GRAY + " ");
-        for (int i = 4; i <= 7; i++) super.setInventorySlotContents(i, filler.copy());
-        // Staging slot (slot 8)
-        super.setInventorySlotContents(8, makeStagingMarker());
-    }
-
-    private static ItemStack makeStagingMarker() {
-        ItemStack marker = new ItemStack(Items.PAPER);
-        marker.setStackDisplayName(TextFormatting.YELLOW + "Place item here → close to edit properties");
-        return marker;
+        ItemStack filler = makeFiller();
+        for (int i = 4; i <= 8; i++) super.setInventorySlotContents(i, filler.copy());
     }
 
     private void refreshGrid() {
         List<ItemStack> items = tabContents[activeTab];
-        for (int i = 0; i < GRID_SIZE; i++) {
+        int offset = pageOffset();
+        for (int i = 0; i < PAGE_SIZE; i++) {
+            int listIdx = offset + i;
             super.setInventorySlotContents(GRID_START + i,
-                i < items.size() ? items.get(i).copy() : ItemStack.EMPTY);
+                    listIdx < items.size() ? items.get(listIdx).copy() : ItemStack.EMPTY);
+        }
+        buildPaginationRow();
+    }
+
+    private void buildPaginationRow() {
+        int page    = tabPage[activeTab];
+        int maxPage = maxPage();
+
+        // Previous page
+        if (page > 0) {
+            ItemStack prev = new ItemStack(Items.ARROW);
+            prev.setStackDisplayName(TextFormatting.YELLOW + "◄ Previous Page");
+            addLore(prev, TextFormatting.GRAY + "Page " + page + " of " + (maxPage + 1));
+            super.setInventorySlotContents(SLOT_PREV, prev);
+        } else {
+            super.setInventorySlotContents(SLOT_PREV, makeFiller());
+        }
+
+        // Page indicator
+        ItemStack indicator = new ItemStack(Items.MAP);
+        indicator.setStackDisplayName(TextFormatting.WHITE + "Page " + (page + 1) + " / " + (maxPage + 1));
+        int total = tabContents[activeTab].size();
+        addLore(indicator,
+                TextFormatting.GRAY + "Showing items " + (pageOffset() + 1)
+                        + "-" + Math.min(pageOffset() + PAGE_SIZE, total)
+                        + " of " + total);
+        super.setInventorySlotContents(SLOT_PAGE, indicator);
+
+        // Next page
+        if (page < maxPage) {
+            ItemStack next = new ItemStack(Items.ARROW);
+            next.setStackDisplayName(TextFormatting.YELLOW + "Next Page ►");
+            addLore(next, TextFormatting.GRAY + "Page " + (page + 2) + " of " + (maxPage + 1));
+            super.setInventorySlotContents(SLOT_NEXT, next);
+        } else {
+            super.setInventorySlotContents(SLOT_NEXT, makeFiller());
         }
     }
 
+    /**
+     * Flush the visible page of the grid back into tabContents.
+     * Items outside the current page are untouched.
+     */
     private void flushGridToTab(int tab) {
         List<ItemStack> list = tabContents[tab];
-        list.clear();
-        for (int i = 0; i < GRID_SIZE; i++) {
+        int offset = tabPage[tab] * PAGE_SIZE;
+
+        // Extend the list if needed.
+        while (list.size() < offset) list.add(ItemStack.EMPTY);
+
+        // Overwrite exactly the page range.
+        for (int i = 0; i < PAGE_SIZE; i++) {
             ItemStack s = getStackInSlot(GRID_START + i);
-            if (!s.isEmpty()) list.add(s.copy());
+            int listIdx = offset + i;
+            if (listIdx < list.size()) {
+                list.set(listIdx, s.copy());
+            } else if (!s.isEmpty()) {
+                list.add(s.copy());
+            }
         }
+
+        // Strip trailing empty entries.
+        for (int i = list.size() - 1; i >= 0; i--) {
+            if (list.get(i).isEmpty()) list.remove(i);
+            else break;
+        }
+    }
+
+    // -------------------------------------------------------------------------
+    // Helpers
+    // -------------------------------------------------------------------------
+
+    private static ItemStack makeFiller() {
+        ItemStack f = new ItemStack(Blocks.STAINED_GLASS_PANE, 1, 7);
+        f.setStackDisplayName(TextFormatting.DARK_GRAY + " ");
+        return f;
+    }
+
+    private static void addLore(ItemStack stack, String... lines) {
+        NBTTagCompound tag = stack.hasTagCompound() ? stack.getTagCompound() : new NBTTagCompound();
+        NBTTagCompound display = tag.hasKey("display") ? tag.getCompoundTag("display") : new NBTTagCompound();
+        NBTTagList lore = new NBTTagList();
+        for (String line : lines) lore.appendTag(new NBTTagString(line));
+        display.setTag("Lore", lore);
+        tag.setTag("display", display);
+        stack.setTagCompound(tag);
     }
 
     private static void copyList(List<ItemStack> target, List<ItemStack> source) {

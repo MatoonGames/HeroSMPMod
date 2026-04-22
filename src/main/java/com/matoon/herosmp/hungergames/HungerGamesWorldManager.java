@@ -6,13 +6,9 @@ import com.matoon.herosmp.hungergames.world.HungerGamesWorldProvider;
 import com.matoon.herosmp.npc.pvp.FixedTeleporter;
 import net.minecraft.entity.player.EntityPlayer;
 import net.minecraft.entity.player.EntityPlayerMP;
-import net.minecraft.entity.player.InventoryPlayer;
 import net.minecraft.init.Items;
 import net.minecraft.inventory.Container;
 import net.minecraft.inventory.ContainerChest;
-import net.minecraft.inventory.ContainerRepair;
-import net.minecraft.world.IInteractionObject;
-import net.minecraft.util.text.ITextComponent;
 import net.minecraft.item.ItemStack;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.util.math.BlockPos;
@@ -51,9 +47,7 @@ public class HungerGamesWorldManager {
     private final Map<UUID, Integer>                         spectatorSetupCountdown = new HashMap<>();
     // Players waiting for state restore after changeDimension() completes (2-tick delay).
     private final Map<UUID, Integer>                         pendingHGReturns = new HashMap<>();
-    // Item being edited in the anvil property editor: UUID → ItemStack being edited.
-    private final Map<UUID, ItemStack>                       pendingLootPropertyEdit = new HashMap<>();
-    // The loot inventory currently open for a player (for tab-switch support).
+    // The loot inventory currently open for a player.
     private final Map<UUID, HungerGamesMapLootInventory>     openLootInventories = new HashMap<>();
 
     // Shared lobby dimension — created when the first player queues (if a Lobby map exists).
@@ -476,7 +470,7 @@ public class HungerGamesWorldManager {
         if (LOBBY_MAP_NAME.equals(mapName)) {
             sendMessage(player, TextFormatting.GRAY + "Hotbar: [1] Lobby Spawn");
         } else {
-            sendMessage(player, TextFormatting.GRAY + "Hotbar: [1] Spawns  [2] Lobby  [3] Loot  [4] Map Center  [5] Breakable Blocks");
+            sendMessage(player, TextFormatting.GRAY + "Hotbar: [1] Spawns  [2] Lobby  [3] Loot Pool  [4] Loot Properties  [5] Map Center  [6] Breakable Blocks");
         }
         sendMessage(player, TextFormatting.GRAY + "Use /heropvp hg debug endconfigure to save & exit.");
     }
@@ -558,6 +552,10 @@ public class HungerGamesWorldManager {
                 openLootPoolEditor(player, session);
                 break;
 
+            case "loot_properties":
+                openLootPropertiesEditor(player, session);
+                break;
+
             case "breakable_blocks":
                 openBreakableBlocksEditor(player, session);
                 break;
@@ -619,14 +617,16 @@ public class HungerGamesWorldManager {
         HungerGamesMapLootInventory inv = new HungerGamesMapLootInventory(session.getMapName());
         inv.loadTabContents(cfg.getLootPhase1(), cfg.getLootPhase2(),
                             cfg.getLootPhase3(), cfg.getLootAllPhases());
-        // Wire up tab-switch callback: when a player clicks a tab button, switch
-        // the active tab in the inventory and push the updated contents to the client.
-        inv.setTabClickCallback(tabIndex -> {
-            inv.setActiveTab(tabIndex);
-            if (player.openContainer != null) player.openContainer.detectAndSendChanges();
-        });
         openLootInventories.put(player.getUniqueID(), inv);
         player.displayGUIChest(inv);
+    }
+
+    private void openLootPropertiesEditor(EntityPlayerMP player, HungerGamesConfigureMapSession session) {
+        HungerGamesMapConfig cfg = session.getPendingConfig();
+        HungerGamesLootPropertiesInventory propInv = new HungerGamesLootPropertiesInventory(
+                cfg.getLootPhase1(), cfg.getLootPhase2(),
+                cfg.getLootPhase3(), cfg.getLootAllPhases());
+        player.displayGUIChest(propInv);
     }
 
     private void openBreakableBlocksEditor(EntityPlayerMP player, HungerGamesConfigureMapSession session) {
@@ -639,152 +639,74 @@ public class HungerGamesWorldManager {
     }
 
     public synchronized void handleLootInventoryClose(EntityPlayerMP player, Container container) {
-        if (!(container instanceof ContainerChest)) return;
-        ContainerChest chest = (ContainerChest) container;
         UUID id = player.getUniqueID();
         HungerGamesConfigureMapSession session = configureSessions.get(id);
-        if (session == null) { openLootInventories.remove(id); return; }
 
-        if (chest.getLowerChestInventory() instanceof HungerGamesMapLootInventory) {
-            HungerGamesMapLootInventory inv = (HungerGamesMapLootInventory) chest.getLowerChestInventory();
+        // --- Loot pool chest closed ---
+        if (container instanceof HungerGamesLootContainer) {
+            HungerGamesMapLootInventory inv = ((HungerGamesLootContainer) container).getLootInventory();
             openLootInventories.remove(id);
+            if (session == null) return;
 
-            // Check for a staged item (edit request).
-            ItemStack staged = inv.getStagingItem();
-
-            // Save all four tab pools to config.
             HungerGamesMapConfig cfg = session.getPendingConfig();
             int total = 0;
             List<ItemStack> p1  = inv.getTabItems(0); cfg.setLootPhase1(p1);    total += p1.size();
             List<ItemStack> p2  = inv.getTabItems(1); cfg.setLootPhase2(p2);    total += p2.size();
             List<ItemStack> p3  = inv.getTabItems(2); cfg.setLootPhase3(p3);    total += p3.size();
             List<ItemStack> all = inv.getTabItems(3); cfg.setLootAllPhases(all); total += all.size();
-            sendMessage(player, TextFormatting.GREEN + "Loot pools saved: " + total + " item types across all phases.");
-
-            // Open anvil editor for the staged item after saving.
-            if (!staged.isEmpty()) {
-                openLootEntryEditor(player, staged, session);
-            }
-        } else if (chest.getLowerChestInventory() instanceof HungerGamesMapBreakableInventory) {
-            List<ItemStack> items = new ArrayList<>();
-            for (int i = 0; i < chest.getLowerChestInventory().getSizeInventory(); i++) {
-                ItemStack stack = chest.getLowerChestInventory().getStackInSlot(i);
-                if (!stack.isEmpty()) items.add(stack.copy());
-            }
-            session.getPendingConfig().setBreakableBlocks(items);
-            sendMessage(player, TextFormatting.GREEN + "Breakable blocks updated: " + items.size() + " block types.");
-        }
-    }
-
-    /**
-     * Handle a tab-click inside the loot inventory.
-     * Called from the RightClickBlock / RightClickItem event handler when slot 0–3 is clicked
-     * via the dedicated loot tab handler in HungerGamesEvents.
-     */
-    public synchronized void handleLootTabClick(EntityPlayerMP player, int tabIndex) {
-        HungerGamesMapLootInventory inv = openLootInventories.get(player.getUniqueID());
-        if (inv == null) return;
-        inv.setActiveTab(tabIndex);
-        // Force a client-side inventory update.
-        player.openContainer.detectAndSendChanges();
-    }
-
-    private void openLootEntryEditor(EntityPlayerMP player, ItemStack item,
-                                     HungerGamesConfigureMapSession session) {
-        UUID id = player.getUniqueID();
-        pendingLootPropertyEdit.put(id, item.copy());
-        // Tell the player the current property values so they know what to type.
-        sendMessage(player, TextFormatting.YELLOW + "Anvil opened. Rename the item to set properties:");
-        sendMessage(player, TextFormatting.GRAY + "Format: w:<weight> gmax:<globalMax> cmax:<perChestMax> min:<minCount> max:<maxCount>");
-        sendMessage(player, TextFormatting.AQUA + "Current: " + HungerGamesLootEntry.toAnvilString(item));
-
-        WorldServer world = player.getServer().getWorld(player.dimension);
-        BlockPos pos = player.getPosition();
-        final ItemStack itemCopy = item.copy();
-        final HungerGamesWorldManager mgr = this;
-
-        player.displayGui(new IInteractionObject() {
-            @Override
-            public Container createContainer(InventoryPlayer inv, EntityPlayer p) {
-                ContainerRepair repair = new ContainerRepair(inv, world, pos, (EntityPlayerMP) p) {
-                    @Override
-                    public boolean canInteractWith(EntityPlayer e) { return true; }
-                    @Override
-                    public void onContainerClosed(EntityPlayer e) {
-                        super.onContainerClosed(e);
-                        if (e instanceof EntityPlayerMP) {
-                            mgr.applyLootEntryEdit((EntityPlayerMP) e, getSlot(2).getStack(), session);
-                        }
-                    }
-                };
-                // Prime the input slot with the item to edit.
-                repair.getSlot(0).putStack(itemCopy.copy());
-                return repair;
-            }
-            @Override
-            public String getGuiID() { return "minecraft:anvil"; }
-            @Override
-            public ITextComponent getDisplayName() {
-                return new net.minecraft.util.text.TextComponentString("Edit Loot Entry");
-            }
-            @Override
-            public boolean hasCustomName() { return true; }
-            @Override
-            public String getName() { return "Edit Loot Entry"; }
-        });
-    }
-
-    private synchronized void applyLootEntryEdit(EntityPlayerMP player, ItemStack outputStack,
-                                                  HungerGamesConfigureMapSession session) {
-        UUID id = player.getUniqueID();
-        ItemStack original = pendingLootPropertyEdit.remove(id);
-        if (original == null || session == null) return;
-
-        // If the output slot is empty (player didn't rename), keep original unchanged.
-        ItemStack resultItem = (outputStack != null && !outputStack.isEmpty()) ? outputStack : original;
-
-        // Parse the renamed display name as a property string and apply to the original item.
-        String displayName = resultItem.hasDisplayName() ? resultItem.getDisplayName() : "";
-        ItemStack updated = HungerGamesLootEntry.applyAnvilString(original, displayName);
-
-        // Find and replace the item in the appropriate config phase list.
-        HungerGamesMapConfig cfg = session.getPendingConfig();
-        boolean replaced = replaceInList(cfg, updated, original);
-        if (!replaced) {
-            // Item wasn't found in any pool — add it to All Phases as a fallback.
-            List<ItemStack> all = cfg.getLootAllPhases();
-            all.add(updated);
-            cfg.setLootAllPhases(all);
+            sendMessage(player, TextFormatting.GREEN + "Loot pools saved: " + total + " item types.");
+            giveConfigureTools(player);
+            return;
         }
 
-        sendMessage(player, TextFormatting.GREEN + "Loot entry updated: "
-            + HungerGamesLootEntry.toAnvilString(updated));
+        // --- Loot properties editor closed ---
+        if (container instanceof HungerGamesLootPropertiesContainer) {
+            HungerGamesLootPropertiesInventory propInv =
+                ((HungerGamesLootPropertiesContainer) container).getPropInv();
+            if (session == null) return;
+            // Write all four phase lists back into the config.
+            HungerGamesMapConfig cfg = session.getPendingConfig();
+            cfg.setLootPhase1(propInv.getPhase(0));
+            cfg.setLootPhase2(propInv.getPhase(1));
+            cfg.setLootPhase3(propInv.getPhase(2));
+            cfg.setLootAllPhases(propInv.getPhase(3));
+            sendMessage(player, TextFormatting.GREEN + "Loot properties saved.");
+            giveConfigureTools(player);
+            return;
+        }
 
-        // Re-open the loot editor so the player can continue editing.
-        openLootPoolEditor(player, session);
-    }
-
-    private boolean replaceInList(HungerGamesMapConfig cfg, ItemStack updated, ItemStack original) {
-        // Try each phase list; replace the first matching item (same item type).
-        List<ItemStack>[] phases = new List[] {
-            cfg.getLootPhase1(), cfg.getLootPhase2(), cfg.getLootPhase3(), cfg.getLootAllPhases()
-        };
-        for (int pi = 0; pi < phases.length; pi++) {
-            List<ItemStack> phase = phases[pi];
-            for (int i = 0; i < phase.size(); i++) {
-                if (ItemStack.areItemsEqual(phase.get(i), original)) {
-                    phase.set(i, updated);
-                    switch (pi) {
-                        case 0: cfg.setLootPhase1(phase);    break;
-                        case 1: cfg.setLootPhase2(phase);    break;
-                        case 2: cfg.setLootPhase3(phase);    break;
-                        case 3: cfg.setLootAllPhases(phase); break;
-                    }
-                    return true;
+        // --- Breakable blocks chest closed ---
+        if (container instanceof ContainerChest) {
+            ContainerChest chest = (ContainerChest) container;
+            if (session == null) return;
+            if (chest.getLowerChestInventory() instanceof HungerGamesMapBreakableInventory) {
+                List<ItemStack> items = new ArrayList<>();
+                for (int i = 0; i < chest.getLowerChestInventory().getSizeInventory(); i++) {
+                    ItemStack stack = chest.getLowerChestInventory().getStackInSlot(i);
+                    if (!stack.isEmpty()) items.add(stack.copy());
                 }
+                session.getPendingConfig().setBreakableBlocks(items);
+                sendMessage(player, TextFormatting.GREEN + "Breakable blocks updated: " + items.size() + " block types.");
             }
         }
-        return false;
+    }
+
+    private static List<ItemStack> getPhase(HungerGamesMapConfig cfg, int tab) {
+        switch (tab) {
+            case 0: return cfg.getLootPhase1();
+            case 1: return cfg.getLootPhase2();
+            case 2: return cfg.getLootPhase3();
+            default: return cfg.getLootAllPhases();
+        }
+    }
+
+    private static void setPhase(HungerGamesMapConfig cfg, int tab, List<ItemStack> phase) {
+        switch (tab) {
+            case 0: cfg.setLootPhase1(phase);    break;
+            case 1: cfg.setLootPhase2(phase);    break;
+            case 2: cfg.setLootPhase3(phase);    break;
+            default: cfg.setLootAllPhases(phase); break;
+        }
     }
 
     public boolean isInConfigureMode(UUID playerId) {
@@ -805,10 +727,12 @@ public class HungerGamesWorldManager {
             player.inventory.setInventorySlotContents(1,
                 createConfigTool(new ItemStack(Items.COMPASS),      TextFormatting.AQUA   + "Set Lobby Spawn", "lobby_spawn"));
             player.inventory.setInventorySlotContents(2,
-                createConfigTool(new ItemStack(Items.EMERALD),      TextFormatting.YELLOW + "Loot Pool",        "loot_pool"));
+                createConfigTool(new ItemStack(Items.EMERALD),      TextFormatting.YELLOW + "Loot Pool",       "loot_pool"));
             player.inventory.setInventorySlotContents(3,
-                createConfigTool(new ItemStack(Items.WOODEN_AXE),  TextFormatting.GOLD   + "Set Map Center / Border Range", "map_center"));
+                createConfigTool(new ItemStack(Items.GOLD_NUGGET),  TextFormatting.GOLD   + "Loot Properties", "loot_properties"));
             player.inventory.setInventorySlotContents(4,
+                createConfigTool(new ItemStack(Items.WOODEN_AXE),  TextFormatting.GOLD   + "Set Map Center / Border Range", "map_center"));
+            player.inventory.setInventorySlotContents(5,
                 createConfigTool(new ItemStack(Items.IRON_PICKAXE), TextFormatting.AQUA  + "Breakable Blocks", "breakable_blocks"));
         }
     }
