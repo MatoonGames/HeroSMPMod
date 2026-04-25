@@ -63,9 +63,12 @@ public class PvpQueueEvents {
         }
         EntityPlayerMP player = (EntityPlayerMP) event.getEntityPlayer();
         // Handle PvP injection properties editor close.
-        // Guard: skip if this player is in an HG configure-map session (their GUI belongs to HG).
+        // Only save to the PVP pool if this player actually has a PvP properties editor open.
+        // This prevents HG configure-map injection property editors from being misidentified
+        // as PvP editors (e.g., if the configure session ends while the editor is still open).
         if (event.getContainer() instanceof LucraftInjectionPropertiesContainer
-                && !HeroSMP.HUNGER_GAMES_MANAGER.isInConfigureMode(player.getUniqueID())) {
+                && HeroSMP.PVP_INJECTION_MANAGER.hasPvpPropertiesEditorOpen(player.getUniqueID())) {
+            HeroSMP.PVP_INJECTION_MANAGER.clearPvpPropertiesEditor(player.getUniqueID());
             LucraftInjectionPropertiesContainer c = (LucraftInjectionPropertiesContainer) event.getContainer();
             if (player.getServer() != null) {
                 HeroSMP.PVP_INJECTION_MANAGER.saveFromPropertiesMenu(player.getServer(), c.getPropInv());
@@ -76,9 +79,11 @@ public class PvpQueueEvents {
             return;
         }
         // Handle PvP injection pool editor close.
-        // Guard: skip if this player is in an HG configure-map session (their GUI belongs to HG).
+        // Only save to the PVP pool if this player actually has a PvP injection editor open.
+        // This prevents HG configure-map injection editors from being misidentified as PvP editors.
         if (event.getContainer() instanceof LucraftInjectionContainer
-                && !HeroSMP.HUNGER_GAMES_MANAGER.isInConfigureMode(player.getUniqueID())) {
+                && HeroSMP.PVP_INJECTION_MANAGER.hasPvpInjectionEditorOpen(player.getUniqueID())) {
+            HeroSMP.PVP_INJECTION_MANAGER.clearPvpInjectionEditor(player.getUniqueID());
             LucraftInjectionContainer inv = (LucraftInjectionContainer) event.getContainer();
             if (player.getServer() != null) {
                 List<net.minecraft.item.ItemStack> items = inv.getInjectionInventory().getTabItems(3);

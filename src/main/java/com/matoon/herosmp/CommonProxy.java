@@ -1,5 +1,6 @@
 package com.matoon.herosmp;
 
+import com.matoon.herosmp.events.ArrowEffectHandler;
 import com.matoon.herosmp.hungergames.events.HungerGamesEvents;
 import com.matoon.herosmp.integration.LucraftCoreIntegration;
 import com.matoon.herosmp.npc.PvpQueueEvents;
@@ -8,6 +9,8 @@ import com.matoon.herosmp.npc.command.CommandPvpMenu;
 import com.matoon.herosmp.npc.command.CommandReturn;
 import com.matoon.herosmp.network.ModNetwork;
 import com.matoon.herosmp.registry.ModEntities;
+import com.matoon.herosmp.registry.ModItems;
+import com.matoon.herosmp.registry.ModPotions;
 import com.matoon.herosmp.registry.ModSounds;
 import net.minecraftforge.common.MinecraftForge;
 import net.minecraftforge.fml.common.event.FMLInitializationEvent;
@@ -19,9 +22,12 @@ public class CommonProxy {
         ModEntities.registerEntities();
         ModNetwork.init();
         MinecraftForge.EVENT_BUS.register(new ModSounds());
+        MinecraftForge.EVENT_BUS.register(new ModItems.RegistrationHandler());
+        MinecraftForge.EVENT_BUS.register(new ModPotions());
         MinecraftForge.EVENT_BUS.register(new PvpQueueEvents());
         MinecraftForge.EVENT_BUS.register(new HungerGamesEvents());
         MinecraftForge.EVENT_BUS.register(new LucraftCoreIntegration());
+        MinecraftForge.EVENT_BUS.register(new ArrowEffectHandler());
     }
 
     public void init(FMLInitializationEvent event) {

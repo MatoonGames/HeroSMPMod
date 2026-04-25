@@ -1,0 +1,13 @@
+item.life_drainer.name=Life Drainer
+item.health_cap_potion.name=Health Cap
+item.health_cap_splash_potion.name=Splash Health Cap
+item.health_cap_lingering_potion.name=Lingering Health Cap
+potion.herosmp.health_cap=Health Cap
+item.power_swapper_arrow.name=Power Swapper Arrow
+item.life_link_arrow.name=Life Link Arrow
+item.supe_virus_arrow.name=Supe Virus Arrow
+item.supe_virus_cure.name=Supe Virus Cure
+item.totem_of_protection.name=Totem of Protection
+item.totem_of_reversal.name=Totem of Reversal
+potion.herosmp.life_link=Life Link
+potion.herosmp.supe_virus=Supe Virus

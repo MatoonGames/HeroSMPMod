@@ -180,6 +180,9 @@ public class PlayerDataIsolationManager {
         // Clear potion effects
         player.clearActivePotions();
 
+        // Clear absorption hearts (stored separately from potion effects)
+        player.setAbsorptionAmount(0.0F);
+
         // Reset health and hunger
         player.setHealth(player.getMaxHealth());
         player.getFoodStats().setFoodLevel(20);

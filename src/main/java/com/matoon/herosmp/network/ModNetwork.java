@@ -27,5 +27,6 @@ public final class ModNetwork {
         CHANNEL.registerMessage(PacketHGMusicRequest.Handler.class, PacketHGMusicRequest.class, id++, Side.SERVER);
         CHANNEL.registerMessage(PacketHGMusicChunk.Handler.class, PacketHGMusicChunk.class, id++, Side.CLIENT);
         CHANNEL.registerMessage(PacketTimeStoneCharge.Handler.class, PacketTimeStoneCharge.class, id++, Side.CLIENT);
+        CHANNEL.registerMessage(PacketLifeLink.Handler.class, PacketLifeLink.class, id++, Side.CLIENT);
     }
 }

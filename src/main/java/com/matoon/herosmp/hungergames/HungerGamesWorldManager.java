@@ -52,7 +52,9 @@ public class HungerGamesWorldManager {
     // The loot inventory currently open for a player.
     private final Map<UUID, HungerGamesMapLootInventory>     openLootInventories = new HashMap<>();
     // The injection inventory currently open for a player.
-    private final Map<UUID, LucraftInjectionInventory>       openInjectionInventories = new HashMap<>();
+    private final Map<UUID, LucraftInjectionInventory>             openInjectionInventories  = new HashMap<>();
+    // The injection properties inventory currently open for a player.
+    private final Map<UUID, LucraftInjectionPropertiesInventory>   openInjectionPropInventories = new HashMap<>();
 
     // Shared lobby dimension — created when the first player queues (if a Lobby map exists).
     private int     lobbyDimensionId = Integer.MIN_VALUE; // MIN_VALUE = not allocated
@@ -705,6 +707,7 @@ public class HungerGamesWorldManager {
                 cfg.getInjMinPhase2(), cfg.getInjMaxPhase2(),
                 cfg.getInjMinPhase3(), cfg.getInjMaxPhase3(),
                 cfg.getInjMinAllPhases(), cfg.getInjMaxAllPhases());
+        openInjectionPropInventories.put(player.getUniqueID(), propInv);
         player.displayGUIChest(propInv);
     }
 
@@ -746,10 +749,14 @@ public class HungerGamesWorldManager {
         }
 
         // --- Injection pool editor closed (saves all 4 phase tabs) ---
+        // Only handle if this container was opened by the HG configure-map system.
+        // Admins may run /heropvp injections while in configure mode; that opens a PVP editor
+        // which is a different LucraftInjectionInventory instance — ignore it here.
         if (container instanceof LucraftInjectionContainer) {
             LucraftInjectionInventory inv = ((LucraftInjectionContainer) container).getInjectionInventory();
+            boolean isHgEditor = openInjectionInventories.get(id) == inv;
             openInjectionInventories.remove(id);
-            if (session == null) return;
+            if (!isHgEditor || session == null) return;
             HungerGamesMapConfig cfg = session.getPendingConfig();
             List<net.minecraft.item.ItemStack> p1  = inv.getTabItems(0); cfg.setInjectionPhase1(p1);
             List<net.minecraft.item.ItemStack> p2  = inv.getTabItems(1); cfg.setInjectionPhase2(p2);
@@ -762,10 +769,13 @@ public class HungerGamesWorldManager {
         }
 
         // --- Injection properties editor closed ---
+        // Only handle if this container was opened by the HG configure-map system.
         if (container instanceof LucraftInjectionPropertiesContainer) {
             LucraftInjectionPropertiesInventory propInv =
                     ((LucraftInjectionPropertiesContainer) container).getPropInv();
-            if (session == null) return;
+            boolean isHgEditor = openInjectionPropInventories.get(id) == propInv;
+            openInjectionPropInventories.remove(id);
+            if (!isHgEditor || session == null) return;
             HungerGamesMapConfig cfg = session.getPendingConfig();
             cfg.setInjectionPhase1(propInv.getPhase(0));
             cfg.setInjectionPhase2(propInv.getPhase(1));

@@ -15,9 +15,12 @@ import net.minecraftforge.common.util.Constants;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Random;
+import java.util.Set;
+import java.util.UUID;
 
 /**
  * Manages the global injection pool used by the PvP arena system.
@@ -40,6 +43,11 @@ public class PvpInjectionManager {
 
     private static final String DATA_NAME = "herosmp_pvp_injections";
     private static final Random rand = new Random();
+
+    /** Players who currently have a PvP injection pool editor open. */
+    private final Set<UUID> openInjectionEditors = new HashSet<>();
+    /** Players who currently have a PvP injection properties editor open. */
+    private final Set<UUID> openPropertiesEditors = new HashSet<>();
 
     // -------------------------------------------------------------------------
     // Pool access
@@ -79,7 +87,28 @@ public class PvpInjectionManager {
         inv.loadTabContents(Collections.emptyList(), Collections.emptyList(),
                             Collections.emptyList(), entries);
         inv.setHideTabs(true);
+        openInjectionEditors.add(player.getUniqueID());
         player.displayGUIChest(inv);
+    }
+
+    /** Returns true if this player currently has a PvP injection pool editor open. */
+    public boolean hasPvpInjectionEditorOpen(UUID playerId) {
+        return openInjectionEditors.contains(playerId);
+    }
+
+    /** Called when the player closes the PvP injection pool editor. */
+    public void clearPvpInjectionEditor(UUID playerId) {
+        openInjectionEditors.remove(playerId);
+    }
+
+    /** Returns true if this player currently has a PvP injection properties editor open. */
+    public boolean hasPvpPropertiesEditorOpen(UUID playerId) {
+        return openPropertiesEditors.contains(playerId);
+    }
+
+    /** Called when the player closes the PvP injection properties editor. */
+    public void clearPvpPropertiesEditor(UUID playerId) {
+        openPropertiesEditors.remove(playerId);
     }
 
     // -------------------------------------------------------------------------
@@ -100,6 +129,7 @@ public class PvpInjectionManager {
         // PvP has no phases — hide the tab row and lock to "All Phases".
         inv.setActiveTab(3);
         inv.setHideTabs(true);
+        openPropertiesEditors.add(player.getUniqueID());
         player.displayGUIChest(inv);
     }
 
