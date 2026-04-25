@@ -86,6 +86,12 @@ public class CommandHeroNpc extends CommandBase {
             case "hg":
                 handleHg(server, sender, args);
                 return;
+            case "injections":
+                HeroSMP.PVP_INJECTION_MANAGER.openInjectionMenu(getPlayerSender(sender));
+                return;
+            case "injectionproperties":
+                HeroSMP.PVP_INJECTION_MANAGER.openPropertiesMenu(getPlayerSender(sender));
+                return;
             default:
                 throw new WrongUsageException(getUsage(sender));
         }
@@ -128,16 +134,13 @@ public class CommandHeroNpc extends CommandBase {
 
     private void handleMode(ICommandSender sender, String[] args) throws CommandException {
         if (args.length != 3) {
-            throw new WrongUsageException("/heropvp mode <npcKey> <command|pvp_queue>");
+            throw new WrongUsageException("/heropvp mode <npcKey> <command|pvp_queue|hunger_games_queue>");
         }
 
         EntityStaticNpc npc = findNpc(sender.getEntityWorld(), args[1]);
         NpcMode mode = NpcMode.fromString(args[2]);
-        if (mode == null && "pvp_queue".equalsIgnoreCase(args[2])) {
-            mode = NpcMode.PVP_QUEUE;
-        }
         if (mode == null) {
-            throw new CommandException("Invalid mode. Use command or pvp_queue.");
+            throw new CommandException("Invalid mode. Use command, pvp_queue, or hunger_games_queue.");
         }
 
         npc.setMode(mode);
@@ -359,7 +362,7 @@ public class CommandHeroNpc extends CommandBase {
     @Override
     public List<String> getTabCompletions(MinecraftServer server, ICommandSender sender, String[] args, @Nullable BlockPos targetPos) {
         if (args.length == 1) {
-            return getListOfStringsMatchingLastWord(args, Arrays.asList("spawn", "mode", "setcommand", "info", "kit", "lootmenu", "debugsolo", "debugexit", "roundtime", "hg"));
+            return getListOfStringsMatchingLastWord(args, Arrays.asList("spawn", "mode", "setcommand", "info", "kit", "lootmenu", "debugsolo", "debugexit", "roundtime", "hg", "injections", "injectionproperties"));
         }
 
         if (args.length == 2 && "hg".equalsIgnoreCase(args[0])) {
@@ -375,7 +378,7 @@ public class CommandHeroNpc extends CommandBase {
         }
 
         if (args.length == 3 && "mode".equalsIgnoreCase(args[0])) {
-            return getListOfStringsMatchingLastWord(args, Arrays.asList("command", "pvp_queue"));
+            return getListOfStringsMatchingLastWord(args, Arrays.asList("command", "pvp_queue", "hunger_games_queue"));
         }
 
         if (args.length == 3 && "kit".equalsIgnoreCase(args[0]) && "remove".equalsIgnoreCase(args[1])) {

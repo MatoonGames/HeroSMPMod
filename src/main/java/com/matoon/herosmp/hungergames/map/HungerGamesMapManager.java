@@ -1,6 +1,11 @@
 package com.matoon.herosmp.hungergames.map;
 
+import net.minecraft.nbt.CompressedStreamTools;
+import net.minecraft.nbt.NBTTagCompound;
+import net.minecraft.util.math.BlockPos;
+
 import java.io.File;
+import java.io.FileInputStream;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -53,10 +58,16 @@ public class HungerGamesMapManager {
 
     public HungerGamesMapConfig loadMapConfig(String mapName) {
         HungerGamesMapConfig config = new HungerGamesMapConfig(mapName);
-        try {
-            config.loadFromFile(getMapDir(mapName));
-        } catch (IOException e) {
-            e.printStackTrace();
+        File configFile = new File(getMapDir(mapName), "herosmp_config.dat");
+        if (configFile.exists()) {
+            try {
+                config.loadFromFile(getMapDir(mapName));
+            } catch (IOException e) {
+                e.printStackTrace();
+            }
+        } else {
+            // New map with no saved config — apply the hardcoded default loot preset.
+            HungerGamesMapConfig.applyDefaultLootPreset(config);
         }
         return config;
     }
@@ -85,12 +96,48 @@ public class HungerGamesMapManager {
     public boolean copyMapWorldToDir(String mapName, File targetDir) {
         File mapDir = getMapDir(mapName);
         if (!mapDir.exists()) return false;
+        // Delete any stale dimension folder first so old region files from a
+        // previous match (possibly a different map) cannot bleed through.
+        if (targetDir.exists()) {
+            deleteDirectory(targetDir);
+        }
         try {
             copyDirectory(mapDir.toPath(), targetDir.toPath());
             return true;
         } catch (IOException e) {
             e.printStackTrace();
             return false;
+        }
+    }
+
+    /** Recursively deletes a directory and all of its contents. */
+    public void deleteDirectory(File dir) {
+        if (!dir.exists()) return;
+        File[] children = dir.listFiles();
+        if (children != null) {
+            for (File child : children) {
+                if (child.isDirectory()) deleteDirectory(child);
+                else child.delete();
+            }
+        }
+        dir.delete();
+    }
+
+    /**
+     * Reads the world spawn point from a map's level.dat.
+     * Returns null if level.dat is missing or unreadable.
+     */
+    public BlockPos readWorldSpawn(String mapName) {
+        File levelDat = new File(getMapDir(mapName), "level.dat");
+        if (!levelDat.exists()) return null;
+        try (FileInputStream fis = new FileInputStream(levelDat)) {
+            NBTTagCompound root = CompressedStreamTools.readCompressed(fis);
+            NBTTagCompound data = root.getCompoundTag("Data");
+            if (!data.hasKey("SpawnX")) return null;
+            return new BlockPos(data.getInteger("SpawnX"), data.getInteger("SpawnY"), data.getInteger("SpawnZ"));
+        } catch (IOException e) {
+            e.printStackTrace();
+            return null;
         }
     }
 

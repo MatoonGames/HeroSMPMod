@@ -4,123 +4,150 @@ import net.minecraft.entity.EnumCreatureType;
 import net.minecraft.init.Biomes;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.world.World;
+import net.minecraft.world.WorldSettings;
+import net.minecraft.world.WorldType;
 import net.minecraft.world.biome.Biome;
 import net.minecraft.world.chunk.Chunk;
+import net.minecraft.world.chunk.ChunkPrimer;
 import net.minecraft.world.gen.ChunkGeneratorOverworld;
 import net.minecraft.world.gen.IChunkGenerator;
+import net.minecraft.world.storage.WorldInfo;
 
 import java.util.Collections;
-import java.util.HashMap;
 import java.util.List;
-import java.util.Map;
 
+/**
+ * Delegates terrain generation to ChunkGeneratorOverworld in AMPLIFIED mode.
+ *
+ * Generation region:  FIRST_GEN .. LAST_GEN  (includes 2-chunk buffer on each side)
+ * Playable region:    FIRST_CHUNK .. LAST_CHUNK  (inside world border)
+ * Decoration region:  FIRST_CHUNK+1 .. LAST_CHUNK-1  (interior only, so populate's
+ *                     neighbour requests always land on generated chunks)
+ *
+ * A large random chunk offset shifts which part of the infinite noise field is
+ * sampled, guaranteeing different terrain and biomes every match.
+ */
 public class BoundedOverworldChunkGenerator implements IChunkGenerator {
 
+    private static final int FIRST_GEN = ArenaWorldProvider.ARENA_FIRST_GEN;
+    private static final int LAST_GEN  = ArenaWorldProvider.ARENA_LAST_GEN;
+
     private final World world;
-    private final Map<Long, IChunkGenerator> delegates = new HashMap<Long, IChunkGenerator>();
+    private final int   dimId;
+
+    private IChunkGenerator delegate;
+    private int     offsetX;
+    private int     offsetZ;
+    private boolean initDone = false;
 
     public BoundedOverworldChunkGenerator(World world) {
         this.world = world;
+        this.dimId = world.provider.getDimension();
     }
 
-    private long slotKey(int slotX, int slotZ) {
-        return (((long) slotX) << 32) ^ (slotZ & 0xFFFFFFFFL);
+    private static final int FIRST_PLAY = ArenaWorldProvider.ARENA_FIRST_CHUNK;
+    private static final int LAST_PLAY  = ArenaWorldProvider.ARENA_LAST_CHUNK;
+
+    /** True if this chunk should have terrain generated (includes 1-chunk buffer). */
+    private static boolean inGenBounds(int cx, int cz) {
+        return cx >= FIRST_GEN && cx <= LAST_GEN && cz >= FIRST_GEN && cz <= LAST_GEN;
     }
 
-    private boolean inArenaBounds(int chunkX, int chunkZ) {
-        int localX = ArenaWorldProvider.getLocalChunkInSlot(chunkX);
-        int localZ = ArenaWorldProvider.getLocalChunkInSlot(chunkZ);
-        return localX >= ArenaWorldProvider.ARENA_MIN_LOCAL_CHUNK
-                && localX <= ArenaWorldProvider.ARENA_MAX_LOCAL_CHUNK
-                && localZ >= ArenaWorldProvider.ARENA_MIN_LOCAL_CHUNK
-                && localZ <= ArenaWorldProvider.ARENA_MAX_LOCAL_CHUNK;
+    /**
+     * Only decorate playable chunks (FIRST_PLAY..LAST_PLAY).
+     * The buffer chunks (FIRST_GEN and LAST_GEN) are generated but never decorated,
+     * so populate()'s 8-neighbour requests always land on generated chunks.
+     */
+    private static boolean canDecorate(int cx, int cz) {
+        return cx >= FIRST_PLAY && cx <= LAST_PLAY && cz >= FIRST_PLAY && cz <= LAST_PLAY;
     }
 
-    private IChunkGenerator delegateFor(int chunkX, int chunkZ) {
-        int slotX = ArenaWorldProvider.getArenaSlotXForChunk(chunkX);
-        int slotZ = ArenaWorldProvider.getArenaSlotZForChunk(chunkZ);
-        Long seed = ArenaWorldProvider.getArenaSlotSeed(slotX, slotZ);
-        if (seed == null) {
-            return null;
-        }
+    private boolean ensureInit() {
+        if (initDone) return delegate != null;
+        Long seed = ArenaWorldProvider.getArenaDimensionSeed(dimId);
+        if (seed == null) return false;
+        int[] off = ArenaWorldProvider.getArenaDimensionOffset(dimId);
+        offsetX = off[0];
+        offsetZ = off[1];
+        // Build a WorldInfo with AMPLIFIED world type so the delegate uses amplified generation.
+        WorldSettings settings = new WorldSettings(seed, net.minecraft.world.GameType.SURVIVAL, false, false, WorldType.AMPLIFIED);
+        WorldInfo amplifiedInfo = new WorldInfo(settings, "arena");
+        delegate = new ChunkGeneratorOverworld(world, seed, amplifiedInfo.isMapFeaturesEnabled(), amplifiedInfo.getGeneratorOptions());
+        initDone = true;
+        return true;
+    }
 
-        long key = slotKey(slotX, slotZ);
-        IChunkGenerator cached = delegates.get(key);
-        if (cached != null) {
-            return cached;
-        }
+    private int dx(int cx) { return cx + offsetX; }
+    private int dz(int cz) { return cz + offsetZ; }
 
-        IChunkGenerator delegate = new ChunkGeneratorOverworld(
-                world,
-                seed.longValue(),
-                world.getWorldInfo().isMapFeaturesEnabled(),
-                world.getWorldInfo().getGeneratorOptions()
-        );
-        delegates.put(key, delegate);
-        return delegate;
+    private Chunk emptyChunk(int x, int z) {
+        Chunk chunk = new Chunk(world, x, z);
+        byte plains = (byte) Biome.getIdForBiome(Biomes.PLAINS);
+        byte[] biomes = chunk.getBiomeArray();
+        for (int i = 0; i < biomes.length; i++) biomes[i] = plains;
+        chunk.generateSkylightMap();
+        return chunk;
     }
 
     @Override
     public Chunk generateChunk(int x, int z) {
-        IChunkGenerator delegate = delegateFor(x, z);
-        if (delegate == null || !inArenaBounds(x, z)) {
-            Chunk chunk = new Chunk(this.world, x, z);
-            byte[] biomeArray = chunk.getBiomeArray();
-            byte plains = (byte) Biome.getIdForBiome(Biomes.PLAINS);
-            for (int i = 0; i < biomeArray.length; i++) {
-                biomeArray[i] = plains;
+        if (!ensureInit() || !inGenBounds(x, z)) return emptyChunk(x, z);
+        Chunk generated = delegate.generateChunk(dx(x), dz(z));
+        // Re-key the chunk to actual arena coords (not the offset coords the delegate used).
+        ChunkPrimer primer = new ChunkPrimer();
+        for (int lx = 0; lx < 16; lx++) {
+            for (int lz = 0; lz < 16; lz++) {
+                for (int y = 0; y < 256; y++) {
+                    primer.setBlockState(lx, y, lz, generated.getBlockState(lx, y, lz));
+                }
             }
-            chunk.generateSkylightMap();
-            return chunk;
         }
-        return delegate.generateChunk(x, z);
+        Chunk result = new Chunk(world, primer, x, z);
+        byte[] srcBiomes  = generated.getBiomeArray();
+        byte[] destBiomes = result.getBiomeArray();
+        System.arraycopy(srcBiomes, 0, destBiomes, 0, srcBiomes.length);
+        result.generateSkylightMap();
+        return result;
     }
 
     @Override
     public void populate(int x, int z) {
-        IChunkGenerator delegate = delegateFor(x, z);
-        if (delegate != null && inArenaBounds(x, z)) {
-            delegate.populate(x, z);
-        }
+        if (!ensureInit() || !canDecorate(x, z)) return;
+        // Use real chunk coords (x, z) — NOT the offset coords.
+        // ChunkGeneratorOverworld.populate() calls world.getChunk(x±1, z±1) to load
+        // neighbours before placing features. Passing offset coords would cause those
+        // neighbour requests to go to far-out-of-bounds positions, returning empty
+        // chunks and silently skipping all biome decoration (trees, foliage, etc.).
+        delegate.populate(x, z);
     }
 
     @Override
-    public boolean generateStructures(Chunk chunkIn, int x, int z) {
-        IChunkGenerator delegate = delegateFor(x, z);
-        if (delegate != null && inArenaBounds(x, z)) {
-            return delegate.generateStructures(chunkIn, x, z);
-        }
-        return false;
+    public boolean generateStructures(Chunk chunk, int x, int z) {
+        if (!ensureInit() || !canDecorate(x, z)) return false;
+        return delegate.generateStructures(chunk, x, z);
     }
 
     @Override
-    public List<Biome.SpawnListEntry> getPossibleCreatures(EnumCreatureType creatureType, BlockPos pos) {
-        int chunkX = pos.getX() >> 4;
-        int chunkZ = pos.getZ() >> 4;
-        IChunkGenerator delegate = delegateFor(chunkX, chunkZ);
-        if (delegate == null || !inArenaBounds(chunkX, chunkZ)) {
-            return Collections.emptyList();
-        }
-        return delegate.getPossibleCreatures(creatureType, pos);
+    public List<Biome.SpawnListEntry> getPossibleCreatures(EnumCreatureType type, BlockPos pos) {
+        if (!ensureInit() || !inGenBounds(pos.getX() >> 4, pos.getZ() >> 4)) return Collections.emptyList();
+        return delegate.getPossibleCreatures(type, pos);
     }
 
     @Override
-    public BlockPos getNearestStructurePos(World worldIn, String structureName, BlockPos position, boolean findUnexplored) {
-        IChunkGenerator delegate = delegateFor(position.getX() >> 4, position.getZ() >> 4);
-        return delegate == null ? null : delegate.getNearestStructurePos(worldIn, structureName, position, findUnexplored);
+    public BlockPos getNearestStructurePos(World worldIn, String name, BlockPos pos, boolean findUnexplored) {
+        if (!ensureInit()) return null;
+        return delegate.getNearestStructurePos(worldIn, name, pos, findUnexplored);
     }
 
     @Override
-    public void recreateStructures(Chunk chunkIn, int x, int z) {
-        IChunkGenerator delegate = delegateFor(x, z);
-        if (delegate != null && inArenaBounds(x, z)) {
-            delegate.recreateStructures(chunkIn, x, z);
-        }
+    public void recreateStructures(Chunk chunk, int x, int z) {
+        if (!ensureInit() || !canDecorate(x, z)) return;
+        delegate.recreateStructures(chunk, x, z);
     }
 
     @Override
-    public boolean isInsideStructure(World worldIn, String structureName, BlockPos pos) {
-        IChunkGenerator delegate = delegateFor(pos.getX() >> 4, pos.getZ() >> 4);
-        return delegate != null && delegate.isInsideStructure(worldIn, structureName, pos);
+    public boolean isInsideStructure(World worldIn, String name, BlockPos pos) {
+        if (!ensureInit()) return false;
+        return delegate.isInsideStructure(worldIn, name, pos);
     }
 }

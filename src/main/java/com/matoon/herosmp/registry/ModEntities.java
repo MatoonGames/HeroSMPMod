@@ -1,6 +1,8 @@
 package com.matoon.herosmp.registry;
 
 import com.matoon.herosmp.HeroSMP;
+import com.matoon.herosmp.integration.EntityLucraftInjection;
+import com.matoon.herosmp.integration.RenderLucraftInjection;
 import com.matoon.herosmp.npc.EntityStaticNpc;
 import com.matoon.herosmp.npc.client.RenderStaticNpc;
 import net.minecraft.client.renderer.entity.Render;
@@ -14,7 +16,8 @@ import net.minecraftforge.fml.relauncher.SideOnly;
 
 public final class ModEntities {
 
-    private static final int STATIC_NPC_ENTITY_ID = 1;
+    private static final int STATIC_NPC_ENTITY_ID    = 1;
+    private static final int LUCRAFT_INJECTION_ID     = 2;
 
     private ModEntities() {
     }
@@ -32,6 +35,19 @@ public final class ModEntities {
                 0xCCCCCC,
                 0x333333
         );
+
+        EntityRegistry.registerModEntity(
+                new ResourceLocation(HeroSMP.MODID, "lucraft_injection"),
+                EntityLucraftInjection.class,
+                "lucraft_injection",
+                LUCRAFT_INJECTION_ID,
+                HeroSMP.MODID,
+                64,
+                1,
+                false,
+                0xAA44FF,
+                0x550088
+        );
     }
 
     @SideOnly(Side.CLIENT)
@@ -40,6 +56,13 @@ public final class ModEntities {
             @Override
             public Render<? super EntityStaticNpc> createRenderFor(RenderManager manager) {
                 return new RenderStaticNpc(manager);
+            }
+        });
+
+        RenderingRegistry.registerEntityRenderingHandler(EntityLucraftInjection.class, new IRenderFactory<EntityLucraftInjection>() {
+            @Override
+            public Render<? super EntityLucraftInjection> createRenderFor(RenderManager manager) {
+                return new RenderLucraftInjection(manager);
             }
         });
     }

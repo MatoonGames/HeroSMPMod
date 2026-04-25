@@ -3,6 +3,8 @@ package com.matoon.herosmp.hungergames;
 import com.matoon.herosmp.hungergames.map.*;
 import com.matoon.herosmp.hungergames.music.HungerGamesMusicManager;
 import com.matoon.herosmp.hungergames.world.HungerGamesWorldProvider;
+import com.matoon.herosmp.network.ModNetwork;
+import com.matoon.herosmp.network.PacketOpenHungerGamesMenu;
 import com.matoon.herosmp.npc.pvp.FixedTeleporter;
 import net.minecraft.entity.player.EntityPlayer;
 import net.minecraft.entity.player.EntityPlayerMP;
@@ -49,6 +51,8 @@ public class HungerGamesWorldManager {
     private final Map<UUID, Integer>                         pendingHGReturns = new HashMap<>();
     // The loot inventory currently open for a player.
     private final Map<UUID, HungerGamesMapLootInventory>     openLootInventories = new HashMap<>();
+    // The injection inventory currently open for a player.
+    private final Map<UUID, LucraftInjectionInventory>       openInjectionInventories = new HashMap<>();
 
     // Shared lobby dimension — created when the first player queues (if a Lobby map exists).
     private int     lobbyDimensionId = Integer.MIN_VALUE; // MIN_VALUE = not allocated
@@ -160,6 +164,12 @@ public class HungerGamesWorldManager {
         }
     }
 
+    public synchronized void openHungerGamesMenu(EntityPlayerMP player) {
+        UUID id = player.getUniqueID();
+        boolean queued = queuedPlayers.contains(id) || playersInLobby.contains(id) || isPlayerInMatch(id);
+        ModNetwork.CHANNEL.sendTo(new PacketOpenHungerGamesMenu(queued, queuedPlayers.size(), activeMatches.size()), player);
+    }
+
     // -------------------------------------------------------------------------
     // Server Tick
     // -------------------------------------------------------------------------
@@ -170,6 +180,15 @@ public class HungerGamesWorldManager {
 
     public void initMusicDirectory(File musicDirectory) {
         if (musicManager == null) musicManager = new HungerGamesMusicManager(musicDirectory);
+    }
+
+    public HungerGamesMusicManager getMusicManager() {
+        return musicManager;
+    }
+
+    public void sendMusicManifest(net.minecraft.entity.player.EntityPlayerMP player) {
+        if (musicManager == null) return;
+        com.matoon.herosmp.network.ModNetwork.CHANNEL.sendTo(musicManager.buildManifest(), player);
     }
 
     public synchronized void tick(MinecraftServer server) {
@@ -285,10 +304,19 @@ public class HungerGamesWorldManager {
         if (hgWorld == null) { for (EntityPlayerMP p : players) returnPlayerFromHG(p); return; }
 
         HungerGamesMapConfig cfg = selectedMap != null ? mgr.loadMapConfig(selectedMap) : new HungerGamesMapConfig("default");
+        applyMatchChunkBounds(hgWorld, cfg);
         int matchId = matchIdCounter.getAndIncrement();
         HungerGamesMatch match = new HungerGamesMatch(matchId, dimensionId, selectedMap != null ? selectedMap : "default", players.size());
         match.setLootPools(cfg.getLootPhase1(), cfg.getLootPhase2(), cfg.getLootPhase3(), cfg.getLootAllPhases());
         match.setBreakableBlocks(cfg.getBreakableBlocks());
+        match.setInjectionPhasePools(
+                cfg.getInjectionPhase1(), cfg.getInjectionPhase2(),
+                cfg.getInjectionPhase3(), cfg.getInjectionAllPhases());
+        match.setInjectionRanges(
+                cfg.getInjMinPhase1(), cfg.getInjMaxPhase1(),
+                cfg.getInjMinPhase2(), cfg.getInjMaxPhase2(),
+                cfg.getInjMinPhase3(), cfg.getInjMaxPhase3(),
+                cfg.getInjMinAllPhases(), cfg.getInjMaxAllPhases());
         match.setMapCenter(cfg.getMapCenter());
         match.setWorldBorderStartRange(cfg.getWorldBorderStartRange());
 
@@ -348,12 +376,21 @@ public class HungerGamesWorldManager {
             ? mgr.loadMapConfig(selectedMap)
             : new HungerGamesMapConfig("default");
 
+        applyMatchChunkBounds(hgWorld, cfg);
         int matchId = matchIdCounter.getAndIncrement();
         HungerGamesMatch match = new HungerGamesMatch(
             matchId, dimensionId, selectedMap != null ? selectedMap : "default", players.size());
 
         match.setLootPools(cfg.getLootPhase1(), cfg.getLootPhase2(), cfg.getLootPhase3(), cfg.getLootAllPhases());
         match.setBreakableBlocks(cfg.getBreakableBlocks());
+        match.setInjectionPhasePools(
+                cfg.getInjectionPhase1(), cfg.getInjectionPhase2(),
+                cfg.getInjectionPhase3(), cfg.getInjectionAllPhases());
+        match.setInjectionRanges(
+                cfg.getInjMinPhase1(), cfg.getInjMaxPhase1(),
+                cfg.getInjMinPhase2(), cfg.getInjMaxPhase2(),
+                cfg.getInjMinPhase3(), cfg.getInjMaxPhase3(),
+                cfg.getInjMinAllPhases(), cfg.getInjMaxAllPhases());
         match.setMapCenter(cfg.getMapCenter());
         match.setWorldBorderStartRange(cfg.getWorldBorderStartRange());
 
@@ -451,7 +488,9 @@ public class HungerGamesWorldManager {
         PlayerDataIsolationManager.savePlayerState(player);
         PlayerDataIsolationManager.clearPlayerState(player);
         try {
-            BlockPos spawnPos = existing.getLobbySpawn() != null ? existing.getLobbySpawn() : new BlockPos(0, 64, 0);
+            BlockPos worldSpawn = mgr.readWorldSpawn(mapName);
+            BlockPos spawnPos = existing.getLobbySpawn() != null ? existing.getLobbySpawn()
+                              : worldSpawn != null ? worldSpawn : new BlockPos(0, 64, 0);
             teleportToHGWorld(player, hgWorld, spawnPos);
             player.setGameType(GameType.CREATIVE);
             giveConfigureTools(player);
@@ -470,7 +509,7 @@ public class HungerGamesWorldManager {
         if (LOBBY_MAP_NAME.equals(mapName)) {
             sendMessage(player, TextFormatting.GRAY + "Hotbar: [1] Lobby Spawn");
         } else {
-            sendMessage(player, TextFormatting.GRAY + "Hotbar: [1] Spawns  [2] Lobby  [3] Loot Pool  [4] Loot Properties  [5] Map Center  [6] Breakable Blocks");
+            sendMessage(player, TextFormatting.GRAY + "Hotbar: [1] Spawns  [2] Lobby  [3] Loot Pool  [4] Loot Properties  [5] Map Center  [6] Breakable Blocks  [7] Injections");
         }
         sendMessage(player, TextFormatting.GRAY + "Use /heropvp hg debug endconfigure to save & exit.");
     }
@@ -506,7 +545,9 @@ public class HungerGamesWorldManager {
                 + "border " + cfg.getWorldBorderStartRange() + ", "
                 + (cfg.getLootPhase1().size() + cfg.getLootPhase2().size()
                    + cfg.getLootPhase3().size() + cfg.getLootAllPhases().size()) + " loot, "
-                + cfg.getBreakableBlocks().size() + " breakable blocks.");
+                + cfg.getBreakableBlocks().size() + " breakable blocks, "
+                + (cfg.getInjectionPhase1().size() + cfg.getInjectionPhase2().size()
+                   + cfg.getInjectionPhase3().size() + cfg.getInjectionAllPhases().size()) + " injections.");
         }
 
         returnPlayerFromHG(player);
@@ -558,6 +599,14 @@ public class HungerGamesWorldManager {
 
             case "breakable_blocks":
                 openBreakableBlocksEditor(player, session);
+                break;
+
+            case "injections":
+                openInjectionsEditor(player, session);
+                break;
+
+            case "injection_properties":
+                openInjectionPropertiesEditor(player, session);
                 break;
 
             case "map_center":
@@ -638,6 +687,27 @@ public class HungerGamesWorldManager {
         player.displayGUIChest(inv);
     }
 
+    private void openInjectionsEditor(EntityPlayerMP player, HungerGamesConfigureMapSession session) {
+        LucraftInjectionInventory inv = new LucraftInjectionInventory(session.getMapName());
+        HungerGamesMapConfig cfg = session.getPendingConfig();
+        inv.loadTabContents(cfg.getInjectionPhase1(), cfg.getInjectionPhase2(),
+                            cfg.getInjectionPhase3(), cfg.getInjectionAllPhases());
+        openInjectionInventories.put(player.getUniqueID(), inv);
+        player.displayGUIChest(inv);
+    }
+
+    private void openInjectionPropertiesEditor(EntityPlayerMP player, HungerGamesConfigureMapSession session) {
+        HungerGamesMapConfig cfg = session.getPendingConfig();
+        LucraftInjectionPropertiesInventory propInv = new LucraftInjectionPropertiesInventory(
+                cfg.getInjectionPhase1(), cfg.getInjectionPhase2(),
+                cfg.getInjectionPhase3(), cfg.getInjectionAllPhases(),
+                cfg.getInjMinPhase1(), cfg.getInjMaxPhase1(),
+                cfg.getInjMinPhase2(), cfg.getInjMaxPhase2(),
+                cfg.getInjMinPhase3(), cfg.getInjMaxPhase3(),
+                cfg.getInjMinAllPhases(), cfg.getInjMaxAllPhases());
+        player.displayGUIChest(propInv);
+    }
+
     public synchronized void handleLootInventoryClose(EntityPlayerMP player, Container container) {
         UUID id = player.getUniqueID();
         HungerGamesConfigureMapSession session = configureSessions.get(id);
@@ -671,6 +741,43 @@ public class HungerGamesWorldManager {
             cfg.setLootPhase3(propInv.getPhase(2));
             cfg.setLootAllPhases(propInv.getPhase(3));
             sendMessage(player, TextFormatting.GREEN + "Loot properties saved.");
+            giveConfigureTools(player);
+            return;
+        }
+
+        // --- Injection pool editor closed (saves all 4 phase tabs) ---
+        if (container instanceof LucraftInjectionContainer) {
+            LucraftInjectionInventory inv = ((LucraftInjectionContainer) container).getInjectionInventory();
+            openInjectionInventories.remove(id);
+            if (session == null) return;
+            HungerGamesMapConfig cfg = session.getPendingConfig();
+            List<net.minecraft.item.ItemStack> p1  = inv.getTabItems(0); cfg.setInjectionPhase1(p1);
+            List<net.minecraft.item.ItemStack> p2  = inv.getTabItems(1); cfg.setInjectionPhase2(p2);
+            List<net.minecraft.item.ItemStack> p3  = inv.getTabItems(2); cfg.setInjectionPhase3(p3);
+            List<net.minecraft.item.ItemStack> all = inv.getTabItems(3); cfg.setInjectionAllPhases(all);
+            int total = p1.size() + p2.size() + p3.size() + all.size();
+            sendMessage(player, TextFormatting.GREEN + "Injection pools saved: " + total + " injection(s) across all phases.");
+            giveConfigureTools(player);
+            return;
+        }
+
+        // --- Injection properties editor closed ---
+        if (container instanceof LucraftInjectionPropertiesContainer) {
+            LucraftInjectionPropertiesInventory propInv =
+                    ((LucraftInjectionPropertiesContainer) container).getPropInv();
+            if (session == null) return;
+            HungerGamesMapConfig cfg = session.getPendingConfig();
+            cfg.setInjectionPhase1(propInv.getPhase(0));
+            cfg.setInjectionPhase2(propInv.getPhase(1));
+            cfg.setInjectionPhase3(propInv.getPhase(2));
+            cfg.setInjectionAllPhases(propInv.getPhase(3));
+            cfg.setInjMinPhase1(propInv.getGlobalMin(0)); cfg.setInjMaxPhase1(propInv.getGlobalMax(0));
+            cfg.setInjMinPhase2(propInv.getGlobalMin(1)); cfg.setInjMaxPhase2(propInv.getGlobalMax(1));
+            cfg.setInjMinPhase3(propInv.getGlobalMin(2)); cfg.setInjMaxPhase3(propInv.getGlobalMax(2));
+            cfg.setInjMinAllPhases(propInv.getGlobalMin(3)); cfg.setInjMaxAllPhases(propInv.getGlobalMax(3));
+            int total = propInv.getPhase(0).size() + propInv.getPhase(1).size()
+                      + propInv.getPhase(2).size() + propInv.getPhase(3).size();
+            sendMessage(player, TextFormatting.GREEN + "Injection properties saved: " + total + " injection(s) across all phases.");
             giveConfigureTools(player);
             return;
         }
@@ -734,6 +841,10 @@ public class HungerGamesWorldManager {
                 createConfigTool(new ItemStack(Items.WOODEN_AXE),  TextFormatting.GOLD   + "Set Map Center / Border Range", "map_center"));
             player.inventory.setInventorySlotContents(5,
                 createConfigTool(new ItemStack(Items.IRON_PICKAXE), TextFormatting.AQUA  + "Breakable Blocks", "breakable_blocks"));
+            player.inventory.setInventorySlotContents(6,
+                createConfigTool(new ItemStack(Items.GLASS_BOTTLE), TextFormatting.LIGHT_PURPLE + "Injections", "injections"));
+            player.inventory.setInventorySlotContents(7,
+                createConfigTool(new ItemStack(Items.NETHER_STAR), TextFormatting.LIGHT_PURPLE + "Injection Properties", "injection_properties"));
         }
     }
 
@@ -932,6 +1043,15 @@ public class HungerGamesWorldManager {
         return 0;
     }
 
+    /** Returns true if the given dimension ID is an active HG match or lobby dimension. */
+    public boolean isHGDimension(int dimId) {
+        if (dimId == lobbyDimensionId) return true;
+        for (HungerGamesMatch match : activeMatches.values()) {
+            if (match.getDimensionId() == dimId) return true;
+        }
+        return false;
+    }
+
     public boolean isHGSpectatorBat(net.minecraft.entity.Entity entity) {
         for (HungerGamesMatch match : activeMatches.values()) {
             if (match.isSpectatorBat(entity)) return true;
@@ -1016,6 +1136,11 @@ public class HungerGamesWorldManager {
     }
 
     private void returnPlayerFromHG(EntityPlayerMP player) {
+        // Wipe all arena state immediately — inventory, effects, superpowers, XP.
+        // restorePlayerState() will also clear before restoring, but doing it here
+        // ensures nothing leaks during the 2-tick dimension-transition delay.
+        PlayerDataIsolationManager.clearPlayerState(player);
+
         UUID id = player.getUniqueID();
         int       returnDim = PlayerDataIsolationManager.getReturnDimension(id);
         double[]  returnPos = PlayerDataIsolationManager.getReturnPosition(id);
@@ -1050,6 +1175,24 @@ public class HungerGamesWorldManager {
         return spawns;
     }
 
+    /**
+     * Sets the match-mode chunk boundary on the world provider so that
+     * {@link com.matoon.herosmp.hungergames.world.HungerGamesChunkGenerator} can void
+     * chunks outside the playable area + padding.
+     * Only called for actual matches — configure sessions intentionally skip this.
+     */
+    private void applyMatchChunkBounds(WorldServer hgWorld, HungerGamesMapConfig cfg) {
+        if (!(hgWorld.provider instanceof HungerGamesWorldProvider)) return;
+        BlockPos center = cfg.getMapCenter();
+        if (center == null) return; // no center set — map editor hasn't configured it yet
+        HungerGamesWorldProvider provider = (HungerGamesWorldProvider) hgWorld.provider;
+        // Convert block-level center to chunk coordinates.
+        provider.matchCenterChunkX = center.getX() >> 4;
+        provider.matchCenterChunkZ = center.getZ() >> 4;
+        // worldBorderStartRange is a radius in blocks; convert to chunks (rounding up).
+        provider.matchBorderChunks = (cfg.getWorldBorderStartRange() + 15) >> 4;
+    }
+
     private int allocateDimensionId() {
         return HG_BASE_DIMENSION_ID - dimensionIdCounter.getAndIncrement();
     }
@@ -1081,6 +1224,14 @@ public class HungerGamesWorldManager {
             if (DimensionManager.isDimensionRegistered(dimensionId)) {
                 DimensionManager.unregisterDimension(dimensionId);
             }
+        } catch (Exception e) { e.printStackTrace(); }
+
+        // Delete the dimension's save folder so stale region files cannot
+        // pollute a future match that reuses the same dimension ID.
+        try {
+            File worldDir = server.getWorld(0).getSaveHandler().getWorldDirectory().getAbsoluteFile();
+            File dimDir = new File(worldDir, "DIM" + dimensionId);
+            getMapManager(server).deleteDirectory(dimDir);
         } catch (Exception e) { e.printStackTrace(); }
     }
 

@@ -24,6 +24,19 @@ public class HungerGamesConfigureMapSession {
         pendingConfig.setBreakableBlocks(new ArrayList<>(existing.getBreakableBlocks()));
         pendingConfig.setMapCenter(existing.getMapCenter());
         pendingConfig.setWorldBorderStartRange(existing.getWorldBorderStartRange());
+        // Copy injection pools and per-phase min/max counts.
+        pendingConfig.setInjectionPhase1(existing.getInjectionPhase1());
+        pendingConfig.setInjectionPhase2(existing.getInjectionPhase2());
+        pendingConfig.setInjectionPhase3(existing.getInjectionPhase3());
+        pendingConfig.setInjectionAllPhases(existing.getInjectionAllPhases());
+        pendingConfig.setInjMinPhase1(existing.getInjMinPhase1());
+        pendingConfig.setInjMaxPhase1(existing.getInjMaxPhase1());
+        pendingConfig.setInjMinPhase2(existing.getInjMinPhase2());
+        pendingConfig.setInjMaxPhase2(existing.getInjMaxPhase2());
+        pendingConfig.setInjMinPhase3(existing.getInjMinPhase3());
+        pendingConfig.setInjMaxPhase3(existing.getInjMaxPhase3());
+        pendingConfig.setInjMinAllPhases(existing.getInjMinAllPhases());
+        pendingConfig.setInjMaxAllPhases(existing.getInjMaxAllPhases());
     }
 
     public UUID getPlayerUUID() { return playerUUID; }

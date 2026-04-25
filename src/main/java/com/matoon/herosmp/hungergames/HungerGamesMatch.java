@@ -1,7 +1,10 @@
 package com.matoon.herosmp.hungergames;
 
+import lucraft.mods.lucraftcore.superpowers.SuperpowerHandler;
 import com.matoon.herosmp.hungergames.map.HungerGamesLootEntry;
 import com.matoon.herosmp.hungergames.music.HungerGamesMusicManager;
+import com.matoon.herosmp.integration.EntityLucraftInjection;
+import com.matoon.herosmp.integration.LucraftInjectionEntry;
 import com.matoon.herosmp.npc.pvp.FixedTeleporter;
 import net.minecraft.block.Block;
 import net.minecraft.entity.Entity;
@@ -44,9 +47,12 @@ public class HungerGamesMatch {
 
     private static final int COUNTDOWN_TICKS   = 5  * 20;
     private static final int GRACE_PERIOD_TICKS = 60 * 20;
-    private static final int PHASE1_END_TICKS   = 8  * 60 * 20;  //  9 600
-    private static final int PHASE2_END_TICKS   = 16 * 60 * 20;  // 19 200
-    private static final int PHASE3_END_TICKS   = 24 * 60 * 20;  // 28 800
+
+    // Phase end thresholds (cumulative elapsed ticks). Assigned in startActive()
+    // based on player count: < 8 players → 4/6/8 min phases; ≥ 8 → 8/8/8 min phases.
+    private int phase1EndTicks;
+    private int phase2EndTicks;
+    private int phase3EndTicks;
 
     // -------------------------------------------------------------------------
     // Match identity
@@ -77,6 +83,18 @@ public class HungerGamesMatch {
     private List<ItemStack> lootPhase3    = new ArrayList<>();
     private List<ItemStack> lootAllPhases = new ArrayList<>();
     private Set<String>     breakableBlockNames   = new HashSet<>();
+
+    // Per-phase injection pools stored as ItemStacks carrying HGInjection NBT.
+    private List<ItemStack> injectionPhase1    = new ArrayList<>();
+    private List<ItemStack> injectionPhase2    = new ArrayList<>();
+    private List<ItemStack> injectionPhase3    = new ArrayList<>();
+    private List<ItemStack> injectionAllPhases = new ArrayList<>();
+
+    // Per-phase global injection count bounds (min/max entities on the map at once).
+    // Index: 0=Phase1, 1=Phase2, 2=Phase3, 3=AllPhases (fallback)
+    private final int[] injGlobalMin = {0, 0, 0, 3};
+    private final int[] injGlobalMax = {0, 0, 0, 8};
+
     private BlockPos        mapCenter             = null;
     private int             worldBorderStartRange = 0;
 
@@ -157,6 +175,33 @@ public class HungerGamesMatch {
 
     public boolean isBreakableBlock(Block block) {
         return block.getRegistryName() != null && breakableBlockNames.contains(block.getRegistryName().toString());
+    }
+
+    public void setInjectionPhasePools(List<ItemStack> p1, List<ItemStack> p2,
+                                        List<ItemStack> p3, List<ItemStack> all) {
+        injectionPhase1    = new ArrayList<>(p1);
+        injectionPhase2    = new ArrayList<>(p2);
+        injectionPhase3    = new ArrayList<>(p3);
+        injectionAllPhases = new ArrayList<>(all);
+    }
+
+    public void setInjectionRanges(int minP1, int maxP1, int minP2, int maxP2,
+                                    int minP3, int maxP3, int minAll, int maxAll) {
+        injGlobalMin[0] = minP1;  injGlobalMax[0] = maxP1;
+        injGlobalMin[1] = minP2;  injGlobalMax[1] = maxP2;
+        injGlobalMin[2] = minP3;  injGlobalMax[2] = maxP3;
+        injGlobalMin[3] = minAll; injGlobalMax[3] = maxAll;
+    }
+
+    /** Legacy setter — kept for API compatibility; callers should use setInjectionPhasePools directly. */
+    public void setInjectionPool(List<ItemStack> validInjectionStacks) {
+        injectionAllPhases.clear();
+        for (ItemStack s : validInjectionStacks) {
+            if (LucraftInjectionEntry.isValidInjection(s)) injectionAllPhases.add(s.copy());
+        }
+        injectionPhase1.clear();
+        injectionPhase2.clear();
+        injectionPhase3.clear();
     }
     public void addPlayerPlacedBlock(BlockPos pos) { playerPlacedBlocks.add(pos); }
     public void removePlayerPlacedBlock(BlockPos pos) { playerPlacedBlocks.remove(pos); }
@@ -319,7 +364,14 @@ public class HungerGamesMatch {
         fillChestsWithLoot(server, 1);
         for (UUID id : new ArrayList<>(alivePlayers)) {
             EntityPlayerMP p = server.getPlayerList().getPlayerByUUID(id);
-            if (p != null) p.setEntityInvulnerable(true);
+            if (p != null) {
+                // Wipe any leftover superpower before the round begins.
+                if (SuperpowerHandler.hasSuperpower(p)) {
+                    SuperpowerHandler.removeSuperpower(p);
+                    SuperpowerHandler.syncToPlayer(p);
+                }
+                p.setEntityInvulnerable(true);
+            }
         }
         broadcastMessage(server, TextFormatting.GREEN + "Grace period! PvP disabled for " + (GRACE_PERIOD_TICKS / 20) + "s.");
     }
@@ -335,9 +387,19 @@ public class HungerGamesMatch {
 
     private void startActive(MinecraftServer server) {
         phase = GamePhase.ACTIVE;
-        phaseTicksRemaining = PHASE3_END_TICKS;
         activePhaseElapsed = 0;
         activePhase = 1;
+
+        if (playerOrder.size() < 8) {
+            phase1EndTicks =  4 * 60 * 20;  //  4 min
+            phase2EndTicks = 10 * 60 * 20;  // +6 min
+            phase3EndTicks = 18 * 60 * 20;  // +8 min
+        } else {
+            phase1EndTicks =  8 * 60 * 20;  //  8 min
+            phase2EndTicks = 16 * 60 * 20;  // +8 min
+            phase3EndTicks = 24 * 60 * 20;  // +8 min
+        }
+        phaseTicksRemaining = phase3EndTicks;
 
         for (UUID id : new ArrayList<>(alivePlayers)) {
             EntityPlayerMP p = server.getPlayerList().getPlayerByUUID(id);
@@ -346,7 +408,10 @@ public class HungerGamesMatch {
 
         applyWorldBorder(server, worldBorderStartRange * 2);
         broadcastMessage(server, TextFormatting.RED + "" + TextFormatting.BOLD + "PvP ENABLED! Fight to survive!");
-        broadcastMessage(server, TextFormatting.YELLOW + "Phase 1 — border stable for 8 minutes.");
+        int phase1Minutes = phase1EndTicks / (60 * 20);
+        broadcastMessage(server, TextFormatting.YELLOW + "Phase 1 — border stable for " + phase1Minutes + " minutes.");
+
+        spawnInjections(server, 1);
     }
 
     private void tickActive(MinecraftServer server) {
@@ -356,9 +421,12 @@ public class HungerGamesMatch {
         int threshold = playerOrder.size() == 1 ? 0 : 1;
         if (alivePlayers.size() <= threshold) { endMatch(server); return; }
 
-        if (activePhase == 1 && activePhaseElapsed >= PHASE1_END_TICKS) {
+        if (activePhase == 1 && activePhaseElapsed >= phase1EndTicks) {
             activePhase = 2;
             fillChestsWithLoot(server, 2);
+            // Wipe existing injections and respawn for phase 2.
+            removeUncollectedInjections(server);
+            spawnInjections(server, 2);
             // Shrink at exactly 0.5 blocks/second: distance = worldBorderStartRange (half the diameter).
             long phase2Ms = (long)(worldBorderStartRange) * 2000L;
             applyWorldBorder(server, worldBorderStartRange, phase2Ms);
@@ -367,9 +435,12 @@ public class HungerGamesMatch {
                 + "Phase 2! Border is closing! Chests refilled!");
         }
 
-        if (activePhase == 2 && activePhaseElapsed >= PHASE2_END_TICKS) {
+        if (activePhase == 2 && activePhaseElapsed >= phase2EndTicks) {
             activePhase = 3;
             fillChestsWithLoot(server, 3);
+            // Wipe existing injections and respawn for phase 3.
+            removeUncollectedInjections(server);
+            spawnInjections(server, 3);
             // Shrink at exactly 0.5 blocks/second: distance = worldBorderStartRange - 20.
             long phase3Ms = (long)(Math.max(worldBorderStartRange - 20, 1)) * 2000L;
             applyWorldBorder(server, 20, phase3Ms);
@@ -451,6 +522,20 @@ public class HungerGamesMatch {
         } else {
             broadcastMessage(server, TextFormatting.YELLOW + "Match ended in a draw!");
         }
+
+        // Remove any uncollected injection entities from the world.
+        removeUncollectedInjections(server);
+    }
+
+    /** Kill all remaining {@link EntityLucraftInjection} entities in this match's dimension. */
+    private void removeUncollectedInjections(MinecraftServer server) {
+        WorldServer world = server.getWorld(dimensionId);
+        if (world == null) return;
+        for (Entity entity : new ArrayList<>(world.loadedEntityList)) {
+            if (entity instanceof EntityLucraftInjection) {
+                entity.setDead();
+            }
+        }
     }
 
     // -------------------------------------------------------------------------
@@ -470,6 +555,112 @@ public class HungerGamesMatch {
      *   minCount    — minimum stack size placed
      *   maxCount    — maximum stack size placed
      */
+    /**
+     * Spawns {@link EntityLucraftInjection} entities on the surface of the HG world for
+     * the given active game phase (1-3).
+     *
+     * Effective pool = phase-specific items + AllPhases items (merged, always included).
+     * Total count is clamped to [globalMin, globalMax] for this phase.
+     * Per-entry maxOnMap limits how many of a single injection type can be on the map.
+     *
+     * Placement rules:
+     *   - Must be on a solid surface block (not water, lava, leaves, ice, flowers).
+     *   - Spread randomly within the border range around the map center.
+     */
+    private void spawnInjections(MinecraftServer server, int phase) {
+        WorldServer world = server.getWorld(dimensionId);
+        if (world == null) return;
+
+        // Build effective pool (phase-specific + allPhases).
+        List<ItemStack> phasePool;
+        switch (phase) {
+            case 1: phasePool = injectionPhase1; break;
+            case 2: phasePool = injectionPhase2; break;
+            case 3: phasePool = injectionPhase3; break;
+            default: phasePool = new ArrayList<>();
+        }
+        List<ItemStack> effectivePool = new ArrayList<>(phasePool);
+        effectivePool.addAll(injectionAllPhases);
+        effectivePool.removeIf(s -> !LucraftInjectionEntry.isValidInjection(s));
+        if (effectivePool.isEmpty()) return;
+
+        // Effective global min/max for this phase (phase-specific non-zero overrides allPhases fallback).
+        int tabIdx = phase - 1; // 0-based
+        int gMin = injGlobalMin[tabIdx] > 0 ? injGlobalMin[tabIdx] : injGlobalMin[3];
+        int gMax = injGlobalMax[tabIdx] > 0 ? injGlobalMax[tabIdx] : injGlobalMax[3];
+        // Resolve 0 fallback for min: use 3 as default if nothing is set.
+        if (gMin == 0 && gMax == 0) { gMin = 3; gMax = 8; }
+        if (gMax > 0 && gMax < gMin) gMax = gMin;
+
+        // Determine target spawn count using player count as a hint,
+        // clamped to [gMin, gMax].
+        int playerBased = Math.max(gMin, playerOrder.size() / 2);
+        int spawnCount  = gMax > 0 ? Math.min(playerBased, gMax) : playerBased;
+        if (spawnCount < gMin) spawnCount = gMin;
+
+        // Build a weighted list for random selection.
+        List<ItemStack> weighted = new ArrayList<>();
+        for (ItemStack entry : effectivePool) {
+            int w = LucraftInjectionEntry.getWeight(entry);
+            for (int i = 0; i < w; i++) weighted.add(entry);
+        }
+
+        // Track how many of each superpowerId are already on the map (starts at 0).
+        Map<String, Integer> onMapCount = new HashMap<>();
+
+        int range = worldBorderStartRange > 0 ? worldBorderStartRange : 100;
+        int cx = mapCenter != null ? mapCenter.getX() : 0;
+        int cz = mapCenter != null ? mapCenter.getZ() : 0;
+
+        int spawned = 0;
+        int attempts = 0;
+        int maxAttempts = spawnCount * 80;
+
+        while (spawned < spawnCount && attempts < maxAttempts) {
+            attempts++;
+
+            // Weighted random selection.
+            ItemStack chosen = weighted.get(rand.nextInt(weighted.size()));
+            String lucraftId = LucraftInjectionEntry.getLucraftId(chosen);
+            int maxOnMap     = LucraftInjectionEntry.getMaxOnMap(chosen);
+
+            // Enforce per-type maxOnMap limit (keyed by LucraftCore injection id).
+            if (maxOnMap > 0) {
+                int current = onMapCount.getOrDefault(lucraftId, 0);
+                if (current >= maxOnMap) continue;
+            }
+
+            int dx = rand.nextInt(range * 2) - range;
+            int dz = rand.nextInt(range * 2) - range;
+            int tx = cx + dx;
+            int tz = cz + dz;
+
+            int surfaceY = world.getHeight(tx, tz);
+            int blockY   = surfaceY - 1;
+            if (blockY < 1) continue;
+
+            net.minecraft.util.math.BlockPos surfacePos = new net.minecraft.util.math.BlockPos(tx, blockY, tz);
+            net.minecraft.block.Block surfaceBlock = world.getBlockState(surfacePos).getBlock();
+
+            // Skip invalid surfaces: unloaded chunks return height 0, air, or problematic materials.
+            if (surfaceBlock == Blocks.AIR) continue;
+            String rn = surfaceBlock.getRegistryName() != null ? surfaceBlock.getRegistryName().toString() : "";
+            if (rn.contains("water") || rn.contains("lava") || rn.contains("leaves")
+                    || rn.contains("ice") || rn.contains("flower") || rn.contains("grass_path")) {
+                continue;
+            }
+            if (!world.isAirBlock(surfacePos.up())) continue;
+
+            // Pass the real lucraftcore:injection ItemStack so the entity (and its renderer)
+            // always display the correct tinted vial for this superpower.
+            EntityLucraftInjection injection = new EntityLucraftInjection(
+                    world, tx + 0.5, surfaceY + 0.5, tz + 0.5, chosen.copy());
+            world.spawnEntity(injection);
+            onMapCount.merge(lucraftId, 1, Integer::sum);
+            spawned++;
+        }
+    }
+
     private void fillChestsWithLoot(MinecraftServer server, int phase) {
         WorldServer hgWorld = server.getWorld(dimensionId);
         if (hgWorld == null) return;
@@ -620,8 +811,8 @@ public class HungerGamesMatch {
             case LOBBY: case COUNTDOWN: case GRACE_PERIOD:
                 return phaseTicksRemaining / 20;
             case ACTIVE:
-                int end = activePhase == 1 ? PHASE1_END_TICKS
-                        : activePhase == 2 ? PHASE2_END_TICKS : PHASE3_END_TICKS;
+                int end = activePhase == 1 ? phase1EndTicks
+                        : activePhase == 2 ? phase2EndTicks : phase3EndTicks;
                 return Math.max(0, (end - activePhaseElapsed) / 20);
             default: return 0;
         }
@@ -806,17 +997,27 @@ public class HungerGamesMatch {
                 spawnSpectatorBat(world, sp, specId);
                 continue;
             }
-            double eyeY = sp.posY + sp.getEyeHeight();
-            bat.setPositionAndRotation(sp.posX, eyeY, sp.posZ, sp.rotationYaw, sp.rotationPitch);
-            bat.rotationYawHead = sp.rotationYaw;
-            bat.renderYawOffset = sp.rotationYaw;
-            bat.motionX = bat.motionY = bat.motionZ = 0;
             bat.setNoGravity(true);
             bat.setSilent(true);
             bat.setEntityInvulnerable(true);
             bat.setIsBatHanging(false);
             bat.setHealth(bat.getMaxHealth());
+            bat.motionX = bat.motionY = bat.motionZ = 0;
             bat.fallDistance = 0;
+            // When the spectator is viewing another entity's perspective, their server-side
+            // body is repositioned to the spectated entity for chunk loading purposes.
+            // Placing the bat at the spectator's body position would put it on the
+            // spectated player's head, blocking their vision and projectiles.
+            // Instead, park the bat out of the way below the world.
+            net.minecraft.entity.Entity spectatingTarget = sp.getSpectatingEntity();
+            if (spectatingTarget != null && spectatingTarget != sp) {
+                bat.setPositionAndRotation(sp.posX, -128.0D, sp.posZ, 0.0F, 0.0F);
+            } else {
+                double eyeY = sp.posY + sp.getEyeHeight();
+                bat.setPositionAndRotation(sp.posX, eyeY, sp.posZ, sp.rotationYaw, sp.rotationPitch);
+                bat.rotationYawHead = sp.rotationYaw;
+                bat.renderYawOffset = sp.rotationYaw;
+            }
         }
     }
 
@@ -853,8 +1054,8 @@ public class HungerGamesMatch {
                 progress = (float) phaseTicksRemaining / GRACE_PERIOD_TICKS;
                 break;
             case ACTIVE: {
-                int phaseEnd = activePhase == 1 ? PHASE1_END_TICKS
-                             : activePhase == 2 ? PHASE2_END_TICKS : PHASE3_END_TICKS;
+                int phaseEnd = activePhase == 1 ? phase1EndTicks
+                             : activePhase == 2 ? phase2EndTicks : phase3EndTicks;
                 int left = phaseEnd - activePhaseElapsed;
                 int m = left / (60 * 20), s = (left / 20) % 60;
                 title    = TextFormatting.RED + "Phase " + activePhase + " — " + alivePlayers.size()

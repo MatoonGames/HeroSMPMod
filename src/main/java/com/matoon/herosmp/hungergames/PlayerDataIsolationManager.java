@@ -1,5 +1,6 @@
 package com.matoon.herosmp.hungergames;
 
+import lucraft.mods.lucraftcore.superpowers.SuperpowerHandler;
 import net.minecraft.entity.SharedMonsterAttributes;
 import net.minecraft.entity.player.EntityPlayerMP;
 import net.minecraft.item.ItemStack;
@@ -81,6 +82,9 @@ public class PlayerDataIsolationManager {
         if (snapshot == null) {
             return; // No stored state
         }
+
+        // Wipe any arena state the player still carries before restoring overworld data.
+        clearPlayerState(player);
 
         // Restore inventory
         player.inventory.readFromNBT(snapshot.inventoryData.getTagList("Inventory", Constants.NBT.TAG_COMPOUND));
@@ -195,6 +199,15 @@ public class PlayerDataIsolationManager {
             player.setHealth(player.getMaxHealth());
         } catch (Exception e) {
             System.err.println("[HeroSMP] PlayerDataIsolationManager: could not reset max health for "
+                    + player.getName() + ": " + e.getMessage());
+        }
+
+        // Remove any Lucraft superpower granted during the match.
+        try {
+            SuperpowerHandler.removeSuperpower(player);
+            SuperpowerHandler.syncToAll(player);
+        } catch (Exception e) {
+            System.err.println("[HeroSMP] PlayerDataIsolationManager: could not remove superpower for "
                     + player.getName() + ": " + e.getMessage());
         }
     }

@@ -1,0 +1,10 @@
+{
+  "time_effect": {
+    "sounds": [
+      {
+        "name": "herosmp:time_effect",
+        "stream": false
+      }
+    ]
+  }
+}

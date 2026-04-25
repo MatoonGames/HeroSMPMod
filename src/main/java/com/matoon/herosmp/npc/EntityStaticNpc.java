@@ -72,8 +72,13 @@ public class EntityStaticNpc extends EntityCreature {
     @Override
     public boolean processInteract(EntityPlayer player, EnumHand hand) {
         if (world.isRemote || hand != EnumHand.MAIN_HAND) {
-            return true;
+            return false;
         }
+
+        System.out.println("[HeroSMP][NPC] processInteract: player=" + player.getName()
+                + " creative=" + player.isCreative()
+                + " sneaking=" + player.isSneaking()
+                + " isMP=" + (player instanceof EntityPlayerMP));
 
         if (player.isCreative() && player.isSneaking() && player instanceof EntityPlayerMP) {
             EntityPlayerMP editor = (EntityPlayerMP) player;
@@ -93,6 +98,12 @@ public class EntityStaticNpc extends EntityCreature {
         if (mode == NpcMode.PVP_QUEUE) {
             if (player instanceof EntityPlayerMP) {
                 HeroSMP.PVP_QUEUE_MANAGER.openPvpMenu((EntityPlayerMP) player);
+            }
+            return true;
+        }
+        if (mode == NpcMode.HUNGER_GAMES_QUEUE) {
+            if (player instanceof EntityPlayerMP) {
+                HeroSMP.HUNGER_GAMES_MANAGER.openHungerGamesMenu((EntityPlayerMP) player);
             }
             return true;
         }

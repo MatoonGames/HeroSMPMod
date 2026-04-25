@@ -94,7 +94,8 @@ public class GuiNpcEditor extends GuiScreen {
     @Override
     protected void actionPerformed(GuiButton button) throws IOException {
         if (button.id == 10) {
-            mode = mode == NpcMode.COMMAND ? NpcMode.PVP_QUEUE : NpcMode.COMMAND;
+            NpcMode[] modes = NpcMode.values();
+            mode = modes[(mode.ordinal() + 1) % modes.length];
             updateModeButton();
             return;
         }
@@ -194,8 +195,8 @@ public class GuiNpcEditor extends GuiScreen {
         displayItemField.drawTextBox();
 
         this.fontRenderer.drawString("Use item ids like minecraft:apple for the name-tag icon.", left, top + ROW_GAP * 5 + 30, 0x8F8F8F);
-        if (mode == NpcMode.PVP_QUEUE) {
-            this.fontRenderer.drawString("Command is ignored while this NPC is set to PvP Queue.", left, panelTop + PANEL_HEIGHT - 52, 0xCCCC66);
+        if (mode == NpcMode.PVP_QUEUE || mode == NpcMode.HUNGER_GAMES_QUEUE) {
+            this.fontRenderer.drawString("Command is ignored in queue modes.", left, panelTop + PANEL_HEIGHT - 52, 0xCCCC66);
         }
 
         super.drawScreen(mouseX, mouseY, partialTicks);
@@ -208,7 +209,13 @@ public class GuiNpcEditor extends GuiScreen {
 
     private void updateModeButton() {
         if (modeButton != null) {
-            modeButton.displayString = "Mode: " + (mode == NpcMode.PVP_QUEUE ? "PvP Queue" : "Command");
+            String label;
+            switch (mode) {
+                case PVP_QUEUE:           label = "PvP Queue"; break;
+                case HUNGER_GAMES_QUEUE:  label = "Hunger Games Queue"; break;
+                default:                  label = "Command"; break;
+            }
+            modeButton.displayString = "Mode: " + label;
         }
     }
 }

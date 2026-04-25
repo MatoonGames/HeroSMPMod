@@ -1,5 +1,6 @@
 package com.matoon.herosmp.npc;
 
+import lucraft.mods.lucraftcore.superpowers.SuperpowerHandler;
 import net.minecraft.entity.SharedMonsterAttributes;
 import net.minecraft.entity.player.EntityPlayerMP;
 import net.minecraft.item.ItemStack;
@@ -242,6 +243,15 @@ public class PvpPlayerStateSavedData extends WorldSavedData {
             player.setHealth(Math.min(player.getHealth(), 20.0F));
         } catch (Exception e) {
             System.err.println("[HeroSMP] PvpPlayerStateSavedData: could not reset max health for "
+                    + player.getName() + ": " + e.getMessage());
+        }
+
+        // Remove any Lucraft superpower granted during the match.
+        try {
+            SuperpowerHandler.removeSuperpower(player);
+            SuperpowerHandler.syncToAll(player);
+        } catch (Exception e) {
+            System.err.println("[HeroSMP] PvpPlayerStateSavedData: could not remove superpower for "
                     + player.getName() + ": " + e.getMessage());
         }
 

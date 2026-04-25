@@ -1,83 +1,111 @@
 package com.matoon.herosmp.npc.pvp;
 
-import net.minecraft.init.Biomes;
 import net.minecraft.world.DimensionType;
+import net.minecraft.world.GameType;
 import net.minecraft.world.WorldProvider;
+import net.minecraft.world.WorldSettings;
+import net.minecraft.world.WorldType;
 import net.minecraft.world.biome.Biome;
+import net.minecraft.world.biome.BiomeProvider;
 import net.minecraft.world.gen.IChunkGenerator;
+import net.minecraft.world.storage.WorldInfo;
 import net.minecraftforge.common.DimensionManager;
 
 import java.util.HashMap;
 import java.util.Map;
 
 public class ArenaWorldProvider extends WorldProvider {
-    public static final int ARENA_CHUNKS_ACROSS = 10;
-    public static final int ARENA_RADIUS_BLOCKS = (ARENA_CHUNKS_ACROSS * 16) / 2;
-    public static final int SLOT_REGION_CHUNKS = 32;
-    public static final int SLOT_REGION_BLOCKS = SLOT_REGION_CHUNKS * 16;
-    public static final int ARENA_MIN_LOCAL_CHUNK = (SLOT_REGION_CHUNKS - ARENA_CHUNKS_ACROSS) / 2;
-    public static final int ARENA_MAX_LOCAL_CHUNK = ARENA_MIN_LOCAL_CHUNK + ARENA_CHUNKS_ACROSS - 1;
-    public static final int ARENA_MIN_LOCAL_BLOCK = ARENA_MIN_LOCAL_CHUNK * 16;
-    public static final int ARENA_MAX_LOCAL_BLOCK = ARENA_MAX_LOCAL_CHUNK * 16 + 15;
-    private static final Map<Long, Long> SLOT_SEEDS = new HashMap<Long, Long>();
-    private static final Map<Long, Integer> SLOT_BIOMES = new HashMap<Long, Integer>();
 
-    public static synchronized void setArenaSlotSeed(int slotX, int slotZ, long seed) {
-        SLOT_SEEDS.put(slotKey(slotX, slotZ), seed);
+    /**
+     * Arena layout (chunk coordinates):
+     *
+     *   0     : void (never touched)
+     *   1     : populate-only buffer — terrain generated, never decorated.
+     *             The overworld generator's populate() step requests the 8
+     *             immediate neighbours; restricting decoration to chunks 2-9
+     *             means those neighbour requests always land on chunk 1 or
+     *             another interior chunk, never on void.
+     *   2-9   : playable arena (8 chunks = 128 × 128 blocks, fully decorated)
+     *   10    : populate-only buffer (mirror of chunk 1)
+     *   11+   : void
+     *
+     * The world border and enforcePlayerInsideArena both sit at the outer edge
+     * of the playable chunks so there is no gap between the visible terrain edge
+     * and the boundary wall.
+     *
+     *   ARENA_MIN_BLOCK =  2 * 16 = 32
+     *   ARENA_MAX_BLOCK = 10 * 16 - 1 = 159
+     */
+    public static final int ARENA_CHUNKS_ACROSS = 8;
+
+    /** Single buffer chunk on each side for populate neighbour safety. */
+    public static final int ARENA_FIRST_GEN   = 1;
+    public static final int ARENA_LAST_GEN    = 10;
+
+    /** First/last playable (and decorated) chunk. */
+    public static final int ARENA_FIRST_CHUNK = 2;
+    public static final int ARENA_LAST_CHUNK  = ARENA_FIRST_CHUNK + ARENA_CHUNKS_ACROSS - 1; // 9
+
+    /**
+     * Spawn/chest/enforcement bounds use the playable chunk range.
+     * ARENA_MIN_BLOCK / ARENA_MAX_BLOCK are kept for spawn and chest placement.
+     */
+    public static final int ARENA_MIN_BLOCK = ARENA_FIRST_CHUNK * 16;            // 32
+    public static final int ARENA_MAX_BLOCK = (ARENA_LAST_CHUNK + 1) * 16 - 1;   // 159
+
+    /**
+     * The world border uses block-face coordinates (not block indices) so the wall
+     * sits exactly at the chunk boundary with no half-block offset.
+     *   ARENA_BORDER_START = first block face of chunk FIRST_GEN = 16.0
+     *   ARENA_BORDER_END   = last  block face of chunk LAST_GEN  = 176.0
+     *   center             = (16 + 176) / 2 = 96.0
+     *   diameter           = 176 - 16      = 160
+     */
+    public static final double ARENA_BORDER_START    = ARENA_FIRST_GEN * 16;          // 16.0
+    public static final double ARENA_BORDER_END      = (ARENA_LAST_GEN + 1) * 16;     // 176.0
+    public static final double ARENA_BORDER_CENTER   = (ARENA_BORDER_START + ARENA_BORDER_END) / 2.0; // 96.0
+    public static final double ARENA_BORDER_DIAMETER = ARENA_BORDER_END - ARENA_BORDER_START;         // 160.0
+
+    // Per-dimension seed and chunk offset, keyed by dimension ID.
+    // The chunk offset shifts where in the infinite overworld noise field the arena
+    // is sampled from, guaranteeing a different biome region every match.
+    private static final Map<Integer, Long> DIM_SEEDS   = new HashMap<Integer, Long>();
+    private static final Map<Integer, int[]> DIM_OFFSETS = new HashMap<Integer, int[]>();
+
+    public static synchronized void setArenaDimension(int dimensionId, long seed, int chunkOffsetX, int chunkOffsetZ) {
+        DIM_SEEDS.put(dimensionId, seed);
+        DIM_OFFSETS.put(dimensionId, new int[]{chunkOffsetX, chunkOffsetZ});
     }
 
-    public static synchronized void setArenaSlotBiome(int slotX, int slotZ, Biome biome) {
-        long key = slotKey(slotX, slotZ);
-        if (biome == null) {
-            SLOT_BIOMES.remove(key);
-            return;
-        }
-        SLOT_BIOMES.put(key, Biome.getIdForBiome(biome));
+    public static synchronized void clearArenaDimension(int dimensionId) {
+        DIM_SEEDS.remove(dimensionId);
+        DIM_OFFSETS.remove(dimensionId);
     }
 
-    public static synchronized void clearArenaSlot(int slotX, int slotZ) {
-        long key = slotKey(slotX, slotZ);
-        SLOT_SEEDS.remove(key);
-        SLOT_BIOMES.remove(key);
+    public static synchronized Long getArenaDimensionSeed(int dimensionId) {
+        return DIM_SEEDS.get(dimensionId);
     }
 
-    public static synchronized Long getArenaSlotSeed(int slotX, int slotZ) {
-        return SLOT_SEEDS.get(slotKey(slotX, slotZ));
-    }
-
-    public static synchronized Biome getArenaSlotBiome(int slotX, int slotZ) {
-        Integer id = SLOT_BIOMES.get(slotKey(slotX, slotZ));
-        return id == null ? Biomes.PLAINS : Biome.getBiome(id, Biomes.PLAINS);
-    }
-
-    public static int getArenaSlotXForChunk(int chunkX) {
-        return Math.floorDiv(chunkX, SLOT_REGION_CHUNKS);
-    }
-
-    public static int getArenaSlotZForChunk(int chunkZ) {
-        return Math.floorDiv(chunkZ, SLOT_REGION_CHUNKS);
-    }
-
-    public static int getLocalChunkInSlot(int chunkCoordinate) {
-        return Math.floorMod(chunkCoordinate, SLOT_REGION_CHUNKS);
-    }
-
-    public static int getArenaSlotXForBlock(int blockX) {
-        return Math.floorDiv(blockX, SLOT_REGION_BLOCKS);
-    }
-
-    public static int getArenaSlotZForBlock(int blockZ) {
-        return Math.floorDiv(blockZ, SLOT_REGION_BLOCKS);
-    }
-
-    private static long slotKey(int slotX, int slotZ) {
-        return (((long) slotX) << 32) ^ (slotZ & 0xFFFFFFFFL);
+    /** Returns {chunkOffsetX, chunkOffsetZ}, or {0,0} if not set. */
+    public static synchronized int[] getArenaDimensionOffset(int dimensionId) {
+        int[] off = DIM_OFFSETS.get(dimensionId);
+        return off != null ? off : new int[]{0, 0};
     }
 
     @Override
     protected void init() {
         super.init();
-        this.biomeProvider = new ArenaBiomeProvider();
+        // Replace the default BiomeProvider with one seeded from the per-match seed.
+        // ChunkGeneratorOverworld calls world.getBiomeProvider() for all biome lookups,
+        // so this determines which biomes appear. The seed is set in PvpQueueManager
+        // before initDimension() is called so it is available here.
+        Long seed = getArenaDimensionSeed(getDimension());
+        if (seed != null) {
+            WorldSettings settings = new WorldSettings(
+                    seed, GameType.SURVIVAL, false, false, WorldType.DEFAULT);
+            WorldInfo info = new WorldInfo(settings, "arena");
+            this.biomeProvider = new BiomeProvider(info);
+        }
     }
 
     @Override

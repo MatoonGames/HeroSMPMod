@@ -2,7 +2,8 @@ package com.matoon.herosmp.npc;
 
 public enum NpcMode {
     COMMAND,
-    PVP_QUEUE;
+    PVP_QUEUE,
+    HUNGER_GAMES_QUEUE;
 
     public static NpcMode fromString(String value) {
         for (NpcMode mode : values()) {

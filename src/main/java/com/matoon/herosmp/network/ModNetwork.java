@@ -21,5 +21,11 @@ public final class ModNetwork {
         CHANNEL.registerMessage(PacketOpenNpcEditor.Handler.class, PacketOpenNpcEditor.class, id++, Side.CLIENT);
         CHANNEL.registerMessage(PacketSaveNpcEditor.Handler.class, PacketSaveNpcEditor.class, id++, Side.SERVER);
         CHANNEL.registerMessage(PacketHGMusicControl.Handler.class, PacketHGMusicControl.class, id++, Side.CLIENT);
+        CHANNEL.registerMessage(PacketOpenHungerGamesMenu.Handler.class, PacketOpenHungerGamesMenu.class, id++, Side.CLIENT);
+        CHANNEL.registerMessage(PacketHungerGamesMenuAction.Handler.class, PacketHungerGamesMenuAction.class, id++, Side.SERVER);
+        CHANNEL.registerMessage(PacketHGMusicManifest.Handler.class, PacketHGMusicManifest.class, id++, Side.CLIENT);
+        CHANNEL.registerMessage(PacketHGMusicRequest.Handler.class, PacketHGMusicRequest.class, id++, Side.SERVER);
+        CHANNEL.registerMessage(PacketHGMusicChunk.Handler.class, PacketHGMusicChunk.class, id++, Side.CLIENT);
+        CHANNEL.registerMessage(PacketTimeStoneCharge.Handler.class, PacketTimeStoneCharge.class, id++, Side.CLIENT);
     }
 }

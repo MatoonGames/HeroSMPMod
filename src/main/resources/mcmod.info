@@ -1,14 +1,14 @@
 [
   {
     "modid": "herosmp",
-    "name": "Hero SMP",
-    "description": "A mod for custom disconnect screens.",
-    "version": "1.0",
+    "name": "Beyonder",
+    "description": "/hg and /pvp for modded mc servers",
+    "version": "1.3",
     "mcversion": "1.12.2",
     "authorList": ["Matoon"],
     "url": "https://matoon.games",
     "credits": "233Neon",
-    "logoFile": "assets/herosmp/logo.png",
+    "logoFile": "assets/herosmp/icon.png",
     "updateUrl": "",
     "screenshots": [],
     "dependencies": ["required-after:lucraft_core", "required-after:heroesexpansion", "required-after:infinity"]

@@ -12,6 +12,20 @@ import net.minecraftforge.common.DimensionManager;
  */
 public class HungerGamesWorldProvider extends WorldProvider {
 
+    /**
+     * Match-mode chunk boundary, in chunk coordinates.
+     * Set by HungerGamesWorldManager after initDimension() for active matches.
+     * When non-null, chunks outside this box + CHUNK_PADDING are voided by the generator
+     * so the client never tries to load the full pre-built region files past the border.
+     * Left null for configure-map sessions so editors can roam freely.
+     */
+    public int matchCenterChunkX  = Integer.MIN_VALUE;
+    public int matchCenterChunkZ  = Integer.MIN_VALUE;
+    public int matchBorderChunks  = 0; // half-width in chunks (radius)
+
+    /** Extra void padding beyond the border boundary (in chunks). */
+    public static final int CHUNK_PADDING = 4;
+
     @Override
     protected void init() {
         super.init();

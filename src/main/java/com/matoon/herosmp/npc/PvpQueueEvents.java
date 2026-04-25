@@ -1,8 +1,11 @@
 package com.matoon.herosmp.npc;
 
 import com.matoon.herosmp.HeroSMP;
+import com.matoon.herosmp.hungergames.map.LucraftInjectionContainer;
+import com.matoon.herosmp.hungergames.map.LucraftInjectionPropertiesContainer;
 import net.minecraft.entity.player.EntityPlayerMP;
 import net.minecraftforge.event.entity.EntityTravelToDimensionEvent;
+import java.util.List;
 import java.util.UUID;
 import net.minecraftforge.event.entity.living.LivingAttackEvent;
 import net.minecraftforge.event.entity.living.LivingDeathEvent;
@@ -58,7 +61,34 @@ public class PvpQueueEvents {
         if (!(event.getEntityPlayer() instanceof EntityPlayerMP)) {
             return;
         }
-        HeroSMP.PVP_CHEST_LOOT_MANAGER.handleContainerClosed((EntityPlayerMP) event.getEntityPlayer(), event.getContainer());
+        EntityPlayerMP player = (EntityPlayerMP) event.getEntityPlayer();
+        // Handle PvP injection properties editor close.
+        // Guard: skip if this player is in an HG configure-map session (their GUI belongs to HG).
+        if (event.getContainer() instanceof LucraftInjectionPropertiesContainer
+                && !HeroSMP.HUNGER_GAMES_MANAGER.isInConfigureMode(player.getUniqueID())) {
+            LucraftInjectionPropertiesContainer c = (LucraftInjectionPropertiesContainer) event.getContainer();
+            if (player.getServer() != null) {
+                HeroSMP.PVP_INJECTION_MANAGER.saveFromPropertiesMenu(player.getServer(), c.getPropInv());
+                int count = HeroSMP.PVP_INJECTION_MANAGER.getPool(player.getServer()).size();
+                player.sendMessage(new net.minecraft.util.text.TextComponentString(
+                        net.minecraft.util.text.TextFormatting.GREEN + "PvP injection properties saved: " + count + " injection(s) in pool."));
+            }
+            return;
+        }
+        // Handle PvP injection pool editor close.
+        // Guard: skip if this player is in an HG configure-map session (their GUI belongs to HG).
+        if (event.getContainer() instanceof LucraftInjectionContainer
+                && !HeroSMP.HUNGER_GAMES_MANAGER.isInConfigureMode(player.getUniqueID())) {
+            LucraftInjectionContainer inv = (LucraftInjectionContainer) event.getContainer();
+            if (player.getServer() != null) {
+                List<net.minecraft.item.ItemStack> items = inv.getInjectionInventory().getTabItems(3);
+                HeroSMP.PVP_INJECTION_MANAGER.setPool(player.getServer(), items);
+                player.sendMessage(new net.minecraft.util.text.TextComponentString(
+                        net.minecraft.util.text.TextFormatting.GREEN + "PvP injection pool saved: " + items.size() + " injection(s)."));
+            }
+            return;
+        }
+        HeroSMP.PVP_CHEST_LOOT_MANAGER.handleContainerClosed(player, event.getContainer());
     }
 
     @SubscribeEvent
@@ -66,6 +96,10 @@ public class PvpQueueEvents {
         if (!(event.getEntityPlayer() instanceof EntityPlayerMP)) {
             return;
         }
+        System.out.println("[HeroSMP][EntityInteract] player=" + event.getEntityPlayer().getName()
+                + " target=" + event.getTarget().getClass().getSimpleName()
+                + " hand=" + event.getHand()
+                + " cancelled=" + event.isCanceled());
         if (HeroSMP.PVP_QUEUE_MANAGER.handleChestHighlightInteract((EntityPlayerMP) event.getEntityPlayer(), event.getTarget())) {
             event.setCanceled(true);
         }

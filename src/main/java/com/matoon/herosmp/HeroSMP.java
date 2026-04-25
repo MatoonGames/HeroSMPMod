@@ -28,11 +28,20 @@ public class HeroSMP {
     public static final KitManager KIT_MANAGER = new KitManager();
     public static final PvpChestLootManager PVP_CHEST_LOOT_MANAGER = new PvpChestLootManager();
     public static final HungerGamesWorldManager HUNGER_GAMES_MANAGER = new HungerGamesWorldManager();
+    public static final com.matoon.herosmp.integration.PvpInjectionManager PVP_INJECTION_MANAGER =
+            new com.matoon.herosmp.integration.PvpInjectionManager();
 
     public static Configuration config;
     public static boolean enableGUI = true;
     public static boolean guiMultiplayerOnly = true;
     public static boolean enableScoreboard = true;
+
+    // Time Stone ability charge settings
+    public static boolean timeStoneChargeOutsideMatches  = false;
+    public static int     timeStoneRechargeSeconds       = 30;
+    public static float   timeStoneSlowDrainMultiplier   = 0.67f;
+    public static float   timeStoneSpeedDrainMultiplier  = 1.0f;
+    public static float   timeStonePvpDrainMultiplier    = 1.0f;
 
     @SidedProxy(clientSide = "com.matoon.herosmp.client.ClientProxy", serverSide = "com.matoon.herosmp.server.ServerProxy")
     public static CommonProxy proxy;
@@ -62,6 +71,7 @@ public class HeroSMP {
     @Mod.EventHandler
     public void serverStarting(FMLServerStartingEvent event) {
         proxy.serverStarting(event);
+        PVP_QUEUE_MANAGER.purgeStaleArenaDimensions(event.getServer());
         // Register commands directly as a safety net so dedicated/integrated command wiring
         // remains available even if a proxy registration path is skipped.
         event.registerServerCommand(new CommandHeroNpc());
@@ -76,6 +86,19 @@ public class HeroSMP {
             enableGUI = config.getBoolean("enableGUI", Configuration.CATEGORY_GENERAL, true, "Set to false to disable the in-game GUI.");
             guiMultiplayerOnly = config.getBoolean("guiMultiplayerOnly", Configuration.CATEGORY_GENERAL, true, "Set to false to display GUI in both singleplayer and multiplayer.");
             enableScoreboard = config.getBoolean("enableScoreboard", Configuration.CATEGORY_GENERAL, true, "Set to false to disable the scoreboard.");
+
+            // Time Stone charge settings
+            final String CAT_TIMESTONE = "timeStone";
+            timeStoneChargeOutsideMatches = config.getBoolean("enableChargeOutsideMatches", CAT_TIMESTONE, false,
+                    "Set to true to enable the Time Stone ability charge mechanic outside PVP and Hunger Games matches.");
+            timeStoneRechargeSeconds = config.getInt("rechargeSeconds", CAT_TIMESTONE, 30, 1, 3600,
+                    "Seconds for the Time Stone charge to recover from 0 to full.");
+            timeStoneSlowDrainMultiplier = config.getFloat("slowTimeDrainMultiplier", CAT_TIMESTONE, 0.67f, 0.01f, 100.0f,
+                    "Drain rate multiplier when time is slowed. Uses a sqrt(20/rate) curve: rate=1 drains ~4.5x faster than rate=19. Default targets ~10s drain at rate=1 in PVP.");
+            timeStoneSpeedDrainMultiplier = config.getFloat("speedTimeDrainMultiplier", CAT_TIMESTONE, 1.0f, 0.01f, 100.0f,
+                    "Drain rate multiplier when time is sped up (rate > 20). Linear by deviation. Higher = drains faster.");
+            timeStonePvpDrainMultiplier = config.getFloat("pvpDrainMultiplier", CAT_TIMESTONE, 1.0f, 0.01f, 1000.0f,
+                    "Additional drain multiplier applied on top of slow/speed multipliers inside PVP and Hunger Games matches.");
         } catch (Exception e) {
             System.err.println("Error loading config for " + MODID);
         } finally {

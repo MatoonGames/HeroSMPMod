@@ -1,6 +1,8 @@
 package com.matoon.herosmp.npc;
 
 import com.matoon.herosmp.HeroSMP;
+import com.matoon.herosmp.hungergames.PlayerDataIsolationManager;
+import com.matoon.herosmp.integration.EntityLucraftInjection;
 import com.matoon.herosmp.network.ModNetwork;
 import com.matoon.herosmp.network.PacketOpenKitSelection;
 import com.matoon.herosmp.network.PacketOpenPvpMenu;
@@ -63,24 +65,25 @@ import javax.annotation.Nullable;
 
 public class PvpQueueManager {
 
-    private static final int ARENA_CHUNKS_ACROSS = ArenaWorldProvider.ARENA_CHUNKS_ACROSS;
-    private static final int ARENA_MIN_CHUNK = ArenaWorldProvider.ARENA_MIN_LOCAL_CHUNK;
-    private static final int ARENA_MAX_CHUNK = ArenaWorldProvider.ARENA_MAX_LOCAL_CHUNK;
-    private static final int ARENA_MIN_BLOCK = ArenaWorldProvider.ARENA_MIN_LOCAL_BLOCK;
-    private static final int ARENA_MAX_BLOCK = ArenaWorldProvider.ARENA_MAX_LOCAL_BLOCK;
+    private static final int ARENA_CHUNKS_ACROSS    = ArenaWorldProvider.ARENA_CHUNKS_ACROSS;
+    private static final int ARENA_MIN_CHUNK        = ArenaWorldProvider.ARENA_FIRST_GEN;
+    private static final int ARENA_MAX_CHUNK        = ArenaWorldProvider.ARENA_LAST_GEN;
+    private static final int ARENA_MIN_BLOCK        = ArenaWorldProvider.ARENA_MIN_BLOCK;
+    private static final int ARENA_MAX_BLOCK        = ArenaWorldProvider.ARENA_MAX_BLOCK;
+    // Border uses block-face coords so the wall sits exactly on the chunk boundary.
+    private static final double ARENA_BORDER_CENTER   = ArenaWorldProvider.ARENA_BORDER_CENTER;
+    private static final double ARENA_BORDER_DIAMETER = ArenaWorldProvider.ARENA_BORDER_DIAMETER;
     private static final int ARENA_SPAWN_EDGE_PADDING = 20;
-    private static final int ARENA_FIRST_SPAWN_X = ARENA_MIN_BLOCK + ARENA_SPAWN_EDGE_PADDING;
+    private static final int ARENA_FIRST_SPAWN_X  = ARENA_MIN_BLOCK + ARENA_SPAWN_EDGE_PADDING;
     private static final int ARENA_SECOND_SPAWN_X = ARENA_MAX_BLOCK - ARENA_SPAWN_EDGE_PADDING;
-    private static final int ARENA_SPAWN_Z = 0;
-    private static final int ARENA_DIMENSION_ID = -7000;
-    private static final int ARENA_DIMENSION_TYPE_ID = 17770;
-    private static final String ARENA_DIMENSION_TYPE_NAME = "herosmp_pvp";
+    private static final int ARENA_SPAWN_Z = (ARENA_MIN_BLOCK + ARENA_MAX_BLOCK) / 2;
+    // Each PvP match now gets its own unique dimension, starting from -7001 and going down.
+    // -7000 is reserved but unused to avoid conflicts.
+    private static final int ARENA_BASE_DIMENSION_ID = -7000;
+    private static final int ARENA_DIMENSION_TYPE_BASE_ID = 17770;
+    private static final String ARENA_DIMENSION_TYPE_PREFIX = "herosmp_pvp_";
     private static final String ARENA_DIMENSION_TYPE_SUFFIX = "_herosmp_pvp";
     private static final int ARENA_GENERATION_ATTEMPTS = 8;
-    private static final int CLEANUP_UNLOAD_RETRY_TICKS = 20;
-    private static final int CLEANUP_DELETE_DELAY_TICKS = 60;
-    private static final int ARENA_SLOT_CHUNKS = ArenaWorldProvider.SLOT_REGION_CHUNKS;
-    private static final int ARENA_SLOT_BLOCKS = ArenaWorldProvider.SLOT_REGION_BLOCKS;
     private static final int MAX_MATCH_CHESTS = 7;
     private static final int MIN_MATCH_CHESTS = 4;
     private static final int CHEST_PLACEMENT_ATTEMPTS = 180;
@@ -94,22 +97,6 @@ public class PvpQueueManager {
     private static final int FFA_MAX_PLAYERS = 4;
     private static final int FFA_MIN_PLAYERS = 2;
     private static final int FFA_QUEUE_WAIT_TICKS = 20 * 20;
-    private static final Biome[] ARENA_BIOME_POOL = new Biome[]{
-            Biomes.FOREST,
-            Biomes.BIRCH_FOREST,
-            Biomes.ROOFED_FOREST,
-            Biomes.PLAINS,
-            Biomes.TAIGA,
-            Biomes.REDWOOD_TAIGA,
-            Biomes.EXTREME_HILLS,
-            Biomes.SAVANNA,
-            Biomes.MESA,
-            Biomes.DESERT,
-            Biomes.JUNGLE,
-            Biomes.SWAMPLAND,
-            Biomes.ICE_PLAINS
-    };
-
     private static final String CHAT_PREFIX = TextFormatting.DARK_AQUA + "[HeroPvP] " + TextFormatting.GRAY;
 
     private final Deque<UUID> queue = new ArrayDeque<UUID>();
@@ -121,18 +108,20 @@ public class PvpQueueManager {
     private final Map<UUID, SoloMatch> soloMatches = new HashMap<UUID, SoloMatch>();
     private final Map<UUID, ReturnState> pendingReturns = new HashMap<UUID, ReturnState>();
     private final Map<UUID, PlayerInventorySnapshot> pendingInventoryReturns = new HashMap<UUID, PlayerInventorySnapshot>();
-    private final Map<Long, ArenaCleanupState> pendingArenaCleanup = new HashMap<Long, ArenaCleanupState>();
     private final Set<UUID> awaitingKitSelection = new HashSet<UUID>();
     private final Map<UUID, BlockPos> chestHighlightTargets = new HashMap<UUID, BlockPos>();
     private final Map<UUID, SpectatorSession> spectators = new HashMap<UUID, SpectatorSession>();
     private final Map<UUID, VictorySequence> pendingVictorySequences = new HashMap<UUID, VictorySequence>();
     /** Players who have been assigned a match but have not yet arrived in the arena dimension.
-     *  Dimension-escape checks are suppressed for these players. */
+     *  Dimension-travel cancellation is suppressed for these players. */
     private final Set<UUID> pendingArenaArrivals = new HashSet<UUID>();
+    /** Arena dimension IDs whose matches have ended and whose worlds should be destroyed. */
+    private final Map<Integer, Integer> pendingArenaDimensionCleanup = new HashMap<Integer, Integer>();
+    /** Registered per-match arena DimensionType objects, keyed by dimension ID. */
+    private final Map<Integer, DimensionType> registeredArenaDimensionTypes = new HashMap<Integer, DimensionType>();
     private final AtomicInteger matchCounter = new AtomicInteger(0);
+    private final AtomicInteger arenaDimensionIdCounter = new AtomicInteger(1);
     private final AtomicLong arenaSeedSequence = new AtomicLong(System.nanoTime());
-    private final Set<Long> allocatedArenaSlots = new HashSet<Long>();
-    private DimensionType arenaDimensionType;
     private int ffaQueueCountdownTicks = -1;
 
     public synchronized void joinQueue(EntityPlayerMP player, EntityStaticNpc npc) {
@@ -279,6 +268,8 @@ public class PvpQueueManager {
             send(spectator, TextFormatting.AQUA + "Now spectating debug solo #" + soloId + TextFormatting.GRAY + ". Use /return to leave.");
         }
 
+        // Allow the dimension-change event for this spectator to proceed.
+        pendingArenaArrivals.add(spectatorId);
         moveToDimension(spectator, world, sx, sy, sz, spectator.rotationYaw, spectator.rotationPitch);
         spectator.setGameType(GameType.SPECTATOR);
         spectator.setSpectatingEntity(spectator);
@@ -331,6 +322,8 @@ public class PvpQueueManager {
             }
         }
 
+        // Allow the dimension-change event for the return trip to proceed.
+        pendingArenaArrivals.add(player.getUniqueID());
         restorePlayer(player, session.returnState);
         send(player, TextFormatting.GREEN + "Returned from spectating.");
     }
@@ -463,6 +456,7 @@ public class PvpQueueManager {
         preGenerateSpawnArea(preparedArena.world, preparedArena.firstSpawn.getX(), preparedArena.firstSpawn.getZ(), 4);
         teleportToArena(player, preparedArena.world, preparedArena.firstSpawn.getX() + 0.5D, preparedArena.firstSpawn.getY(), preparedArena.firstSpawn.getZ() + 0.5D, 90.0F);
         openKitSelection(player);
+        spawnInjectionsForArena(preparedArena.world, preparedArena.slot, 1);
         send(player, TextFormatting.LIGHT_PURPLE + "Debug solo arena ready." + TextFormatting.GRAY + " Use /heropvp debugexit to leave.");
     }
 
@@ -486,7 +480,7 @@ public class PvpQueueManager {
         restorePlayer(player, soloMatch.returnState);
         soloMatch.inventory.restore(player);
         clearPersistedState(player);
-        teardownArenaSlot(player.getServer(), soloMatch.slot);
+        teardownArenaDimension(player.getServer(), soloMatch.dimensionId);
         send(player, TextFormatting.GREEN + "Exited debug solo arena.");
     }
 
@@ -591,6 +585,9 @@ public class PvpQueueManager {
         openKitSelection(first);
         openKitSelection(second);
 
+        // Spawn injections in the arena if any are configured.
+        spawnInjectionsForArena(preparedArena.world, preparedArena.slot, 2);
+
         send(first, TextFormatting.GOLD + "Match found! " + TextFormatting.AQUA + "Opponent: " + TextFormatting.WHITE + second.getName());
         send(second, TextFormatting.GOLD + "Match found! " + TextFormatting.AQUA + "Opponent: " + TextFormatting.WHITE + first.getName());
     }
@@ -637,7 +634,7 @@ public class PvpQueueManager {
 
         List<BlockPos> spawnPoints = createFfaSpawnPoints(preparedArena.world, preparedArena.slot, players.size());
         if (spawnPoints.size() < players.size()) {
-            teardownArenaSlot(players.get(0).getServer(), preparedArena.slot);
+            teardownArenaDimension(players.get(0).getServer(), preparedArena.dimensionId);
             for (EntityPlayerMP player : players) {
                 send(player, TextFormatting.RED + "Failed to find enough FFA spawn points.");
             }
@@ -675,9 +672,31 @@ public class PvpQueueManager {
             openKitSelection(player);
             send(player, TextFormatting.GOLD + "FFA found! " + TextFormatting.GRAY + players.size() + " players joined.");
         }
+        // Spawn injections in the FFA arena if configured.
+        spawnInjectionsForArena(preparedArena.world, preparedArena.slot, players.size());
+
         if (immediate) {
             sendFfaChat(players.get(0).getServer(), match, TextFormatting.AQUA + "Lobby filled. Starting immediately.");
             match.phaseTicksRemaining = 1;
+        }
+    }
+
+    /** Spawn Lucraft injection entities in the arena for PvP/FFA matches. */
+    private void spawnInjectionsForArena(WorldServer world, ArenaSlot slot, int playerCount) {
+        int cx = (slot.minBlockX + slot.maxBlockX) / 2;
+        int cz = (slot.minBlockZ + slot.maxBlockZ) / 2;
+        int halfRange = (slot.maxBlockX - slot.minBlockX) / 2 - ARENA_SPAWN_EDGE_PADDING;
+        BlockPos center = new BlockPos(cx, 64, cz);
+        HeroSMP.PVP_INJECTION_MANAGER.spawnInjectionsInArena(world, center, Math.max(10, halfRange), playerCount);
+    }
+
+    /** Remove all injection entities left in the PvP arena world when a match ends. */
+    private void removeArenaInjections(WorldServer world) {
+        if (world == null) return;
+        for (net.minecraft.entity.Entity entity : new java.util.ArrayList<>(world.loadedEntityList)) {
+            if (entity instanceof EntityLucraftInjection) {
+                entity.setDead();
+            }
         }
     }
 
@@ -716,7 +735,7 @@ public class PvpQueueManager {
             returnSpectatorsForSolo(deadPlayer.getServer(), solo);
             pendingReturns.put(playerId, solo.returnState);
             pendingInventoryReturns.put(playerId, solo.inventory);
-            teardownArenaSlot(deadPlayer.getServer(), solo.slot);
+            teardownArenaDimension(deadPlayer.getServer(), solo.dimensionId);
             awaitingKitSelection.remove(playerId);
             soloMatches.remove(playerId);
             return;
@@ -777,7 +796,7 @@ public class PvpQueueManager {
         if (victorySequence != null) {
             pendingReturns.put(playerId, victorySequence.returnState);
             pendingInventoryReturns.put(playerId, victorySequence.inventorySnapshot);
-            teardownArenaSlot(player.getServer(), victorySequence.slot);
+            teardownArenaDimension(player.getServer(), victorySequence.dimensionId);
             return;
         }
 
@@ -791,7 +810,7 @@ public class PvpQueueManager {
             returnSpectatorsForSolo(player.getServer(), solo);
             pendingReturns.put(playerId, solo.returnState);
             pendingInventoryReturns.put(playerId, solo.inventory);
-            teardownArenaSlot(player.getServer(), solo.slot);
+            teardownArenaDimension(player.getServer(), solo.dimensionId);
             return;
         }
 
@@ -890,6 +909,7 @@ public class PvpQueueManager {
         WorldServer arenaWorld = server.getWorld(match.dimensionId);
         if (arenaWorld != null) {
             removeChestHighlights(arenaWorld, match.chestHighlightIds);
+            removeArenaInjections(arenaWorld);
         }
         match.clearBossBar(server);
         returnSpectatorsForMatch(server, match);
@@ -932,7 +952,7 @@ public class PvpQueueManager {
             }
 
             if (winnerCelebration && participant.getUniqueID().equals(winner.getUniqueID())) {
-                beginVictorySequence(participant, returnState, inventorySnapshot, match.dimensionId, match.slot);
+                beginVictorySequence(participant, returnState, inventorySnapshot, match.dimensionId);
                 continue;
             }
 
@@ -943,7 +963,7 @@ public class PvpQueueManager {
         }
 
         if (!winnerCelebration) {
-            teardownArenaSlot(server, match.slot);
+            teardownArenaDimension(server, match.dimensionId);
         }
     }
 
@@ -954,15 +974,22 @@ public class PvpQueueManager {
     }
 
     private void restorePlayer(EntityPlayerMP player, ReturnState returnState) {
-        WorldServer destinationWorld = player.getServer().getWorld(returnState.dimension);
+        MinecraftServer server = player.getServer();
+        if (server == null) return;
+        WorldServer destinationWorld = server.getWorld(returnState.dimension);
         if (destinationWorld == null) {
-            destinationWorld = player.getServer().getWorld(0);
+            destinationWorld = server.getWorld(0);
         }
         if (destinationWorld == null) {
             return;
         }
 
+        // Strip any arena items, effects, superpowers, and XP before returning the player.
+        PlayerDataIsolationManager.clearPlayerState(player);
+
         player.setGameType(returnState.gameType);
+        // Allow the dimension-change event to proceed for this return trip.
+        pendingArenaArrivals.add(player.getUniqueID());
         moveToDimension(player, destinationWorld, returnState.pos.getX() + 0.5D, returnState.pos.getY(), returnState.pos.getZ() + 0.5D, returnState.yaw, returnState.pitch);
         player.setSpectatingEntity(player);
         player.setInvisible(false);
@@ -985,126 +1012,115 @@ public class PvpQueueManager {
         destination.updateEntityWithOptionalForce(player, false);
     }
 
+    /** Allocate a fresh dimension ID for a new PvP match and create its world. */
     private ArenaAllocation createArena(MinecraftServer server, String suffix) {
-        WorldServer arenaWorld = ensureArenaWorld(server);
-        if (arenaWorld == null) {
+        // IDs run -7001, -7002, ..., cycling back to -7001 after 998 to avoid
+        // overlapping HG dimensions which start at -8001.
+        int index = (arenaDimensionIdCounter.getAndIncrement() % 998) + 1;
+        int dimensionId = ARENA_BASE_DIMENSION_ID - index;
+        DimensionType dimType = registerArenaDimension(dimensionId);
+        if (dimType == null) {
             return null;
         }
+        // Set the seed and offset BEFORE initDimension so that ArenaWorldProvider.init()
+        // can read them when installing the BiomeProvider.
+        long seed = nextUniqueArenaSeed();
+        java.util.Random offsetRand = new java.util.Random(seed);
+        int chunkOffsetX = offsetRand.nextInt(1_000_000) - 500_000;
+        int chunkOffsetZ = offsetRand.nextInt(1_000_000) - 500_000;
+        ArenaWorldProvider.setArenaDimension(dimensionId, seed, chunkOffsetX, chunkOffsetZ);
 
-        ArenaSlot slot = allocateArenaSlot();
-        if (slot == null) {
-            return null;
-        }
-
-        ArenaWorldProvider.setArenaSlotSeed(slot.slotX, slot.slotZ, nextUniqueArenaSeed());
-        ArenaWorldProvider.setArenaSlotBiome(slot.slotX, slot.slotZ, pickRandomArenaBiome());
-        deleteArenaSlotRegionFile(slot);
-        return new ArenaAllocation(ARENA_DIMENSION_ID, arenaWorld, slot);
-    }
-
-    private DimensionType getOrCreateArenaDimensionType() {
-        if (arenaDimensionType != null) {
-            return arenaDimensionType;
-        }
-
-        try {
-            arenaDimensionType = DimensionType.register(
-                    ARENA_DIMENSION_TYPE_NAME,
-                    ARENA_DIMENSION_TYPE_SUFFIX,
-                    ARENA_DIMENSION_TYPE_ID,
-                    ArenaWorldProvider.class,
-                    false
-            );
-            return arenaDimensionType;
-        } catch (IllegalArgumentException ignored) {
-            for (DimensionType type : DimensionType.values()) {
-                if (ARENA_DIMENSION_TYPE_NAME.equals(type.getName())) {
-                    arenaDimensionType = type;
-                    return arenaDimensionType;
-                }
-            }
-            return null;
-        }
-    }
-
-    private WorldServer ensureArenaWorld(MinecraftServer server) {
-        DimensionType dimensionType = getOrCreateArenaDimensionType();
-        if (dimensionType == null) {
-            return null;
-        }
-        if (!DimensionManager.isDimensionRegistered(ARENA_DIMENSION_ID)) {
+        if (!DimensionManager.isDimensionRegistered(dimensionId)) {
             try {
-                DimensionManager.registerDimension(ARENA_DIMENSION_ID, dimensionType);
+                DimensionManager.registerDimension(dimensionId, dimType);
             } catch (RuntimeException ex) {
+                ArenaWorldProvider.clearArenaDimension(dimensionId);
                 return null;
             }
         }
         try {
-            DimensionManager.initDimension(ARENA_DIMENSION_ID);
+            DimensionManager.initDimension(dimensionId);
         } catch (RuntimeException ignored) {
         }
-        return server.getWorld(ARENA_DIMENSION_ID);
+        WorldServer arenaWorld = server.getWorld(dimensionId);
+        if (arenaWorld == null) {
+            ArenaWorldProvider.clearArenaDimension(dimensionId);
+            return null;
+        }
+        ArenaSlot slot = new ArenaSlot();
+
+        // Set a world border aligned exactly to the chunk boundaries of the generated region.
+        // setTransition() controls the actual visible/physical border; setSize() only sets
+        // the chunk-loading limit and does NOT affect the border wall the player sees.
+        // Center = 96.0, diameter = 160 → wall sits at 16.0 and 176.0 exactly.
+        net.minecraft.world.border.WorldBorder border = arenaWorld.getWorldBorder();
+        border.setCenter(ARENA_BORDER_CENTER, ARENA_BORDER_CENTER);
+        border.setTransition((int) ARENA_BORDER_DIAMETER); // 160 — sets visible/physical border
+        border.setDamageAmount(0.5);
+        border.setDamageBuffer(2.0);
+        border.setWarningDistance(5);
+        border.setWarningTime(0);
+
+        return new ArenaAllocation(dimensionId, arenaWorld, slot);
     }
 
-    @Nullable
-    private ArenaSlot allocateArenaSlot() {
-        for (int index = 1; index < Integer.MAX_VALUE; index++) {
-            int slotX = slotCoordinateForIndex(index);
-            int slotZ = 0;
-            long key = arenaSlotKey(slotX, slotZ);
-            if (allocatedArenaSlots.contains(key) || pendingArenaCleanup.containsKey(key)) {
-                continue;
+    private DimensionType registerArenaDimension(int dimensionId) {
+        if (registeredArenaDimensionTypes.containsKey(dimensionId)) {
+            return registeredArenaDimensionTypes.get(dimensionId);
+        }
+        try {
+            String name   = ARENA_DIMENSION_TYPE_PREFIX + Math.abs(dimensionId);
+            String suffix = Math.abs(dimensionId) + ARENA_DIMENSION_TYPE_SUFFIX;
+            int typeId    = ARENA_DIMENSION_TYPE_BASE_ID + Math.abs(dimensionId - ARENA_BASE_DIMENSION_ID);
+            DimensionType dimType = DimensionType.register(name, suffix, typeId, ArenaWorldProvider.class, false);
+            registeredArenaDimensionTypes.put(dimensionId, dimType);
+            return dimType;
+        } catch (IllegalArgumentException e) {
+            for (DimensionType type : DimensionType.values()) {
+                if (type.getId() == dimensionId) {
+                    registeredArenaDimensionTypes.put(dimensionId, type);
+                    return type;
+                }
             }
-            ArenaSlot slot = new ArenaSlot(slotX, slotZ);
-            allocatedArenaSlots.add(key);
-            return slot;
+            return null;
         }
-        return null;
-    }
-
-    private int slotCoordinateForIndex(int index) {
-        if (index == 0) {
-            return 0;
-        }
-        int magnitude = (index + 1) / 2;
-        return (index % 2 == 0) ? magnitude : -magnitude;
-    }
-
-    private long arenaSlotKey(ArenaSlot slot) {
-        return arenaSlotKey(slot.slotX, slot.slotZ);
-    }
-
-    private long arenaSlotKey(int slotX, int slotZ) {
-        return (((long) slotX) << 32) ^ (slotZ & 0xFFFFFFFFL);
     }
 
     private ArenaPreparedArena prepareArena(MinecraftServer server, String suffix, boolean needsOppositeSpawns) {
-        for (int attempt = 0; attempt < ARENA_GENERATION_ATTEMPTS; attempt++) {
+        // Try up to 3 different dimensions; discard any that are all-ocean or have no valid spawns.
+        for (int dimAttempt = 0; dimAttempt < 3; dimAttempt++) {
             ArenaAllocation arena = createArena(server, suffix);
             if (arena == null) {
-                continue;
+                return null;
             }
 
             preGenerateEntireArena(arena.world, arena.slot);
 
-            BlockPos firstSpawn = findNaturalSpawn(arena.world, arena.slot, arena.slot.toWorldX(ARENA_FIRST_SPAWN_X), arena.slot.toWorldZ(ARENA_SPAWN_Z));
-            if (firstSpawn == null) {
-                teardownArenaSlot(server, arena.slot);
+            // Reject arena if it is predominantly ocean — retry with a new seed/dimension.
+            if (isArenaAllOcean(arena.world, arena.slot)) {
+                teardownArenaDimension(server, arena.dimensionId);
                 continue;
             }
 
-            BlockPos secondSpawn = null;
-            if (needsOppositeSpawns) {
-                secondSpawn = findNaturalSpawn(arena.world, arena.slot, arena.slot.toWorldX(ARENA_SECOND_SPAWN_X), arena.slot.toWorldZ(ARENA_SPAWN_Z));
-                if (secondSpawn == null || firstSpawn.distanceSq(secondSpawn) < 96.0D * 96.0D) {
-                    teardownArenaSlot(server, arena.slot);
+            for (int attempt = 0; attempt < ARENA_GENERATION_ATTEMPTS; attempt++) {
+                BlockPos firstSpawn = findNaturalSpawn(arena.world, arena.slot, arena.slot.toWorldX(ARENA_FIRST_SPAWN_X), arena.slot.toWorldZ(ARENA_SPAWN_Z));
+                if (firstSpawn == null) {
                     continue;
+                }
+
+                if (!needsOppositeSpawns) {
+                    return new ArenaPreparedArena(arena.dimensionId, arena.world, arena.slot, firstSpawn, null);
+                }
+
+                BlockPos secondSpawn = findNaturalSpawn(arena.world, arena.slot, arena.slot.toWorldX(ARENA_SECOND_SPAWN_X), arena.slot.toWorldZ(ARENA_SPAWN_Z));
+                if (secondSpawn != null && firstSpawn.distanceSq(secondSpawn) >= 70.0D * 70.0D) {
+                    return new ArenaPreparedArena(arena.dimensionId, arena.world, arena.slot, firstSpawn, secondSpawn);
                 }
             }
 
-            return new ArenaPreparedArena(arena.dimensionId, arena.world, arena.slot, firstSpawn, secondSpawn);
+            // No valid spawn configuration found — abandon this dimension and try again.
+            teardownArenaDimension(server, arena.dimensionId);
         }
-
         return null;
     }
 
@@ -1170,25 +1186,41 @@ public class PvpQueueManager {
     }
 
     private BlockPos topSpawnAt(WorldServer world, int x, int z) {
-        int top = world.getPrecipitationHeight(new BlockPos(x, 0, z)).getY() + 3;
-        top = Math.min(top, 255);
-        for (int y = top; y >= 1; y--) {
+        // Use getPrecipitationHeight to get the actual outdoor surface Y — this is the
+        // topmost non-air, non-foliage block exposed to the sky. Starting from here
+        // ensures we never return a position inside a cave or under a tree canopy.
+        int surfaceY = world.getPrecipitationHeight(new BlockPos(x, 0, z)).getY();
+        // Scan a small window around the surface to handle edge cases (snow, slabs, etc.)
+        // but never go more than 8 blocks below the reported surface.
+        for (int y = Math.min(surfaceY + 1, 254); y >= Math.max(surfaceY - 8, 1); y--) {
             BlockPos floor = new BlockPos(x, y, z);
-            if (world.getBlockState(floor).getMaterial().blocksMovement()
-                    && world.isAirBlock(floor.up())
-                    && world.isAirBlock(floor.up().up())) {
-                return floor.up();
-            }
+            net.minecraft.block.material.Material mat = world.getBlockState(floor).getMaterial();
+            // Floor must be solid, non-liquid, and not a leaf/wood block (inside a tree).
+            if (!mat.blocksMovement() || mat.isLiquid()) continue;
+            if (mat == net.minecraft.block.material.Material.LEAVES) continue;
+            if (mat == net.minecraft.block.material.Material.WOOD) continue;
+            // Require two clear (non-solid, non-liquid) blocks above to stand in.
+            BlockPos above1 = floor.up();
+            BlockPos above2 = above1.up();
+            net.minecraft.block.material.Material mat1 = world.getBlockState(above1).getMaterial();
+            net.minecraft.block.material.Material mat2 = world.getBlockState(above2).getMaterial();
+            if (mat1.blocksMovement() || mat1.isLiquid()) continue;
+            if (mat2.blocksMovement() || mat2.isLiquid()) continue;
+            return above1;
         }
         return null;
     }
 
     private boolean hasStableGround(WorldServer world, BlockPos spawn) {
         BlockPos below = spawn.down();
-        if (!world.getBlockState(below).getMaterial().blocksMovement()) {
+        net.minecraft.block.material.Material ground = world.getBlockState(below).getMaterial();
+        if (!ground.blocksMovement() || ground.isLiquid()) {
             return false;
         }
-        return world.isAirBlock(spawn) && world.isAirBlock(spawn.up());
+        net.minecraft.block.material.Material atSpawn = world.getBlockState(spawn).getMaterial();
+        net.minecraft.block.material.Material aboveSpawn = world.getBlockState(spawn.up()).getMaterial();
+        return !atSpawn.blocksMovement() && !atSpawn.isLiquid()
+            && !aboveSpawn.blocksMovement() && !aboveSpawn.isLiquid();
     }
 
     private void preGenerateSpawnArea(WorldServer world, int x, int z, int radiusChunks) {
@@ -1196,7 +1228,14 @@ public class PvpQueueManager {
         int chunkZ = z >> 4;
         for (int dx = -radiusChunks; dx <= radiusChunks; dx++) {
             for (int dz = -radiusChunks; dz <= radiusChunks; dz++) {
-                world.getChunk(chunkX + dx, chunkZ + dz);
+                int cx = chunkX + dx;
+                int cz = chunkZ + dz;
+                // Never request chunks outside the arena bounds - doing so would force
+                // the chunk generator to create out-of-bounds chunks, which can trigger
+                // Minecraft's populate cascade and create stray terrain islands.
+                if (cx < ARENA_MIN_CHUNK || cx > ARENA_MAX_CHUNK) continue;
+                if (cz < ARENA_MIN_CHUNK || cz > ARENA_MAX_CHUNK) continue;
+                world.getChunk(cx, cz);
             }
         }
     }
@@ -1209,8 +1248,24 @@ public class PvpQueueManager {
         }
     }
 
-    private Biome pickRandomArenaBiome() {
-        return ARENA_BIOME_POOL[ThreadLocalRandom.current().nextInt(ARENA_BIOME_POOL.length)];
+    /**
+     * Returns true if more than 60% of sampled biome columns in the playable arena
+     * are ocean-type biomes. Used to reject all-ocean arenas and retry generation.
+     */
+    private boolean isArenaAllOcean(WorldServer world, ArenaSlot slot) {
+        int total = 0;
+        int oceanCount = 0;
+        // Sample every 4 blocks across the playable region.
+        for (int x = slot.minBlockX; x <= slot.maxBlockX; x += 4) {
+            for (int z = slot.minBlockZ; z <= slot.maxBlockZ; z += 4) {
+                Biome biome = world.getBiome(new BlockPos(x, 64, z));
+                total++;
+                if (biome == Biomes.OCEAN || biome == Biomes.DEEP_OCEAN || biome == Biomes.FROZEN_OCEAN) {
+                    oceanCount++;
+                }
+            }
+        }
+        return total > 0 && (oceanCount * 100 / total) > 60;
     }
 
     private long nextUniqueArenaSeed() {
@@ -1233,41 +1288,83 @@ public class PvpQueueManager {
         int maxX = slot.maxBlockX - CHEST_EDGE_PADDING;
         int minZ = slot.minBlockZ + CHEST_EDGE_PADDING;
         int maxZ = slot.maxBlockZ - CHEST_EDGE_PADDING;
-        Set<BlockPos> used = new HashSet<BlockPos>();
+        int rangeX = maxX - minX;
+        int rangeZ = maxZ - minZ;
         List<TileEntityChest> spawnedChests = new ArrayList<TileEntityChest>();
 
-        int spawned = 0;
-        for (int attempts = 0; attempts < CHEST_PLACEMENT_ATTEMPTS && spawned < chestsToPlace; attempts++) {
-            int x = random.nextInt(minX, maxX + 1);
-            int z = random.nextInt(minZ, maxZ + 1);
-            BlockPos spawn = findNaturalSpawn(world, slot, x, z);
-            if (spawn == null || !used.add(spawn)) {
-                continue;
-            }
+        // Divide the arena into a grid of cells — one cell per chest — then pick a
+        // random point within each cell. This guarantees even spread: chests can never
+        // all cluster in the same corner.
+        // Grid is as square as possible: cols × rows ≈ chestsToPlace.
+        int cols = (int) Math.round(Math.sqrt(chestsToPlace));
+        int rows = (chestsToPlace + cols - 1) / cols;
 
-            if (!world.isAirBlock(spawn)) {
-                continue;
+        // Build the list of cells and shuffle so cell assignment is random.
+        List<int[]> cells = new ArrayList<int[]>();
+        for (int row = 0; row < rows; row++) {
+            for (int col = 0; col < cols; col++) {
+                cells.add(new int[]{col, row});
             }
-            if (!world.getBlockState(spawn.down()).getMaterial().blocksMovement()) {
-                continue;
-            }
+        }
+        Collections.shuffle(cells, new java.util.Random(random.nextLong()));
 
-            world.setBlockState(spawn, Blocks.CHEST.getDefaultState(), 2);
-            TileEntity tile = world.getTileEntity(spawn);
+        for (int i = 0; i < chestsToPlace; i++) {
+            int[] cell = cells.get(i % cells.size());
+            // Random point within this cell.
+            int cellMinX = minX + (cell[0] * rangeX / cols);
+            int cellMaxX = minX + ((cell[0] + 1) * rangeX / cols);
+            int cellMinZ = minZ + (cell[1] * rangeZ / rows);
+            int cellMaxZ = minZ + ((cell[1] + 1) * rangeZ / rows);
+
+            BlockPos chestPos = null;
+            for (int attempt = 0; attempt < 12 && chestPos == null; attempt++) {
+                int cx = cellMinX + (cellMaxX > cellMinX ? random.nextInt(cellMaxX - cellMinX) : 0);
+                int cz = cellMinZ + (cellMaxZ > cellMinZ ? random.nextInt(cellMaxZ - cellMinZ) : 0);
+                BlockPos surface = findChestSurface(world, cx, cz);
+                if (surface != null) {
+                    chestPos = surface;
+                }
+            }
+            if (chestPos == null) continue;
+
+            world.setBlockState(chestPos, Blocks.CHEST.getDefaultState(), 2);
+            TileEntity tile = world.getTileEntity(chestPos);
             if (!(tile instanceof TileEntityChest)) {
-                world.setBlockToAir(spawn);
+                world.setBlockToAir(chestPos);
                 continue;
             }
 
             TileEntityChest chest = (TileEntityChest) tile;
             clearChest(chest);
-            spawnedPositions.add(new BlockPos(spawn));
+            spawnedPositions.add(new BlockPos(chestPos));
             spawnedChests.add(chest);
-            spawned++;
         }
 
         distributeLootEvenlyAcrossChests(spawnedChests, lootPool, random);
         return spawnedPositions;
+    }
+
+    /**
+     * Finds a valid surface position for a chest at (x, z): must be on solid, non-liquid,
+     * non-tree ground, exposed to sky, with at least one clear block above.
+     * Returns the block position where the chest should be placed, or null if none found.
+     */
+    @Nullable
+    private BlockPos findChestSurface(WorldServer world, int x, int z) {
+        int surfaceY = world.getPrecipitationHeight(new BlockPos(x, 0, z)).getY();
+        for (int y = Math.min(surfaceY + 1, 254); y >= Math.max(surfaceY - 8, 1); y--) {
+            BlockPos floor = new BlockPos(x, y, z);
+            net.minecraft.block.material.Material mat = world.getBlockState(floor).getMaterial();
+            if (!mat.blocksMovement() || mat.isLiquid()) continue;
+            if (mat == net.minecraft.block.material.Material.LEAVES) continue;
+            if (mat == net.minecraft.block.material.Material.WOOD) continue;
+            BlockPos place = floor.up();
+            // The chest block and the block above it must both be clear.
+            if (!world.isAirBlock(place)) continue;
+            if (!world.isAirBlock(place.up())) continue;
+            return place;
+        }
+        return null;
     }
 
     private void clearChest(TileEntityChest chest) {
@@ -1338,58 +1435,110 @@ public class PvpQueueManager {
         return true;
     }
 
-    private void teardownArenaSlot(MinecraftServer server, ArenaSlot slot) {
-        if (slot == null) {
-            return;
-        }
-        WorldServer world = server.getWorld(ARENA_DIMENSION_ID);
-        if (world != null) {
-            purgeArenaSlot(world, slot);
-        }
-        pendingArenaCleanup.put(arenaSlotKey(slot), new ArenaCleanupState(slot));
-        allocatedArenaSlots.remove(arenaSlotKey(slot));
-        ArenaWorldProvider.clearArenaSlot(slot.slotX, slot.slotZ);
+    private void teardownArenaDimension(MinecraftServer server, int dimensionId) {
+        ArenaWorldProvider.clearArenaDimension(dimensionId);
+        // Defer actual dimension unregistration and folder deletion until no players remain.
+        pendingArenaDimensionCleanup.put(dimensionId, 0);
     }
 
     public synchronized void tickCleanup(MinecraftServer server) {
-        if (pendingArenaCleanup.isEmpty()) {
+        if (pendingArenaDimensionCleanup.isEmpty()) {
             return;
         }
+        List<Integer> toRemove = new ArrayList<Integer>();
+        for (Map.Entry<Integer, Integer> entry : new ArrayList<Map.Entry<Integer, Integer>>(pendingArenaDimensionCleanup.entrySet())) {
+            int dimId = entry.getKey();
+            int ticks = entry.getValue();
 
-        WorldServer world = server.getWorld(ARENA_DIMENSION_ID);
-        if (world == null) {
-            return;
-        }
-
-        List<Long> toRemove = new ArrayList<Long>();
-        for (Map.Entry<Long, ArenaCleanupState> entry : pendingArenaCleanup.entrySet()) {
-            ArenaCleanupState state = entry.getValue();
-
-            if (isArenaSlotInUse(state.slot)) {
-                state.ticksSinceQueued = 0;
+            // Wait for all players to leave the dimension before destroying it.
+            boolean anyPlayersInDim = false;
+            for (EntityPlayerMP player : server.getPlayerList().getPlayers()) {
+                if (player.dimension == dimId) {
+                    anyPlayersInDim = true;
+                    break;
+                }
+            }
+            if (anyPlayersInDim) {
+                entry.setValue(0);
                 continue;
             }
 
-            if (state.ticksSinceQueued % CLEANUP_UNLOAD_RETRY_TICKS == 0) {
-                unloadArenaSlotChunks(world, state.slot);
-            }
-            if (areArenaSlotChunksLoaded(world, state.slot)) {
-                state.ticksSinceQueued++;
+            // A short grace period ensures chunk save writes complete before we delete.
+            if (ticks < 40) {
+                entry.setValue(ticks + 1);
                 continue;
             }
 
-            if (state.ticksSinceQueued < CLEANUP_DELETE_DELAY_TICKS) {
-                state.ticksSinceQueued++;
-                continue;
+            destroyArenaDimension(server, dimId);
+            toRemove.add(dimId);
+        }
+        for (int dimId : toRemove) {
+            pendingArenaDimensionCleanup.remove(dimId);
+        }
+    }
+
+    private void destroyArenaDimension(MinecraftServer server, int dimensionId) {
+        try {
+            WorldServer world = server.getWorld(dimensionId);
+            if (world != null) {
+                // Unload all chunks from the dimension's world.
+                for (net.minecraft.world.chunk.Chunk chunk : new ArrayList<net.minecraft.world.chunk.Chunk>(world.getChunkProvider().getLoadedChunks())) {
+                    world.getChunkProvider().queueUnload(chunk);
+                }
             }
-
-            deleteArenaSlotRegionFile(state.slot);
-            toRemove.add(entry.getKey());
+        } catch (Exception ignored) {
         }
-
-        for (Long key : toRemove) {
-            pendingArenaCleanup.remove(key);
+        try {
+            if (DimensionManager.isDimensionRegistered(dimensionId)) {
+                DimensionManager.unregisterDimension(dimensionId);
+            }
+        } catch (Exception ignored) {
         }
+        // Delete the save folder so stale terrain cannot pollute a future run with the same ID.
+        try {
+            File worldRoot = server.getWorld(0).getSaveHandler().getWorldDirectory().getAbsoluteFile();
+            File dimDir = new File(worldRoot, "DIM" + dimensionId);
+            deleteDirectory(dimDir);
+        } catch (Exception ignored) {
+        }
+        // Keep the DimensionType registration cached so the same dimension ID can be
+        // safely re-registered via DimensionManager.registerDimension() in a future match
+        // without triggering a DimensionType.register() name-collision.
+        ArenaWorldProvider.clearArenaDimension(dimensionId);
+    }
+
+    /**
+     * Deletes any DIM folders on disk left over from previous server runs
+     * that were not cleaned up (e.g. due to a crash). Called once on server start.
+     * Arena IDs run from ARENA_BASE_DIMENSION_ID-1 down to ARENA_BASE_DIMENSION_ID-998.
+     */
+    public void purgeStaleArenaDimensions(MinecraftServer server) {
+        try {
+            File worldRoot = server.getWorld(0).getSaveHandler().getWorldDirectory().getAbsoluteFile();
+            for (int i = 1; i <= 998; i++) {
+                int dimId = ARENA_BASE_DIMENSION_ID - i;
+                File dimDir = new File(worldRoot, "DIM" + dimId);
+                if (dimDir.exists()) {
+                    deleteDirectory(dimDir);
+                }
+            }
+        } catch (Exception ignored) {
+        }
+    }
+
+    private static void deleteDirectory(File dir) {
+        if (dir == null || !dir.exists()) return;
+        File[] files = dir.listFiles();
+        if (files != null) {
+            for (File f : files) {
+                if (f.isDirectory()) {
+                    deleteDirectory(f);
+                } else {
+                    f.delete();
+                }
+            }
+        }
+        dir.delete();
     }
 
     public synchronized void tickMatchProgress(MinecraftServer server) {
@@ -1441,17 +1590,27 @@ public class PvpQueueManager {
             bat.setSilent(true);
             bat.setEntityInvulnerable(true);
             bat.setHealth(bat.getMaxHealth());
-            double eyeY = spectator.posY + spectator.getEyeHeight();
-            bat.setPositionAndRotation(spectator.posX, eyeY, spectator.posZ, spectator.rotationYaw, spectator.rotationPitch);
-            bat.rotationYawHead = spectator.rotationYaw;
-            bat.renderYawOffset = spectator.rotationYaw;
-            bat.prevRotationYaw = spectator.rotationYaw;
-            bat.prevRotationYawHead = spectator.rotationYaw;
-            bat.prevRenderYawOffset = spectator.rotationYaw;
             bat.motionX = 0.0D;
             bat.motionY = 0.0D;
             bat.motionZ = 0.0D;
             bat.fallDistance = 0.0F;
+            // When the spectator is viewing another entity's perspective, their server-side
+            // body is repositioned to the spectated entity for chunk loading purposes.
+            // Placing the bat at the spectator's body position would put it on the
+            // spectated player's head, blocking their vision and projectiles.
+            // Instead, park the bat out of the way below the world.
+            net.minecraft.entity.Entity spectatingTarget = spectator.getSpectatingEntity();
+            if (spectatingTarget != null && spectatingTarget != spectator) {
+                bat.setPositionAndRotation(spectator.posX, -128.0D, spectator.posZ, 0.0F, 0.0F);
+            } else {
+                double eyeY = spectator.posY + spectator.getEyeHeight();
+                bat.setPositionAndRotation(spectator.posX, eyeY, spectator.posZ, spectator.rotationYaw, spectator.rotationPitch);
+                bat.rotationYawHead = spectator.rotationYaw;
+                bat.renderYawOffset = spectator.rotationYaw;
+                bat.prevRotationYaw = spectator.rotationYaw;
+                bat.prevRotationYawHead = spectator.rotationYaw;
+                bat.prevRenderYawOffset = spectator.rotationYaw;
+            }
             syncSpectatorBatVisibility(server, spectator, session, bat);
         }
     }
@@ -1526,7 +1685,7 @@ public class PvpQueueManager {
                 pendingVictorySequences.remove(sequence.playerId);
                 pendingReturns.put(sequence.playerId, sequence.returnState);
                 pendingInventoryReturns.put(sequence.playerId, sequence.inventorySnapshot);
-                teardownArenaSlot(server, sequence.slot);
+                teardownArenaDimension(server, sequence.dimensionId);
                 continue;
             }
 
@@ -1541,7 +1700,7 @@ public class PvpQueueManager {
                     sequence.inventorySnapshot.restore(winner);
                     clearPersistedState(winner);
                 }
-                teardownArenaSlot(server, sequence.slot);
+                teardownArenaDimension(server, sequence.dimensionId);
                 continue;
             }
 
@@ -1560,7 +1719,7 @@ public class PvpQueueManager {
             sequence.inventorySnapshot.restore(winner);
             clearPersistedState(winner);
             send(winner, TextFormatting.GOLD + "Winner: " + TextFormatting.WHITE + sequence.winnerName + TextFormatting.GRAY + ". Returned to original location.");
-            teardownArenaSlot(server, sequence.slot);
+            teardownArenaDimension(server, sequence.dimensionId);
         }
     }
 
@@ -1595,7 +1754,7 @@ public class PvpQueueManager {
             if (match.phaseTicksRemaining % 20 == 0) {
                 int seconds = Math.max(1, match.phaseTicksRemaining / 20);
                 sendCountdownTitle(server, match, String.valueOf(seconds), TextFormatting.GOLD + "Fight begins soon");
-                playMatchSound(world, match.slot, SoundEvents.BLOCK_NOTE_HARP, SoundCategory.PLAYERS, 1.0F, 1.0F);
+                playMatchSound(world, match.slot.centerX, match.slot.centerZ, SoundEvents.BLOCK_NOTE_HARP, SoundCategory.PLAYERS, 1.0F, 1.0F);
             }
             match.phaseTicksRemaining--;
             if (match.phaseTicksRemaining <= 0) {
@@ -1657,7 +1816,7 @@ public class PvpQueueManager {
             if (match.phaseTicksRemaining % 20 == 0) {
                 int seconds = Math.max(1, match.phaseTicksRemaining / 20);
                 sendFfaTitle(server, match, String.valueOf(seconds), TextFormatting.GOLD + "Fight begins soon");
-                playMatchSound(world, match.slot, SoundEvents.BLOCK_NOTE_HARP, SoundCategory.PLAYERS, 1.0F, 1.0F);
+                playMatchSound(world, match.slot.centerX, match.slot.centerZ, SoundEvents.BLOCK_NOTE_HARP, SoundCategory.PLAYERS, 1.0F, 1.0F);
             }
             match.phaseTicksRemaining--;
             if (match.phaseTicksRemaining <= 0) {
@@ -1730,7 +1889,7 @@ public class PvpQueueManager {
             if (solo.phaseTicksRemaining % 20 == 0) {
                 int seconds = Math.max(1, solo.phaseTicksRemaining / 20);
                 sendTitle(player, String.valueOf(seconds), TextFormatting.GOLD + "Fight begins soon", 12);
-                playMatchSound(world, solo.slot, SoundEvents.BLOCK_NOTE_HARP, SoundCategory.PLAYERS, 1.0F, 1.0F);
+                playMatchSound(world, solo.slot.centerX, solo.slot.centerZ, SoundEvents.BLOCK_NOTE_HARP, SoundCategory.PLAYERS, 1.0F, 1.0F);
             }
             solo.phaseTicksRemaining--;
             if (solo.phaseTicksRemaining <= 0) {
@@ -1768,7 +1927,7 @@ public class PvpQueueManager {
             restorePlayer(player, solo.returnState);
             solo.inventory.restore(player);
             clearPersistedState(player);
-            teardownArenaSlot(server, solo.slot);
+            teardownArenaDimension(server, solo.dimensionId);
             awaitingKitSelection.remove(solo.playerId);
             soloMatches.remove(solo.playerId);
         }
@@ -1831,7 +1990,7 @@ public class PvpQueueManager {
         match.phaseTicksRemaining = match.roundTicks;
         clearFreezeEffects(server, match);
         sendCountdownTitle(server, match, TextFormatting.GREEN + "FIGHT!", TextFormatting.RED + "Eliminate your opponent");
-        playMatchSound(world, match.slot, SoundEvents.ENTITY_ENDERDRAGON_GROWL, SoundCategory.HOSTILE, 1.5F, 1.0F);
+        playMatchSound(world, match.slot.centerX, match.slot.centerZ, SoundEvents.ENTITY_ENDERDRAGON_GROWL, SoundCategory.HOSTILE, 1.5F, 1.0F);
         match.bossBar = createRoundBossBar();
         match.addBossBarPlayers(server);
         for (UUID spectatorId : match.spectators) {
@@ -1850,7 +2009,7 @@ public class PvpQueueManager {
         player.removePotionEffect(MobEffects.SLOWNESS);
         player.removePotionEffect(MobEffects.JUMP_BOOST);
         sendTitle(player, TextFormatting.GREEN + "FIGHT!", TextFormatting.RED + "Debug solo round started", 18);
-        playMatchSound(world, solo.slot, SoundEvents.ENTITY_ENDERDRAGON_GROWL, SoundCategory.HOSTILE, 1.5F, 1.0F);
+        playMatchSound(world, solo.slot.centerX, solo.slot.centerZ, SoundEvents.ENTITY_ENDERDRAGON_GROWL, SoundCategory.HOSTILE, 1.5F, 1.0F);
         solo.bossBar = createRoundBossBar();
         solo.addBossBarPlayer(server);
         for (UUID spectatorId : solo.spectators) {
@@ -1874,7 +2033,7 @@ public class PvpQueueManager {
             }
         }
         sendFfaTitle(server, match, TextFormatting.GREEN + "FIGHT!", TextFormatting.RED + "Eliminate all opponents");
-        playMatchSound(world, match.slot, SoundEvents.ENTITY_ENDERDRAGON_GROWL, SoundCategory.HOSTILE, 1.5F, 1.0F);
+        playMatchSound(world, match.slot.centerX, match.slot.centerZ, SoundEvents.ENTITY_ENDERDRAGON_GROWL, SoundCategory.HOSTILE, 1.5F, 1.0F);
         match.bossBar = createRoundBossBar();
         for (UUID playerId : match.playerOrder) {
             EntityPlayerMP player = server.getPlayerList().getPlayerByUUID(playerId);
@@ -2130,6 +2289,7 @@ public class PvpQueueManager {
         WorldServer arenaWorld = server.getWorld(match.dimensionId);
         if (arenaWorld != null) {
             removeChestHighlights(arenaWorld, match.chestHighlightIds);
+            removeArenaInjections(arenaWorld);
         }
         if (match.bossBar != null) {
             for (EntityPlayerMP player : new ArrayList<EntityPlayerMP>(match.bossBar.getPlayers())) {
@@ -2159,7 +2319,7 @@ public class PvpQueueManager {
             player.removePotionEffect(MobEffects.GLOWING);
 
             if (winnerCelebration && playerId.equals(winnerId)) {
-                beginVictorySequence(player, returnState, snapshot, match.dimensionId, match.slot);
+                beginVictorySequence(player, returnState, snapshot, match.dimensionId);
                 continue;
             }
 
@@ -2179,26 +2339,27 @@ public class PvpQueueManager {
         }
 
         if (!winnerCelebration) {
-            teardownArenaSlot(server, match.slot);
+            teardownArenaDimension(server, match.dimensionId);
         }
     }
 
-    private void beginVictorySequence(EntityPlayerMP winner, ReturnState returnState, PlayerInventorySnapshot inventorySnapshot, int dimensionId, ArenaSlot slot) {
+    private void beginVictorySequence(EntityPlayerMP winner, ReturnState returnState, PlayerInventorySnapshot inventorySnapshot, int dimensionId) {
         pendingVictorySequences.put(winner.getUniqueID(), new VictorySequence(
                 winner.getUniqueID(),
                 winner.getName(),
                 returnState,
                 inventorySnapshot,
                 dimensionId,
-                slot,
                 VICTORY_SEQUENCE_TICKS
         ));
         sendTitle(winner, TextFormatting.GOLD + "VICTORY!", TextFormatting.YELLOW + "You won the duel", 30);
         winner.addPotionEffect(new PotionEffect(MobEffects.GLOWING, VICTORY_SEQUENCE_TICKS + 40, 0, false, false));
-        WorldServer world = winner.getServer().getWorld(dimensionId);
+        MinecraftServer server = winner.getServer();
+        if (server == null) return;
+        WorldServer world = server.getWorld(dimensionId);
         if (world != null) {
             spawnVictoryFirework(world, winner.posX, winner.posY + 0.5D, winner.posZ);
-            playMatchSound(world, slot, SoundEvents.ENTITY_FIREWORK_BLAST, SoundCategory.PLAYERS, 1.2F, 1.0F);
+            playMatchSound(world, winner.posX, winner.posZ, SoundEvents.ENTITY_FIREWORK_BLAST, SoundCategory.PLAYERS, 1.2F, 1.0F);
         }
     }
 
@@ -2299,8 +2460,8 @@ public class PvpQueueManager {
         }
     }
 
-    private void playMatchSound(WorldServer world, ArenaSlot slot, net.minecraft.util.SoundEvent sound, SoundCategory category, float volume, float pitch) {
-        world.playSound(null, slot.centerX + 0.5D, 80.0D, slot.centerZ + 0.5D, sound, category, volume, pitch);
+    private void playMatchSound(WorldServer world, double centerX, double centerZ, net.minecraft.util.SoundEvent sound, SoundCategory category, float volume, float pitch) {
+        world.playSound(null, centerX, 80.0D, centerZ, sound, category, volume, pitch);
     }
 
     private void spawnChestHighlights(WorldServer world, List<BlockPos> chestPositions, List<UUID> highlightIds) {
@@ -2407,6 +2568,7 @@ public class PvpQueueManager {
                 continue;
             }
             removeSpectatorBat(server, session);
+            pendingArenaArrivals.add(spectatorId);
             restorePlayer(spectator, session.returnState);
             send(spectator, TextFormatting.YELLOW + "Match ended. You were returned.");
         }
@@ -2421,6 +2583,7 @@ public class PvpQueueManager {
                 continue;
             }
             removeSpectatorBat(server, session);
+            pendingArenaArrivals.add(spectatorId);
             restorePlayer(spectator, session.returnState);
             send(spectator, TextFormatting.YELLOW + "Match ended. You were returned.");
         }
@@ -2435,6 +2598,7 @@ public class PvpQueueManager {
                 continue;
             }
             removeSpectatorBat(server, session);
+            pendingArenaArrivals.add(spectatorId);
             restorePlayer(spectator, session.returnState);
             send(spectator, TextFormatting.YELLOW + "Match ended. You were returned.");
         }
@@ -2482,75 +2646,39 @@ public class PvpQueueManager {
     }
 
     /**
-     * If a player has escaped to a completely different dimension (e.g. via the
-     * Heroes Expansion Tesseract), forfeit their match so it doesn't run forever.
-     * This runs every tick, so escape is detected within ~1 server tick.
+     * Clears pendingArenaArrivals for players who have confirmed their presence
+     * in their assigned arena dimension. Dimension-escape forfeiting is handled
+     * entirely by the EntityTravelToDimensionEvent in PvpQueueEvents, which blocks
+     * item-triggered dimension changes from outside the arena; we no longer
+     * forfeit mid-tick from here.
      */
     public synchronized void tickDimensionEscapeCheck(MinecraftServer server) {
         for (ActiveMatch match : new HashSet<ActiveMatch>(playerToMatch.values())) {
-            checkDimensionEscape(server, match.firstPlayer, match.dimensionId, "1v1");
-            checkDimensionEscape(server, match.secondPlayer, match.dimensionId, "1v1");
+            confirmArrival(server, match.firstPlayer, match.dimensionId);
+            confirmArrival(server, match.secondPlayer, match.dimensionId);
         }
         for (FfaMatch match : new HashSet<FfaMatch>(playerToFfaMatch.values())) {
             for (UUID playerId : new ArrayList<UUID>(match.playerOrder)) {
-                checkDimensionEscape(server, playerId, match.dimensionId, "FFA");
+                confirmArrival(server, playerId, match.dimensionId);
             }
         }
         for (SoloMatch solo : new ArrayList<SoloMatch>(soloMatches.values())) {
-            checkDimensionEscape(server, solo.playerId, solo.dimensionId, "Solo");
+            confirmArrival(server, solo.playerId, solo.dimensionId);
+        }
+        // Also clear pendingArenaArrivals for spectators/returners who have completed
+        // their dimension transition.
+        for (UUID playerId : new ArrayList<UUID>(pendingArenaArrivals)) {
+            EntityPlayerMP player = server.getPlayerList().getPlayerByUUID(playerId);
+            if (player == null) {
+                pendingArenaArrivals.remove(playerId);
+            }
         }
     }
 
-    private void checkDimensionEscape(MinecraftServer server, UUID playerId, int expectedDim, String matchType) {
+    private void confirmArrival(MinecraftServer server, UUID playerId, int expectedDim) {
         EntityPlayerMP player = server.getPlayerList().getPlayerByUUID(playerId);
-        if (player == null) return;
-
-        // If the player has arrived in the arena dimension, clear the pending flag.
-        if (player.dimension == expectedDim) {
+        if (player != null && player.dimension == expectedDim) {
             pendingArenaArrivals.remove(playerId);
-            return;
-        }
-
-        // Still waiting for initial teleport to complete — not an escape.
-        if (pendingArenaArrivals.contains(playerId)) return;
-
-        // Player is in a different dimension after having arrived — forfeit.
-        pendingArenaArrivals.remove(playerId);
-        send(player, TextFormatting.RED + "You left the arena dimension and forfeited the " + matchType + " match.");
-
-        ActiveMatch activeMatch = playerToMatch.get(playerId);
-        if (activeMatch != null) {
-            UUID winnerId = activeMatch.getOpponent(playerId);
-            EntityPlayerMP winner = server.getPlayerList().getPlayerByUUID(winnerId);
-            if (winner != null) {
-                send(winner, TextFormatting.GREEN + "Victory! " + TextFormatting.GRAY + "Your opponent escaped the arena.");
-            }
-            endMatch(server, activeMatch, playerId);
-            return;
-        }
-
-        FfaMatch ffaMatch = playerToFfaMatch.get(playerId);
-        if (ffaMatch != null) {
-            eliminateFfaPlayer(server, ffaMatch, playerId, false,
-                TextFormatting.YELLOW + player.getName() + " escaped the arena.");
-            return;
-        }
-
-        SoloMatch soloMatch = soloMatches.get(playerId);
-        if (soloMatch != null) {
-            // End solo debug match
-            removeChestHighlights(server.getWorld(soloMatch.dimensionId), soloMatch.chestHighlightIds);
-            soloMatch.clearBossBar(server);
-            returnSpectatorsForSolo(server, soloMatch);
-            player.removePotionEffect(MobEffects.SLOWNESS);
-            player.removePotionEffect(MobEffects.JUMP_BOOST);
-            player.removePotionEffect(MobEffects.GLOWING);
-            restorePlayer(player, soloMatch.returnState);
-            soloMatch.inventory.restore(player);
-            clearPersistedState(player);
-            teardownArenaSlot(server, soloMatch.slot);
-            awaitingKitSelection.remove(playerId);
-            soloMatches.remove(playerId);
         }
     }
 
@@ -2560,23 +2688,22 @@ public class PvpQueueManager {
             return;
         }
 
-        int minX = slot.minBlockX;
-        int maxX = slot.maxBlockX;
-        int minZ = slot.minBlockZ;
-        int maxZ = slot.maxBlockZ;
-
-        boolean out = player.posX < minX || player.posX > maxX || player.posZ < minZ || player.posZ > maxZ || player.posY < 10;
-        if (!out) {
-            return;
-        }
-
-        int clampedX = (int) Math.max(minX + 2, Math.min(maxX - 2, player.posX));
-        int clampedZ = (int) Math.max(minZ + 2, Math.min(maxZ - 2, player.posZ));
-
+        // Check against the same block-face coordinates used by the WorldBorder:
+        // wall sits at ARENA_BORDER_START (16.0) and ARENA_BORDER_END (176.0).
         WorldServer world = server.getWorld(dimensionId);
         if (world == null) {
             return;
         }
+        if (player.posX >= ArenaWorldProvider.ARENA_BORDER_START
+                && player.posX <= ArenaWorldProvider.ARENA_BORDER_END
+                && player.posZ >= ArenaWorldProvider.ARENA_BORDER_START
+                && player.posZ <= ArenaWorldProvider.ARENA_BORDER_END) {
+            return;
+        }
+
+        // Push them back to the nearest interior point within the playable region, then find a safe Y.
+        int clampedX = (int) Math.max(slot.minBlockX + 4, Math.min(slot.maxBlockX - 4, player.posX));
+        int clampedZ = (int) Math.max(slot.minBlockZ + 4, Math.min(slot.maxBlockZ - 4, player.posZ));
 
         BlockPos safe = findNaturalSpawn(world, slot, clampedX, clampedZ);
         if (safe == null) {
@@ -2584,53 +2711,6 @@ public class PvpQueueManager {
         }
         player.connection.setPlayerLocation(safe.getX() + 0.5D, safe.getY(), safe.getZ() + 0.5D, player.rotationYaw, 0.0F);
         player.fallDistance = 0.0F;
-    }
-
-    private void purgeArenaSlot(WorldServer world, ArenaSlot slot) {
-        unloadArenaSlotChunks(world, slot);
-        for (Entity entity : new ArrayList<Entity>(world.loadedEntityList)) {
-            if (entity instanceof EntityPlayerMP) {
-                continue;
-            }
-            if (entity.posX >= slot.minBlockX - 2 && entity.posX <= slot.maxBlockX + 2
-                    && entity.posZ >= slot.minBlockZ - 2 && entity.posZ <= slot.maxBlockZ + 2) {
-                entity.setDead();
-            }
-        }
-    }
-
-    private void unloadArenaSlotChunks(WorldServer world, ArenaSlot slot) {
-        for (int chunkX = slot.minChunkX - 1; chunkX <= slot.maxChunkX + 1; chunkX++) {
-            for (int chunkZ = slot.minChunkZ - 1; chunkZ <= slot.maxChunkZ + 1; chunkZ++) {
-                net.minecraft.world.chunk.Chunk chunk = world.getChunkProvider().getLoadedChunk(chunkX, chunkZ);
-                if (chunk != null) {
-                    world.getChunkProvider().queueUnload(chunk);
-                }
-            }
-        }
-    }
-
-    private boolean areArenaSlotChunksLoaded(WorldServer world, ArenaSlot slot) {
-        for (int chunkX = slot.minChunkX - 1; chunkX <= slot.maxChunkX + 1; chunkX++) {
-            for (int chunkZ = slot.minChunkZ - 1; chunkZ <= slot.maxChunkZ + 1; chunkZ++) {
-                if (world.getChunkProvider().getLoadedChunk(chunkX, chunkZ) != null) {
-                    return true;
-                }
-            }
-        }
-        return false;
-    }
-
-    private void deleteArenaSlotRegionFile(ArenaSlot slot) {
-        File saveRoot = DimensionManager.getCurrentSaveRootDirectory();
-        if (saveRoot == null) {
-            return;
-        }
-
-        File regionFile = new File(new File(new File(saveRoot, "DIM" + ARENA_DIMENSION_ID), "region"), "r." + slot.slotX + "." + slot.slotZ + ".mca");
-        if (regionFile.exists()) {
-            regionFile.delete();
-        }
     }
 
     private int getQueuePosition(UUID playerId) {
@@ -2644,27 +2724,8 @@ public class PvpQueueManager {
         return -1;
     }
 
-    private boolean isArenaSlotInUse(ArenaSlot slot) {
-        for (ActiveMatch match : playerToMatch.values()) {
-            if (arenaSlotKey(match.slot) == arenaSlotKey(slot)) {
-                return true;
-            }
-        }
-        for (FfaMatch match : playerToFfaMatch.values()) {
-            if (arenaSlotKey(match.slot) == arenaSlotKey(slot)) {
-                return true;
-            }
-        }
-        for (SoloMatch match : soloMatches.values()) {
-            if (arenaSlotKey(match.slot) == arenaSlotKey(slot)) {
-                return true;
-            }
-        }
-        return false;
-    }
-
     private boolean isArenaDimension(int dimensionId) {
-        return dimensionId == ARENA_DIMENSION_ID;
+        return dimensionId <= ARENA_BASE_DIMENSION_ID;
     }
 
     /** Returns true if the player has been sent to an arena but has not yet arrived there. */
@@ -2739,53 +2800,27 @@ public class PvpQueueManager {
         }
     }
 
-    private static class ArenaCleanupState {
-        private final ArenaSlot slot;
-        private int ticksSinceQueued = 0;
-
-        private ArenaCleanupState(ArenaSlot slot) {
-            this.slot = slot;
-        }
-    }
-
+    /**
+     * Holds the fixed arena bounds for a single per-match dimension.
+     * The arena always occupies chunks 0..ARENA_CHUNKS_ACROSS-1 at the world
+     * origin, so all values are constants derived from ARENA_MIN/MAX_BLOCK/CHUNK.
+     */
     private static class ArenaSlot {
-        private final int slotX;
-        private final int slotZ;
-        private final int minChunkX;
-        private final int maxChunkX;
-        private final int minChunkZ;
-        private final int maxChunkZ;
-        private final int minBlockX;
-        private final int maxBlockX;
-        private final int minBlockZ;
-        private final int maxBlockZ;
-        private final int centerX;
-        private final int centerZ;
+        private final int minChunkX = ARENA_MIN_CHUNK;
+        private final int maxChunkX = ARENA_MAX_CHUNK;
+        private final int minChunkZ = ARENA_MIN_CHUNK;
+        private final int maxChunkZ = ARENA_MAX_CHUNK;
+        private final int minBlockX = ARENA_MIN_BLOCK;
+        private final int maxBlockX = ARENA_MAX_BLOCK;
+        private final int minBlockZ = ARENA_MIN_BLOCK;
+        private final int maxBlockZ = ARENA_MAX_BLOCK;
+        private final int centerX   = (ARENA_MIN_BLOCK + ARENA_MAX_BLOCK) / 2;
+        private final int centerZ   = (ARENA_MIN_BLOCK + ARENA_MAX_BLOCK) / 2;
 
-        private ArenaSlot(int slotX, int slotZ) {
-            this.slotX = slotX;
-            this.slotZ = slotZ;
-            int baseChunkX = slotX * ARENA_SLOT_CHUNKS;
-            int baseChunkZ = slotZ * ARENA_SLOT_CHUNKS;
-            this.minChunkX = baseChunkX + ARENA_MIN_CHUNK;
-            this.maxChunkX = baseChunkX + ARENA_MAX_CHUNK;
-            this.minChunkZ = baseChunkZ + ARENA_MIN_CHUNK;
-            this.maxChunkZ = baseChunkZ + ARENA_MAX_CHUNK;
-            this.minBlockX = slotX * ARENA_SLOT_BLOCKS + ARENA_MIN_BLOCK;
-            this.maxBlockX = slotX * ARENA_SLOT_BLOCKS + ARENA_MAX_BLOCK;
-            this.minBlockZ = slotZ * ARENA_SLOT_BLOCKS + ARENA_MIN_BLOCK;
-            this.maxBlockZ = slotZ * ARENA_SLOT_BLOCKS + ARENA_MAX_BLOCK;
-            this.centerX = (minBlockX + maxBlockX) / 2;
-            this.centerZ = (minBlockZ + maxBlockZ) / 2;
-        }
-
-        private int toWorldX(int localX) {
-            return slotX * ARENA_SLOT_BLOCKS + localX;
-        }
-
-        private int toWorldZ(int localZ) {
-            return slotZ * ARENA_SLOT_BLOCKS + localZ;
-        }
+        // toWorldX/Z: with the arena at the origin these are identity functions,
+        // kept for call-site compatibility without needing further edits.
+        private int toWorldX(int x) { return x; }
+        private int toWorldZ(int z) { return z; }
     }
 
     private static class SpectatorSession {
@@ -2813,16 +2848,14 @@ public class PvpQueueManager {
         private final ReturnState returnState;
         private final PlayerInventorySnapshot inventorySnapshot;
         private final int dimensionId;
-        private final ArenaSlot slot;
         private int ticksRemaining;
 
-        private VictorySequence(UUID playerId, String winnerName, ReturnState returnState, PlayerInventorySnapshot inventorySnapshot, int dimensionId, ArenaSlot slot, int ticksRemaining) {
+        private VictorySequence(UUID playerId, String winnerName, ReturnState returnState, PlayerInventorySnapshot inventorySnapshot, int dimensionId, int ticksRemaining) {
             this.playerId = playerId;
             this.winnerName = winnerName;
             this.returnState = returnState;
             this.inventorySnapshot = inventorySnapshot;
             this.dimensionId = dimensionId;
-            this.slot = slot;
             this.ticksRemaining = ticksRemaining;
         }
     }

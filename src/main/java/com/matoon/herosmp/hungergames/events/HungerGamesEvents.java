@@ -2,13 +2,25 @@ package com.matoon.herosmp.hungergames.events;
 
 import com.matoon.herosmp.HeroSMP;
 import com.matoon.herosmp.hungergames.HungerGamesWorldManager;
+import com.matoon.herosmp.integration.EntityLucraftInjection;
+import com.matoon.herosmp.integration.LucraftInjectionEntry;
+import lucraft.mods.lucraftcore.superpowers.SuperpowerHandler;
+import lucraft.mods.lucraftcore.superpowers.abilities.Ability;
+import lucraft.mods.lucraftcore.superpowers.abilities.supplier.AbilityContainer;
+import lucraft.mods.lucraftcore.superpowers.abilities.supplier.AbilityContainerSuperpower;
+import lucraft.mods.lucraftcore.utilities.items.ItemInjection;
 import net.minecraft.entity.Entity;
 import net.minecraft.entity.player.EntityPlayerMP;
+import net.minecraft.init.SoundEvents;
 import net.minecraft.item.ItemStack;
+import net.minecraft.util.EnumParticleTypes;
+import net.minecraft.util.SoundCategory;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.util.text.TextComponentString;
 import net.minecraft.util.text.TextFormatting;
 import java.util.UUID;
+import com.matoon.herosmp.hungergames.world.HungerGamesWorldProvider;
+import net.minecraft.world.chunk.storage.ExtendedBlockStorage;
 import net.minecraftforge.event.ServerChatEvent;
 import net.minecraftforge.event.entity.EntityTravelToDimensionEvent;
 import net.minecraftforge.event.entity.living.LivingAttackEvent;
@@ -17,6 +29,7 @@ import net.minecraftforge.event.entity.living.LivingHurtEvent;
 import net.minecraftforge.event.entity.player.PlayerContainerEvent;
 import net.minecraftforge.event.entity.player.PlayerInteractEvent;
 import net.minecraftforge.event.world.BlockEvent;
+import net.minecraftforge.event.world.ChunkEvent;
 import net.minecraftforge.fml.common.eventhandler.EventPriority;
 import net.minecraftforge.fml.common.eventhandler.SubscribeEvent;
 import net.minecraftforge.fml.common.gameevent.PlayerEvent;
@@ -84,7 +97,9 @@ public class HungerGamesEvents {
     @SubscribeEvent
     public void onPlayerLogin(PlayerEvent.PlayerLoggedInEvent event) {
         if (event.player instanceof EntityPlayerMP) {
-            HeroSMP.HUNGER_GAMES_MANAGER.handlePlayerLogin((EntityPlayerMP) event.player);
+            EntityPlayerMP player = (EntityPlayerMP) event.player;
+            HeroSMP.HUNGER_GAMES_MANAGER.handlePlayerLogin(player);
+            HeroSMP.HUNGER_GAMES_MANAGER.sendMusicManifest(player);
         }
     }
 
@@ -134,7 +149,9 @@ public class HungerGamesEvents {
         if (!HeroSMP.HUNGER_GAMES_MANAGER.isInConfigureMode(player.getUniqueID())) return;
 
         event.setCanceled(true);
-        if ("loot_pool".equals(toolType) || "map_center".equals(toolType) || "breakable_blocks".equals(toolType)) {
+        if ("loot_pool".equals(toolType) || "loot_properties".equals(toolType)
+                || "map_center".equals(toolType) || "breakable_blocks".equals(toolType)
+                || "injections".equals(toolType) || "injection_properties".equals(toolType)) {
             HeroSMP.HUNGER_GAMES_MANAGER.handleConfigureToolUse(player, toolType, null);
         }
     }
@@ -197,5 +214,150 @@ public class HungerGamesEvents {
         if (!(event.getEntityPlayer() instanceof EntityPlayerMP)) return;
         HeroSMP.HUNGER_GAMES_MANAGER.handleLootInventoryClose(
             (EntityPlayerMP) event.getEntityPlayer(), event.getContainer());
+    }
+
+    /**
+     * Each world tick, check every loaded {@link EntityLucraftInjection}.
+     * When one has been claimed (atomically, by its own onUpdate proximity check),
+     * grant the superpower to the claiming player, play effects, and kill the entity.
+     *
+     * Using {@link EntityLucraftInjection#isClaimed()} / {@link EntityLucraftInjection#getClaimedBy()}
+     * instead of the old isCollected() nearest-player search guarantees exactly one
+     * player receives the power — the entity already records who claimed it.
+     */
+    @SubscribeEvent
+    public void onWorldTickForInjections(TickEvent.WorldTickEvent event) {
+        if (event.phase != TickEvent.Phase.END || event.side.isClient()) return;
+
+        int dim = event.world.provider.getDimension();
+        boolean isHgOrPvpDim = dim < 0 || HeroSMP.HUNGER_GAMES_MANAGER.isHGDimension(dim);
+        if (!isHgOrPvpDim) return;
+
+        for (Entity entity : event.world.loadedEntityList.toArray(new Entity[0])) {
+            if (!(entity instanceof EntityLucraftInjection)) continue;
+            EntityLucraftInjection inj = (EntityLucraftInjection) entity;
+            if (!inj.isClaimed() || inj.isDead) continue;
+
+            ItemStack injStack = inj.getInjectionStack();
+            if (!LucraftInjectionEntry.isValidInjection(injStack)) {
+                inj.setDead();
+                continue;
+            }
+
+            UUID claimedBy = inj.getClaimedBy();
+            net.minecraft.entity.player.EntityPlayer ep = event.world.getPlayerEntityByUUID(claimedBy);
+            if (!(ep instanceof EntityPlayerMP)) {
+                inj.setDead();
+                continue;
+            }
+
+            // Kill the entity FIRST so no second tick can process it.
+            inj.setDead();
+            grantSuperpower((EntityPlayerMP) ep, injStack, event.world);
+        }
+    }
+
+    /**
+     * Intercepts chunk loads in HG match dimensions and wipes any chunk that falls
+     * outside the configured border + padding.
+     *
+     * This is necessary because {@link net.minecraft.world.gen.IChunkGenerator#generateChunk}
+     * is only called for chunks that are absent from the region files.  Pre-built map
+     * chunks are read directly from disk by {@link net.minecraft.world.chunk.storage.AnvilChunkLoader}
+     * before the generator is consulted, so the bounds check in
+     * {@link com.matoon.herosmp.hungergames.world.HungerGamesChunkGenerator} would
+     * never fire for them.
+     *
+     * By clearing the block-storage sections here we ensure out-of-bounds disk chunks
+     * arrive at the client as solid air — indistinguishable from chunks that were never
+     * on disk at all — without preventing the load itself (which would require a much
+     * deeper hook).
+     */
+    @SubscribeEvent(priority = EventPriority.HIGHEST)
+    public void onChunkLoad(ChunkEvent.Load event) {
+        if (event.getWorld() == null) return;
+        if (!(event.getWorld().provider instanceof HungerGamesWorldProvider)) return;
+
+        HungerGamesWorldProvider provider = (HungerGamesWorldProvider) event.getWorld().provider;
+        // Sentinel means no bounds set (configure session or no map center configured).
+        if (provider.matchCenterChunkX == Integer.MIN_VALUE) return;
+
+        int cx = event.getChunk().x;
+        int cz = event.getChunk().z;
+        int limit = provider.matchBorderChunks + HungerGamesWorldProvider.CHUNK_PADDING;
+
+        if (Math.abs(cx - provider.matchCenterChunkX) > limit
+                || Math.abs(cz - provider.matchCenterChunkZ) > limit) {
+            // Wipe all block-storage sections so the chunk arrives at the client as air.
+            net.minecraft.world.chunk.Chunk chunk = event.getChunk();
+            ExtendedBlockStorage[] empty = new ExtendedBlockStorage[16];
+            chunk.setStorageArrays(empty);
+            chunk.generateSkylightMap();
+        }
+    }
+
+    private void grantSuperpower(EntityPlayerMP player, ItemStack injStack, net.minecraft.world.World world) {
+        try {
+            ItemInjection.Injection injection = ItemInjection.getInjection(injStack);
+            if (injection == null) {
+                System.err.println("[HeroSMP] grantSuperpower: null injection for "
+                        + injStack.getDisplayName());
+                return;
+            }
+
+            // Remove the player's current superpower first so they never have two,
+            // and so LucraftCore's hasSuperpower() guard inside inject() doesn't block the grant.
+            if (SuperpowerHandler.hasSuperpower(player)) {
+                SuperpowerHandler.removeSuperpower(player);
+                SuperpowerHandler.syncToPlayer(player);
+            }
+
+            // inject() calls giveSuperpower() internally, fires OnGain ability events,
+            // and handles capability setup — identical to right-click item use.
+            injection.inject(player, injStack.copy());
+
+            // Set the player to the maximum level of this superpower immediately.
+            try {
+                AbilityContainer container = Ability.getAbilityContainer(
+                        Ability.EnumAbilityContext.SUPERPOWER, player);
+                if (container instanceof AbilityContainerSuperpower) {
+                    AbilityContainerSuperpower spContainer = (AbilityContainerSuperpower) container;
+                    int maxLevel = SuperpowerHandler.getSuperpower(player) != null
+                            ? SuperpowerHandler.getSuperpower(player).getMaxLevel() : 1;
+                    if (maxLevel > 1) {
+                        spContainer.setLevel(maxLevel);
+                        spContainer.setXP(0);
+                        SuperpowerHandler.syncToPlayer(player);
+                    }
+                }
+            } catch (Exception levelEx) {
+                System.err.println("[HeroSMP] grantSuperpower: could not set max level for "
+                        + player.getName() + ": " + levelEx.getMessage());
+            }
+
+            String display = injection.getDisplayName();
+            player.sendMessage(new TextComponentString(
+                    TextFormatting.LIGHT_PURPLE + "" + TextFormatting.BOLD + "POWER INJECTED! "
+                    + TextFormatting.RESET + TextFormatting.GOLD + display));
+
+            world.playSound(null, player.posX, player.posY, player.posZ,
+                    SoundEvents.ENTITY_EXPERIENCE_ORB_PICKUP, SoundCategory.PLAYERS, 1.0F, 0.5F);
+            world.playSound(null, player.posX, player.posY, player.posZ,
+                    SoundEvents.ENTITY_PLAYER_LEVELUP, SoundCategory.PLAYERS, 1.0F, 1.2F);
+
+            ((net.minecraft.world.WorldServer) world).spawnParticle(
+                    EnumParticleTypes.SPELL_MOB,
+                    player.posX, player.posY + 1.0, player.posZ,
+                    40, 0.4, 0.6, 0.4, 0.15);
+            ((net.minecraft.world.WorldServer) world).spawnParticle(
+                    EnumParticleTypes.END_ROD,
+                    player.posX, player.posY + 1.0, player.posZ,
+                    20, 0.3, 0.5, 0.3, 0.05);
+
+        } catch (Exception e) {
+            System.err.println("[HeroSMP] grantSuperpower: exception granting '"
+                    + LucraftInjectionEntry.getLucraftId(injStack) + "' to "
+                    + player.getName() + ": " + e.getMessage());
+        }
     }
 }

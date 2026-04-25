@@ -71,6 +71,7 @@ dependencies {
     compile files('libs/LucraftCore-deobf.jar')
     compile files('libs/HeroesExpansion-deobf.jar')
     compile files('libs/InfinityCraft-deobf.jar')
+    compile files('libs/TickrateChanger-1.0.14-deobf.jar')
 
     // deobfProvided "refinedstorage:refinedstorage:${rs_version}:deobf"
 
