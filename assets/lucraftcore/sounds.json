@@ -1,0 +1,23 @@
+{
+  "energy_blast": {
+    "category": "player",
+    "sounds": [
+      "lucraftcore:energy_blast"
+    ],
+    "subtitle": "subtitles.energy_blast"
+  },
+  "infinity_stone_equip": {
+    "category": "player",
+    "sounds": [
+      "lucraftcore:infinity_stone_equip"
+    ],
+    "subtitle": "subtitles.infinity_stone_equip"
+  },
+  "use_infinity_gauntlet": {
+    "category": "player",
+    "sounds": [
+      "lucraftcore:use_infinity_gauntlet"
+    ],
+    "subtitle": "subtitles.use_infinity_gauntlet"
+  }
+}

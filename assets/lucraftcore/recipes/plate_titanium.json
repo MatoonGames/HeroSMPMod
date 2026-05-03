@@ -1,0 +1,33 @@
+{
+  "result": {
+    "item": "lucraftcore:plate_titanium"
+  },
+  "ingredients": [
+    {
+      "item": "lucraftcore:hammer",
+      "data": 32767
+    },
+    {
+      "item": "#INGOTTITANIUM"
+    },
+    {
+      "item": "lucraftcore:ingot_titanium"
+    }
+  ],
+  "conditions": [
+    {
+      "item": "lucraftcore:plate_titanium",
+      "type": "minecraft:item_exists"
+    },
+    {
+      "item": "lucraftcore:hammer",
+      "type": "minecraft:item_exists"
+    },
+    {
+      "item": "lucraftcore:ingot_titanium",
+      "type": "minecraft:item_exists"
+    }
+  ],
+  "type": "forge:ore_shapeless",
+  "group": "lucraftcore:ingots_to_plate"
+}

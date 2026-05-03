@@ -2743,6 +2743,33 @@ public class PvpQueueManager {
                 || spectators.containsKey(playerId);
     }
 
+    /**
+     * Returns the set of all player UUIDs who are in the same active PvP match
+     * as {@code playerId} (including the player themselves).
+     * Returns an empty set if the player is not in any active match.
+     * Does NOT include queued or spectating players.
+     */
+    public synchronized Set<UUID> getPlayersInMatch(UUID playerId) {
+        ActiveMatch active = playerToMatch.get(playerId);
+        if (active != null) {
+            Set<UUID> players = new HashSet<>();
+            players.add(active.firstPlayer);
+            players.add(active.secondPlayer);
+            return players;
+        }
+        FfaMatch ffa = playerToFfaMatch.get(playerId);
+        if (ffa != null) {
+            return new HashSet<>(ffa.playerOrder);
+        }
+        SoloMatch solo = soloMatches.get(playerId);
+        if (solo != null) {
+            Set<UUID> players = new HashSet<>();
+            players.add(solo.playerId);
+            return players;
+        }
+        return new HashSet<>();
+    }
+
     private void send(EntityPlayerMP player, String message) {
         player.sendMessage(new TextComponentString(CHAT_PREFIX + message));
     }

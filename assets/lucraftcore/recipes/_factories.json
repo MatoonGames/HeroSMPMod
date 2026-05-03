@@ -1,0 +1,5 @@
+{
+	"recipes": {
+		"recolor": "lucraft.mods.lucraftcore.util.recipe.RecipeFactoryRecolor"
+	}
+}

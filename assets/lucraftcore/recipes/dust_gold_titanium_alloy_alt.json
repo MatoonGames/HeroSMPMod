@@ -1,0 +1,25 @@
+{
+  "result": {
+    "item": "lucraftcore:dust_gold_titanium_alloy",
+    "count": 3
+  },
+  "ingredients": [
+    {
+      "item": "#DUSTGOLD"
+    },
+    {
+      "item": "#DUSTTITANIUM"
+    },
+    {
+      "item": "#DUSTTITANIUM"
+    }
+  ],
+  "conditions": [
+    {
+      "item": "lucraftcore:dust_gold_titanium_alloy",
+      "type": "minecraft:item_exists"
+    }
+  ],
+  "type": "forge:ore_shapeless",
+  "group": "lucraftcore:alloys"
+}

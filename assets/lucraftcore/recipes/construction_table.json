@@ -1,0 +1,32 @@
+{
+  "result": {
+    "item": "lucraftcore:construction_table"
+  },
+  "pattern": [
+    "PPP",
+    "ICI",
+    "IPI"
+  ],
+  "conditions": [
+    {
+      "item": "lucraftcore:construction_table",
+      "type": "minecraft:item_exists"
+    },
+    {
+      "item": "minecraft:crafting_table",
+      "type": "minecraft:item_exists"
+    }
+  ],
+  "type": "forge:ore_shaped",
+  "key": {
+    "P": {
+      "item": "#PLATEIRON"
+    },
+    "C": {
+      "item": "minecraft:crafting_table"
+    },
+    "I": {
+      "item": "#INGOTIRON"
+    }
+  }
+}

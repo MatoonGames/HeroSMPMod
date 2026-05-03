@@ -1,0 +1,33 @@
+{
+  "result": {
+    "item": "lucraftcore:plate_iridium"
+  },
+  "ingredients": [
+    {
+      "item": "lucraftcore:hammer",
+      "data": 32767
+    },
+    {
+      "item": "#INGOTIRIDIUM"
+    },
+    {
+      "item": "lucraftcore:ingot_iridium"
+    }
+  ],
+  "conditions": [
+    {
+      "item": "lucraftcore:plate_iridium",
+      "type": "minecraft:item_exists"
+    },
+    {
+      "item": "lucraftcore:hammer",
+      "type": "minecraft:item_exists"
+    },
+    {
+      "item": "lucraftcore:ingot_iridium",
+      "type": "minecraft:item_exists"
+    }
+  ],
+  "type": "forge:ore_shapeless",
+  "group": "lucraftcore:ingots_to_plate"
+}

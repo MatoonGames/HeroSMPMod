@@ -1,0 +1,33 @@
+{
+  "result": {
+    "item": "lucraftcore:plate_dwarf_star_alloy"
+  },
+  "ingredients": [
+    {
+      "item": "lucraftcore:hammer",
+      "data": 32767
+    },
+    {
+      "item": "#INGOTDWARFSTARALLOY"
+    },
+    {
+      "item": "lucraftcore:ingot_dwarf_star_alloy"
+    }
+  ],
+  "conditions": [
+    {
+      "item": "lucraftcore:plate_dwarf_star_alloy",
+      "type": "minecraft:item_exists"
+    },
+    {
+      "item": "lucraftcore:hammer",
+      "type": "minecraft:item_exists"
+    },
+    {
+      "item": "lucraftcore:ingot_dwarf_star_alloy",
+      "type": "minecraft:item_exists"
+    }
+  ],
+  "type": "forge:ore_shapeless",
+  "group": "lucraftcore:ingots_to_plate"
+}

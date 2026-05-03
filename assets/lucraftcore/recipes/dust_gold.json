@@ -1,0 +1,26 @@
+{
+  "result": {
+    "item": "lucraftcore:dust_gold"
+  },
+  "ingredients": [
+    {
+      "item": "lucraftcore:hammer",
+      "data": 32767
+    },
+    {
+      "item": "#INGOTGOLD"
+    }
+  ],
+  "conditions": [
+    {
+      "item": "lucraftcore:dust_gold",
+      "type": "minecraft:item_exists"
+    },
+    {
+      "item": "lucraftcore:hammer",
+      "type": "minecraft:item_exists"
+    }
+  ],
+  "type": "forge:ore_shapeless",
+  "group": "lucraftcore:ingot_to_dust"
+}

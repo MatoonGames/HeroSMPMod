@@ -1,0 +1,22 @@
+{
+  "result": {
+    "item": "lucraftcore:ingot_nickel",
+    "count": 9
+  },
+  "pattern": [
+    "X"
+  ],
+  "conditions": [
+    {
+      "item": "lucraftcore:ingot_nickel",
+      "type": "minecraft:item_exists"
+    }
+  ],
+  "type": "forge:ore_shaped",
+  "key": {
+    "X": {
+      "item": "#BLOCKNICKEL"
+    }
+  },
+  "group": "lucraftcore:block_to_ingots"
+}

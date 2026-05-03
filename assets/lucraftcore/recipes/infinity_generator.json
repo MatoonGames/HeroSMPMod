@@ -1,0 +1,44 @@
+{
+  "result": {
+    "item": "lucraftcore:infinity_generator"
+  },
+  "pattern": [
+    "PCP",
+    "SNS",
+    "PAP"
+  ],
+  "conditions": [
+    {
+      "item": "lucraftcore:infinity_generator",
+      "type": "minecraft:item_exists"
+    },
+    {
+      "item": "minecraft:nether_star",
+      "type": "minecraft:item_exists"
+    },
+    {
+      "item": "lucraftcore:hv_capacitor",
+      "type": "minecraft:item_exists"
+    }
+  ],
+  "type": "forge:ore_shaped",
+  "key": {
+    "P": {
+      "item": "#PLATEDWARFSTARALLOY"
+    },
+    "A": {
+      "nbt": "{Energy:0}",
+      "item": "lucraftcore:hv_capacitor",
+      "type": "minecraft:item_nbt"
+    },
+    "C": {
+      "item": "#CIRCUITADVANCED"
+    },
+    "S": {
+      "item": "#BLOCKSTEEL"
+    },
+    "N": {
+      "item": "minecraft:nether_star"
+    }
+  }
+}

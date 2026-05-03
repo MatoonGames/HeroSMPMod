@@ -1,0 +1,23 @@
+{
+  "result": {
+    "item": "lucraftcore:block_steel"
+  },
+  "pattern": [
+    "XXX",
+    "XXX",
+    "XXX"
+  ],
+  "conditions": [
+    {
+      "item": "lucraftcore:block_steel",
+      "type": "minecraft:item_exists"
+    }
+  ],
+  "type": "forge:ore_shaped",
+  "key": {
+    "X": {
+      "item": "#INGOTSTEEL"
+    }
+  },
+  "group": "lucraftcore:ingots_to_block"
+}

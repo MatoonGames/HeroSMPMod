@@ -1,0 +1,23 @@
+{
+  "result": {
+    "item": "lucraftcore:ingot_steel"
+  },
+  "pattern": [
+    "XXX",
+    "XXX",
+    "XXX"
+  ],
+  "conditions": [
+    {
+      "item": "lucraftcore:ingot_steel",
+      "type": "minecraft:item_exists"
+    }
+  ],
+  "type": "forge:ore_shaped",
+  "key": {
+    "X": {
+      "item": "#NUGGETSTEEL"
+    }
+  },
+  "group": "lucraftcore:nuggets_to_ingot"
+}

@@ -1,0 +1,37 @@
+{
+  "result": {
+    "nbt": "{Energy:0}",
+    "item": "lucraftcore:mv_capacitor",
+    "type": "minecraft:item_nbt"
+  },
+  "pattern": [
+    "IRI",
+    "PLP",
+    "PCP"
+  ],
+  "conditions": [
+    {
+      "item": "lucraftcore:mv_capacitor",
+      "type": "minecraft:item_exists"
+    }
+  ],
+  "type": "forge:ore_shaped",
+  "key": {
+    "P": {
+      "item": "#PLATEIRON"
+    },
+    "R": {
+      "item": "#BLOCKREDSTONE"
+    },
+    "C": {
+      "item": "#PLATEOSMIUM"
+    },
+    "I": {
+      "item": "#INGOTIRON"
+    },
+    "L": {
+      "item": "#INGOTLEAD"
+    }
+  },
+  "group": "lucraftcore:capacitor"
+}

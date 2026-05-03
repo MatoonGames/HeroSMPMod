@@ -1,0 +1,27 @@
+[
+  {
+	"modid": "lucraftcore",
+	"name": "Lucraft: Core",
+	"description": "Core mod for all Lucraft mods.",
+	"version": "${version}",
+	"mcversion": "${mcversion}",
+	"url": "https://minecraft.curseforge.com/projects/lucraft-core",
+	"updateUrl": "",
+	"authorList": [
+	  "Lucraft",
+	  "Nictogen"
+	],
+	"credits": "See Curse Page",
+	"logoFile": "",
+	"screenshots": [],
+	"dependencies": [],
+	"dependants": [
+	  "speedsterheroes",
+	  "heroesexpansion",
+	  "pymtech",
+	  "star-tech",
+	  "the-fifth-world",
+	  "ironman"
+	]
+  }
+]

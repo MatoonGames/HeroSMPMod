@@ -14,11 +14,11 @@ import net.minecraftforge.fml.relauncher.SideOnly;
  *
  * Only affects entities that have a Lucraft superpower/injection. If the
  * afflicted entity has a superpower:
- *   - Suppresses all superpower-granted regeneration
- *   - Deals 2% of max health as damage every 2 seconds (40 ticks)
+ *   - Suppresses ALL regeneration (including natural/food regen) every tick
+ *   - Deals 5% of max health as damage every second (20 ticks)
  *   - Displays as green/poison hearts on the HUD
  *
- * Tick logic and Lucraft regen suppression are handled in
+ * Tick logic and regen suppression are handled in
  * {@link com.matoon.herosmp.events.ArrowEffectHandler}.
  *
  * Lasts 45 seconds (900 ticks) by default.
@@ -41,8 +41,8 @@ public class PotionSupeVirus extends Potion {
     @Override
     public void performEffect(EntityLivingBase entity, int amplifier) {
         if (entity.world.isRemote) return;
-        // Damage tick: 2% of max health, bypassing armor and resistance.
-        float damage = entity.getMaxHealth() * 0.02f;
+        // Damage tick: 5% of max health every second, bypassing armor and resistance.
+        float damage = entity.getMaxHealth() * 0.05f;
         // Reset hurtResistantTime so the virus damage is never swallowed by
         // the 20-tick invulnerability window from other sources.
         entity.hurtResistantTime = 0;
@@ -50,12 +50,11 @@ public class PotionSupeVirus extends Potion {
     }
 
     /**
-     * Fire performEffect every 40 ticks (2 seconds).
-     * Matches vanilla Poison's cadence at amplifier 0.
+     * Fire performEffect every 20 ticks (1 second).
      */
     @Override
     public boolean isReady(int duration, int amplifier) {
-        return duration % 40 == 0;
+        return duration % 20 == 0;
     }
 
     /** Render as a harmful (red border) potion in the inventory — we override the icon. */

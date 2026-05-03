@@ -1,0 +1,22 @@
+{
+  "result": {
+    "item": "lucraftcore:ingot_dwarf_star_alloy",
+    "count": 9
+  },
+  "pattern": [
+    "X"
+  ],
+  "conditions": [
+    {
+      "item": "lucraftcore:ingot_dwarf_star_alloy",
+      "type": "minecraft:item_exists"
+    }
+  ],
+  "type": "forge:ore_shaped",
+  "key": {
+    "X": {
+      "item": "#BLOCKDWARFSTARALLOY"
+    }
+  },
+  "group": "lucraftcore:block_to_ingots"
+}

@@ -1,0 +1,30 @@
+{
+  "result": {
+    "item": "lucraftcore:dust_steel"
+  },
+  "ingredients": [
+    {
+      "item": "#DUSTIRON"
+    },
+    {
+      "item": "#DUSTCOAL"
+    },
+    {
+      "item": "#DUSTCOAL"
+    },
+    {
+      "item": "#DUSTCOAL"
+    },
+    {
+      "item": "#DUSTCOAL"
+    }
+  ],
+  "conditions": [
+    {
+      "item": "lucraftcore:dust_steel",
+      "type": "minecraft:item_exists"
+    }
+  ],
+  "type": "forge:ore_shapeless",
+  "group": "lucraftcore:alloys"
+}

@@ -1,0 +1,29 @@
+{
+  "result": {
+    "item": "lucraftcore:basic_circuit"
+  },
+  "pattern": [
+    "WWW",
+    "RPR",
+    "WWW"
+  ],
+  "conditions": [
+    {
+      "item": "lucraftcore:basic_circuit",
+      "type": "minecraft:item_exists"
+    }
+  ],
+  "type": "forge:ore_shaped",
+  "key": {
+    "P": {
+      "item": "#PLATEIRON"
+    },
+    "R": {
+      "item": "#DUSTREDSTONE"
+    },
+    "W": {
+      "item": "#WIRECOPPER"
+    }
+  },
+  "group": "lucraftcore:circuit"
+}

@@ -1,0 +1,124 @@
+{
+  "forge_marker": 1,
+  "defaults": {
+    "model": "builtin/generated",
+    "textures": {
+      "layer0": "blocks/dirt"
+    },
+    "transform": "forge:default-item"
+  },
+  "variants": {
+    "white": [
+      {
+        "textures": {
+          "layer0": "lucraftcore:items/tri_polymer/white"
+        }
+      }
+    ],
+    "orange": [
+      {
+        "textures": {
+          "layer0": "lucraftcore:items/tri_polymer/orange"
+        }
+      }
+    ],
+    "magenta": [
+      {
+        "textures": {
+          "layer0": "lucraftcore:items/tri_polymer/magenta"
+        }
+      }
+    ],
+    "light_blue": [
+      {
+        "textures": {
+          "layer0": "lucraftcore:items/tri_polymer/light_blue"
+        }
+      }
+    ],
+    "yellow": [
+      {
+        "textures": {
+          "layer0": "lucraftcore:items/tri_polymer/yellow"
+        }
+      }
+    ],
+    "lime": [
+      {
+        "textures": {
+          "layer0": "lucraftcore:items/tri_polymer/lime"
+        }
+      }
+    ],
+    "pink": [
+      {
+        "textures": {
+          "layer0": "lucraftcore:items/tri_polymer/pink"
+        }
+      }
+    ],
+    "gray": [
+      {
+        "textures": {
+          "layer0": "lucraftcore:items/tri_polymer/gray"
+        }
+      }
+    ],
+    "silver": [
+      {
+        "textures": {
+          "layer0": "lucraftcore:items/tri_polymer/silver"
+        }
+      }
+    ],
+    "cyan": [
+      {
+        "textures": {
+          "layer0": "lucraftcore:items/tri_polymer/cyan"
+        }
+      }
+    ],
+    "purple": [
+      {
+        "textures": {
+          "layer0": "lucraftcore:items/tri_polymer/purple"
+        }
+      }
+    ],
+    "blue": [
+      {
+        "textures": {
+          "layer0": "lucraftcore:items/tri_polymer/blue"
+        }
+      }
+    ],
+    "brown": [
+      {
+        "textures": {
+          "layer0": "lucraftcore:items/tri_polymer/brown"
+        }
+      }
+    ],
+    "green": [
+      {
+        "textures": {
+          "layer0": "lucraftcore:items/tri_polymer/green"
+        }
+      }
+    ],
+    "red": [
+      {
+        "textures": {
+          "layer0": "lucraftcore:items/tri_polymer/red"
+        }
+      }
+    ],
+    "black": [
+      {
+        "textures": {
+          "layer0": "lucraftcore:items/tri_polymer/black"
+        }
+      }
+    ]
+  }
+}

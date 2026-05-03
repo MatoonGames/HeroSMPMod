@@ -1,0 +1,23 @@
+{
+  "result": {
+    "item": "lucraftcore:block_uru"
+  },
+  "pattern": [
+    "XXX",
+    "XXX",
+    "XXX"
+  ],
+  "conditions": [
+    {
+      "item": "lucraftcore:block_uru",
+      "type": "minecraft:item_exists"
+    }
+  ],
+  "type": "forge:ore_shaped",
+  "key": {
+    "X": {
+      "item": "#INGOTURU"
+    }
+  },
+  "group": "lucraftcore:ingots_to_block"
+}

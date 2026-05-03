@@ -1,0 +1,22 @@
+{
+  "result": {
+    "item": "lucraftcore:ingot_tin",
+    "count": 9
+  },
+  "pattern": [
+    "X"
+  ],
+  "conditions": [
+    {
+      "item": "lucraftcore:ingot_tin",
+      "type": "minecraft:item_exists"
+    }
+  ],
+  "type": "forge:ore_shaped",
+  "key": {
+    "X": {
+      "item": "#BLOCKTIN"
+    }
+  },
+  "group": "lucraftcore:block_to_ingots"
+}

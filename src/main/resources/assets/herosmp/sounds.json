@@ -6,5 +6,37 @@
         "stream": false
       }
     ]
+  },
+  "inf_power_up": {
+    "sounds": [
+      {
+        "name": "herosmp:inf_power_up",
+        "stream": false
+      }
+    ]
+  },
+  "snap_1": {
+    "sounds": [
+      {
+        "name": "herosmp:snap_1",
+        "stream": false
+      }
+    ]
+  },
+  "snap_2": {
+    "sounds": [
+      {
+        "name": "herosmp:snap_2",
+        "stream": false
+      }
+    ]
+  },
+  "snap_3": {
+    "sounds": [
+      {
+        "name": "herosmp:snap_3",
+        "stream": false
+      }
+    ]
   }
 }

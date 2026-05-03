@@ -1,0 +1,8 @@
+{
+    "variants": {
+        "facing=north": { "model": "lucraftcore:extractor" },
+        "facing=south": { "model": "lucraftcore:extractor", "y": 180 },
+        "facing=west":  { "model": "lucraftcore:extractor", "y": 270 },
+        "facing=east":  { "model": "lucraftcore:extractor", "y": 90 }
+    }
+}

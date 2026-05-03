@@ -1,0 +1,7 @@
+{
+  "parent": "item/generated",
+  "textures": {
+    "layer0": "lucraftcore:items/injection",
+    "layer1": "lucraftcore:items/injection_inside"
+  }
+}

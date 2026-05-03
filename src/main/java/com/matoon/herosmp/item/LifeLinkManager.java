@@ -5,8 +5,10 @@ import com.matoon.herosmp.network.PacketLifeLink;
 import net.minecraft.entity.EntityLivingBase;
 import net.minecraftforge.fml.common.FMLCommonHandler;
 
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.Iterator;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
@@ -84,6 +86,22 @@ public class LifeLinkManager {
     }
 
     /**
+     * Removes all links whose chain end (linker) matches the given UUID.
+     * Called when the target's potion effect expires, to clean up shooter-side entries.
+     */
+    public static void removeLinksPointingTo(UUID linkerUuid) {
+        List<UUID> toRemove = new ArrayList<>();
+        for (Map.Entry<UUID, UUID> entry : LINKS.entrySet()) {
+            if (linkerUuid.equals(entry.getValue())) {
+                toRemove.add(entry.getKey());
+            }
+        }
+        for (UUID linked : toRemove) {
+            removeLink(linked);
+        }
+    }
+
+    /**
      * Returns the UUID of the ultimate damage recipient for the given linked entity.
      * Follows the chain (A→B→C) until no further link exists.
      * Returns null if no link exists for the given entity.
@@ -104,9 +122,17 @@ public class LifeLinkManager {
         return LINKS.get(linkedUuid);
     }
 
-    /** Returns true if the given entity currently has a life link on them. */
+    /** Returns true if the given entity currently has a life link on them (they are the shooter/key). */
     public static boolean isLinked(UUID uuid) {
         return LINKS.containsKey(uuid);
+    }
+
+    /** Returns true if the given entity is the chain-end target (value) of any active link. */
+    public static boolean hasLinkerFor(UUID targetUuid) {
+        for (UUID value : LINKS.values()) {
+            if (targetUuid.equals(value)) return true;
+        }
+        return false;
     }
 
     /**

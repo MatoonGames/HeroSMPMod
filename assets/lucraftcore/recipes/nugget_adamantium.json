@@ -1,0 +1,22 @@
+{
+  "result": {
+    "item": "lucraftcore:nugget_adamantium",
+    "count": 9
+  },
+  "pattern": [
+    "X"
+  ],
+  "conditions": [
+    {
+      "item": "lucraftcore:nugget_adamantium",
+      "type": "minecraft:item_exists"
+    }
+  ],
+  "type": "forge:ore_shaped",
+  "key": {
+    "X": {
+      "item": "#INGOTADAMANTIUM"
+    }
+  },
+  "group": "lucraftcore:ingot_to_nuggets"
+}

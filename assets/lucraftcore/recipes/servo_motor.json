@@ -1,0 +1,28 @@
+{
+  "result": {
+    "item": "lucraftcore:servo_motor"
+  },
+  "pattern": [
+    " P ",
+    "WIW",
+    " P "
+  ],
+  "conditions": [
+    {
+      "item": "lucraftcore:servo_motor",
+      "type": "minecraft:item_exists"
+    }
+  ],
+  "type": "forge:ore_shaped",
+  "key": {
+    "P": {
+      "item": "#PLATEIRON"
+    },
+    "W": {
+      "item": "#WIRECOPPER"
+    },
+    "I": {
+      "item": "#INGOTIRON"
+    }
+  }
+}

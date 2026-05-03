@@ -1,0 +1,23 @@
+{
+  "result": {
+    "item": "lucraftcore:ingot_gold_titanium_alloy"
+  },
+  "pattern": [
+    "XXX",
+    "XXX",
+    "XXX"
+  ],
+  "conditions": [
+    {
+      "item": "lucraftcore:ingot_gold_titanium_alloy",
+      "type": "minecraft:item_exists"
+    }
+  ],
+  "type": "forge:ore_shaped",
+  "key": {
+    "X": {
+      "item": "#NUGGETGOLDTITANIUMALLOY"
+    }
+  },
+  "group": "lucraftcore:nuggets_to_ingot"
+}

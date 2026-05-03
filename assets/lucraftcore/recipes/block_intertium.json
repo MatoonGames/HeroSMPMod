@@ -1,0 +1,23 @@
+{
+  "result": {
+    "item": "lucraftcore:block_intertium"
+  },
+  "pattern": [
+    "XXX",
+    "XXX",
+    "XXX"
+  ],
+  "conditions": [
+    {
+      "item": "lucraftcore:block_intertium",
+      "type": "minecraft:item_exists"
+    }
+  ],
+  "type": "forge:ore_shaped",
+  "key": {
+    "X": {
+      "item": "#INGOTINTERTIUM"
+    }
+  },
+  "group": "lucraftcore:ingots_to_block"
+}

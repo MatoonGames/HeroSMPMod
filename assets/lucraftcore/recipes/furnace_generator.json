@@ -1,0 +1,44 @@
+{
+  "result": {
+    "item": "lucraftcore:furnace_generator"
+  },
+  "pattern": [
+    "CRC",
+    "IBI",
+    "IFI"
+  ],
+  "conditions": [
+    {
+      "item": "lucraftcore:furnace_generator",
+      "type": "minecraft:item_exists"
+    },
+    {
+      "item": "lucraftcore:lv_capacitor",
+      "type": "minecraft:item_exists"
+    },
+    {
+      "item": "minecraft:furnace",
+      "type": "minecraft:item_exists"
+    }
+  ],
+  "type": "forge:ore_shaped",
+  "key": {
+    "R": {
+      "item": "#BLOCKREDSTONE"
+    },
+    "B": {
+      "nbt": "{Energy:0}",
+      "item": "lucraftcore:lv_capacitor",
+      "type": "minecraft:item_nbt"
+    },
+    "C": {
+      "item": "#INGOTCOPPER"
+    },
+    "F": {
+      "item": "minecraft:furnace"
+    },
+    "I": {
+      "item": "#PLATEIRON"
+    }
+  }
+}

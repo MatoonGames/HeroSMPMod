@@ -1,0 +1,22 @@
+{
+  "result": {
+    "item": "lucraftcore:nugget_uru",
+    "count": 9
+  },
+  "pattern": [
+    "X"
+  ],
+  "conditions": [
+    {
+      "item": "lucraftcore:nugget_uru",
+      "type": "minecraft:item_exists"
+    }
+  ],
+  "type": "forge:ore_shaped",
+  "key": {
+    "X": {
+      "item": "#INGOTURU"
+    }
+  },
+  "group": "lucraftcore:ingot_to_nuggets"
+}

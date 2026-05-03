@@ -28,5 +28,8 @@ public final class ModNetwork {
         CHANNEL.registerMessage(PacketHGMusicChunk.Handler.class, PacketHGMusicChunk.class, id++, Side.CLIENT);
         CHANNEL.registerMessage(PacketTimeStoneCharge.Handler.class, PacketTimeStoneCharge.class, id++, Side.CLIENT);
         CHANNEL.registerMessage(PacketLifeLink.Handler.class, PacketLifeLink.class, id++, Side.CLIENT);
+        CHANNEL.registerMessage(PacketInfPowerUp.Handler.class, PacketInfPowerUp.class, id++, Side.CLIENT);
+        CHANNEL.registerMessage(PacketSnapEffect.Handler.class, PacketSnapEffect.class, id++, Side.CLIENT);
+        CHANNEL.registerMessage(PacketSnapOverlay.Handler.class, PacketSnapOverlay.class, id++, Side.CLIENT);
     }
 }

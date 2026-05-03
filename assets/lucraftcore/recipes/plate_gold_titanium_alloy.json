@@ -1,0 +1,33 @@
+{
+  "result": {
+    "item": "lucraftcore:plate_gold_titanium_alloy"
+  },
+  "ingredients": [
+    {
+      "item": "lucraftcore:hammer",
+      "data": 32767
+    },
+    {
+      "item": "#INGOTGOLDTITANIUMALLOY"
+    },
+    {
+      "item": "lucraftcore:ingot_gold_titanium_alloy"
+    }
+  ],
+  "conditions": [
+    {
+      "item": "lucraftcore:plate_gold_titanium_alloy",
+      "type": "minecraft:item_exists"
+    },
+    {
+      "item": "lucraftcore:hammer",
+      "type": "minecraft:item_exists"
+    },
+    {
+      "item": "lucraftcore:ingot_gold_titanium_alloy",
+      "type": "minecraft:item_exists"
+    }
+  ],
+  "type": "forge:ore_shapeless",
+  "group": "lucraftcore:ingots_to_plate"
+}

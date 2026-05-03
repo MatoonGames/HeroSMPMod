@@ -1,0 +1,168 @@
+{
+    "forge_marker" : 1, 
+    "defaults" : {
+        "model" : "forge:fluid"
+    }, 
+
+    "variants" : {
+        "copper" : [ 
+            {
+                "custom" : {
+                    "fluid" : "copper"
+                }
+            }
+         ], 
+
+        "tin" : [ 
+            {
+                "custom" : {
+                    "fluid" : "tin"
+                }
+            }
+         ], 
+
+        "iron" : [ 
+            {
+                "custom" : {
+                    "fluid" : "iron"
+                }
+            }
+         ], 
+
+        "gold" : [ 
+            {
+                "custom" : {
+                    "fluid" : "gold"
+                }
+            }
+         ], 
+
+        "nickel" : [ 
+            {
+                "custom" : {
+                    "fluid" : "nickel"
+                }
+            }
+         ], 
+
+        "lead" : [ 
+            {
+                "custom" : {
+                    "fluid" : "lead"
+                }
+            }
+         ], 
+
+        "silver" : [ 
+            {
+                "custom" : {
+                    "fluid" : "silver"
+                }
+            }
+         ], 
+
+        "palladium" : [ 
+            {
+                "custom" : {
+                    "fluid" : "palladium"
+                }
+            }
+         ], 
+
+        "titanium" : [ 
+            {
+                "custom" : {
+                    "fluid" : "titanium"
+                }
+            }
+         ], 
+
+        "osmium" : [ 
+            {
+                "custom" : {
+                    "fluid" : "osmium"
+                }
+            }
+         ], 
+
+        "iridium" : [ 
+            {
+                "custom" : {
+                    "fluid" : "iridium"
+                }
+            }
+         ], 
+
+        "dwarfstaralloy" : [ 
+            {
+                "custom" : {
+                    "fluid" : "dwarfstaralloy"
+                }
+            }
+         ], 
+
+        "bronze" : [ 
+            {
+                "custom" : {
+                    "fluid" : "bronze"
+                }
+            }
+         ], 
+
+        "goldtitaniumalloy" : [ 
+            {
+                "custom" : {
+                    "fluid" : "goldtitaniumalloy"
+                }
+            }
+         ], 
+
+        "intertium" : [ 
+            {
+                "custom" : {
+                    "fluid" : "intertium"
+                }
+            }
+         ], 
+
+        "uranium" : [ 
+            {
+                "custom" : {
+                    "fluid" : "uranium"
+                }
+            }
+         ], 
+
+        "steel" : [ 
+            {
+                "custom" : {
+                    "fluid" : "steel"
+                }
+            }
+         ], 
+
+        "adamantium" : [ 
+            {
+                "custom" : {
+                    "fluid" : "adamantium"
+                }
+            }
+         ], 
+
+        "vibranium" : [ 
+            {
+                "custom" : {
+                    "fluid" : "vibranium"
+                }
+            }
+         ], 
+
+        "uru" : [ 
+            {
+                "custom" : {
+                    "fluid" : "uru"
+                }
+            }
+         ]
+    }
+}

@@ -36,6 +36,9 @@ public class HeroSMP {
     public static boolean guiMultiplayerOnly = true;
     public static boolean enableScoreboard = true;
 
+    // Infinity Gauntlet power-up sequence settings
+    public static boolean enableInfPowerUpEffects = true;
+
     // Time Stone ability charge settings
     public static boolean timeStoneChargeOutsideMatches  = false;
     public static int     timeStoneRechargeSeconds       = 30;
@@ -86,6 +89,11 @@ public class HeroSMP {
             enableGUI = config.getBoolean("enableGUI", Configuration.CATEGORY_GENERAL, true, "Set to false to disable the in-game GUI.");
             guiMultiplayerOnly = config.getBoolean("guiMultiplayerOnly", Configuration.CATEGORY_GENERAL, true, "Set to false to display GUI in both singleplayer and multiplayer.");
             enableScoreboard = config.getBoolean("enableScoreboard", Configuration.CATEGORY_GENERAL, true, "Set to false to disable the scoreboard.");
+
+            // Infinity Gauntlet power-up settings
+            final String CAT_GAUNTLET = "infinityGauntlet";
+            enableInfPowerUpEffects = config.getBoolean("enablePowerUpEffects", CAT_GAUNTLET, true,
+                    "Set to false to disable the Infinity Gauntlet power-up sound and overlay effects when all six stones are first slotted.");
 
             // Time Stone charge settings
             final String CAT_TIMESTONE = "timeStone";

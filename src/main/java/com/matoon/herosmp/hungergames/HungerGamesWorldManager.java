@@ -1282,4 +1282,9 @@ public class HungerGamesWorldManager {
     public Map<Integer, HungerGamesMatch> getActiveMatches()              { return new HashMap<>(activeMatches); }
     public int                             getQueueSize()                  { return queuedPlayers.size(); }
     public List<String>                    getAvailableMaps(MinecraftServer s) { return getMapManager(s).getPlayableMaps(); }
+
+    @Nullable
+    public synchronized HungerGamesMatch getMatchForPlayer(UUID playerId) {
+        return findMatchByPlayer(playerId);
+    }
 }

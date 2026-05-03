@@ -14,6 +14,7 @@ import net.minecraft.potion.PotionEffect;
 import net.minecraft.util.DamageSource;
 import net.minecraft.util.EnumParticleTypes;
 import net.minecraftforge.event.entity.living.LivingEvent;
+import net.minecraftforge.event.entity.living.LivingHealEvent;
 import net.minecraftforge.event.entity.living.LivingHurtEvent;
 import net.minecraftforge.fml.common.eventhandler.EventPriority;
 import net.minecraftforge.fml.common.eventhandler.SubscribeEvent;
@@ -151,15 +152,19 @@ public class ArrowEffectHandler {
     // -------------------------------------------------------------------------
 
     private void applyLifeLink(EntityLivingBase shooter, EntityLivingBase target) {
-        // The shooter is "linked": they carry the effect and their incoming damage
-        // is redirected to the target (chain end = target).
+        // Guard: don't apply if target is dead, invulnerable, or a creative-mode player.
+        if (target.isDead) return;
+        if (target.isEntityInvulnerable(LIFE_LINK_DAMAGE)) return;
+        if (target instanceof EntityPlayer && ((EntityPlayer) target).capabilities.isCreativeMode) return;
+
         // createLink(linker=target, linked=shooter) → LINKS.put(shooter, target)
         // → getChainEnd(shooter) = target → damage to shooter goes to target.
         boolean created = LifeLinkManager.createLink(target, shooter);
         if (!created) return;
 
-        // The potion goes on the shooter — they are the entity whose damage is intercepted.
-        shooter.addPotionEffect(new PotionEffect(ModPotions.LIFE_LINK, LIFE_LINK_DURATION, 0, false, true));
+        // The potion goes on the TARGET — they are the entity the damage is redirected TO,
+        // so the effect icon displays on them. The redirect itself is gated by LifeLinkManager.
+        target.addPotionEffect(new PotionEffect(ModPotions.LIFE_LINK, LIFE_LINK_DURATION, 0, false, true));
 
         // Visual feedback: blue particles on both players.
         spawnParticlesAround(shooter, EnumParticleTypes.PORTAL, 25);
@@ -184,8 +189,9 @@ public class ArrowEffectHandler {
         // Skip damage we ourselves caused to avoid recursion.
         if (REDIRECTING.contains(entity.getUniqueID())) return;
 
-        // Only intercept entities with the Life Link effect.
-        if (!entity.isPotionActive(ModPotions.LIFE_LINK)) return;
+        // Only intercept entities that have an active life link in the manager.
+        // The potion effect is displayed on the target (redirect recipient), not the shooter.
+        if (!LifeLinkManager.isLinked(entity.getUniqueID())) return;
 
         // Don't redirect damage that is already from us (supe_virus or life_link source).
         DamageSource src = event.getSource();
@@ -222,6 +228,18 @@ public class ArrowEffectHandler {
         spawnParticlesAround(recipient, EnumParticleTypes.CRIT_MAGIC, 12);
     }
 
+    /**
+     * Blocks ALL healing while the Supe Virus effect is active, including natural
+     * food saturation regen, absorption, and any other heal() calls.
+     */
+    @SubscribeEvent(priority = EventPriority.HIGH)
+    public void onLivingHeal(LivingHealEvent event) {
+        if (event.getEntityLiving().world.isRemote) return;
+        if (event.getEntityLiving().isPotionActive(ModPotions.SUPE_VIRUS)) {
+            event.setCanceled(true);
+        }
+    }
+
     // -------------------------------------------------------------------------
     // Supe Virus
     // -------------------------------------------------------------------------
@@ -246,10 +264,41 @@ public class ArrowEffectHandler {
         EntityLivingBase entity = event.getEntityLiving();
         if (entity.world.isRemote) return;
 
-        // Prune expired life links.
-        if (LifeLinkManager.isLinked(entity.getUniqueID())
-                && !entity.isPotionActive(ModPotions.LIFE_LINK)) {
-            LifeLinkManager.removeLink(entity.getUniqueID());
+        // Prune life links whose potion has expired.
+        // The potion sits on the TARGET (chain-end / damage recipient).
+        // The shooter is the KEY in LifeLinkManager; target is the VALUE.
+        UUID entityUuid = entity.getUniqueID();
+
+        // Case 1: this entity is the shooter (key). If the target no longer has
+        // the potion, the link is stale — remove it and strip the potion from the
+        // target to ensure the icon clears.
+        if (LifeLinkManager.isLinked(entityUuid)) {
+            UUID chainEnd = LifeLinkManager.getChainEnd(entityUuid);
+            if (chainEnd == null) {
+                LifeLinkManager.removeLink(entityUuid);
+            } else {
+                EntityLivingBase chainEndEntity = findEntityByUUID(entity, chainEnd);
+                if (chainEndEntity == null || !chainEndEntity.isPotionActive(ModPotions.LIFE_LINK)) {
+                    LifeLinkManager.removeLink(entityUuid);
+                    // Explicitly clear the potion from the target in case it somehow survived.
+                    if (chainEndEntity != null) {
+                        chainEndEntity.removePotionEffect(ModPotions.LIFE_LINK);
+                    }
+                }
+            }
+        }
+
+        // Case 2: this entity is the target (value). If the potion expired, remove
+        // all links pointing to this entity and strip the potion to be sure.
+        if (!entity.isPotionActive(ModPotions.LIFE_LINK)) {
+            LifeLinkManager.removeLinksPointingTo(entityUuid);
+        } else {
+            // Potion is active — make sure the link still exists. If the link was
+            // already removed (e.g. shooter logged off) but the potion is still ticking,
+            // forcibly remove the potion so the icon goes away.
+            if (!LifeLinkManager.hasLinkerFor(entityUuid)) {
+                entity.removePotionEffect(ModPotions.LIFE_LINK);
+            }
         }
 
         // Supe Virus per-tick logic.
@@ -262,11 +311,11 @@ public class ArrowEffectHandler {
             }
         }
 
-        // Life Link: emit blue particles every second so both players see the chain.
-        if (LifeLinkManager.isLinked(entity.getUniqueID())
-                && entity.isPotionActive(ModPotions.LIFE_LINK)
-                && entity.ticksExisted % 20 == 0) {
-            spawnParticlesAround(entity, EnumParticleTypes.PORTAL, 5);
+        // Life Link: emit blue particles every second on both the shooter and the target.
+        if (entity.ticksExisted % 20 == 0) {
+            if (LifeLinkManager.isLinked(entityUuid) || entity.isPotionActive(ModPotions.LIFE_LINK)) {
+                spawnParticlesAround(entity, EnumParticleTypes.PORTAL, 5);
+            }
         }
     }
 
@@ -275,9 +324,13 @@ public class ArrowEffectHandler {
             player.removePotionEffect(ModPotions.SUPE_VIRUS);
             return;
         }
-        // Strip any Regeneration effect granted by the superpower every tick.
+        // Strip any regen or absorption potion effects every tick.
+        // Natural food regen is blocked by the LivingHealEvent handler.
         if (player.isPotionActive(net.minecraft.init.MobEffects.REGENERATION)) {
             player.removePotionEffect(net.minecraft.init.MobEffects.REGENERATION);
+        }
+        if (player.isPotionActive(net.minecraft.init.MobEffects.ABSORPTION)) {
+            player.removePotionEffect(net.minecraft.init.MobEffects.ABSORPTION);
         }
     }
 

@@ -1,0 +1,38 @@
+{
+  "result": {
+    "item": "lucraftcore:advanced_circuit"
+  },
+  "pattern": [
+    "WCW",
+    "RPR",
+    "WCW"
+  ],
+  "conditions": [
+    {
+      "item": "lucraftcore:advanced_circuit",
+      "type": "minecraft:item_exists"
+    },
+    {
+      "item": "lucraftcore:lv_capacitor",
+      "type": "minecraft:item_exists"
+    }
+  ],
+  "type": "forge:ore_shaped",
+  "key": {
+    "P": {
+      "item": "#CIRCUITBASIC"
+    },
+    "R": {
+      "item": "#DUSTREDSTONE"
+    },
+    "C": {
+      "nbt": "{Energy:0}",
+      "item": "lucraftcore:lv_capacitor",
+      "type": "minecraft:item_nbt"
+    },
+    "W": {
+      "item": "#WIRECOPPER"
+    }
+  },
+  "group": "lucraftcore:circuit"
+}

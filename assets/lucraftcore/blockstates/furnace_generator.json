@@ -1,0 +1,19 @@
+{
+  "variants": {
+    "facing=north": {
+      "model": "lucraftcore:furnace_generator"
+    },
+    "facing=south": {
+      "model": "lucraftcore:furnace_generator",
+      "y": 180
+    },
+    "facing=west": {
+      "model": "lucraftcore:furnace_generator",
+      "y": 270
+    },
+    "facing=east": {
+      "model": "lucraftcore:furnace_generator",
+      "y": 90
+    }
+  }
+}

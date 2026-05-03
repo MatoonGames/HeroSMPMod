@@ -1,0 +1,25 @@
+{
+  "result": {
+    "item": "lucraftcore:wiring_copper",
+    "count": 4
+  },
+  "ingredients": [
+    {
+      "item": "#PLATECOPPER"
+    },
+    {
+      "item": "lucraftcore:wire_cutter"
+    }
+  ],
+  "conditions": [
+    {
+      "item": "lucraftcore:wiring_copper",
+      "type": "minecraft:item_exists"
+    },
+    {
+      "item": "lucraftcore:wire_cutter",
+      "type": "minecraft:item_exists"
+    }
+  ],
+  "type": "forge:ore_shapeless"
+}

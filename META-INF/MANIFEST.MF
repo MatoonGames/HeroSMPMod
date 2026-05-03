@@ -1,0 +1,5 @@
+Manifest-Version: 1.0
+FMLCorePluginContainsFMLMod: true
+FMLAT: lucraftcore_at.cfg
+FMLCorePlugin: lucraft.mods.lucraftcore.core.LucraftCoreCoreMod
+

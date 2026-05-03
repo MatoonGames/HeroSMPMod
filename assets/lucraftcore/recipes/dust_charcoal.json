@@ -1,0 +1,31 @@
+{
+  "result": {
+    "item": "lucraftcore:dust_charcoal"
+  },
+  "ingredients": [
+    {
+      "item": "lucraftcore:hammer",
+      "data": 32767
+    },
+    {
+      "item": "minecraft:coal",
+      "data": 1
+    }
+  ],
+  "conditions": [
+    {
+      "item": "lucraftcore:dust_charcoal",
+      "type": "minecraft:item_exists"
+    },
+    {
+      "item": "lucraftcore:hammer",
+      "type": "minecraft:item_exists"
+    },
+    {
+      "item": "minecraft:coal",
+      "type": "minecraft:item_exists"
+    }
+  ],
+  "type": "minecraft:crafting_shapeless",
+  "group": "lucraftcore:ingot_to_dust"
+}

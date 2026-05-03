@@ -1,0 +1,8 @@
+{
+    "variants": {
+        "facing=north": { "model": "lucraftcore:boiler" },
+        "facing=south": { "model": "lucraftcore:boiler", "y": 180 },
+        "facing=west":  { "model": "lucraftcore:boiler", "y": 270 },
+        "facing=east":  { "model": "lucraftcore:boiler", "y": 90 }
+    }
+}

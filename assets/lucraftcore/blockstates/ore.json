@@ -1,0 +1,79 @@
+{
+  "forge_marker": 1,
+  "defaults": {
+    "model": "cube_all",
+    "transform": "forge:default-block"
+  },
+  "variants": {
+    "type": {
+      "copper": {
+        "textures": {
+          "all": "lucraftcore:blocks/ores/copper"
+        }
+      },
+      "tin": {
+        "textures": {
+          "all": "lucraftcore:blocks/ores/tin"
+        }
+      },
+      "nickel": {
+        "textures": {
+          "all": "lucraftcore:blocks/ores/nickel"
+        }
+      },
+      "lead": {
+        "textures": {
+          "all": "lucraftcore:blocks/ores/lead"
+        }
+      },
+      "silver": {
+        "textures": {
+          "all": "lucraftcore:blocks/ores/silver"
+        }
+      },
+      "palladium": {
+        "textures": {
+          "all": "lucraftcore:blocks/ores/palladium"
+        }
+      },
+      "titanium": {
+        "textures": {
+          "all": "lucraftcore:blocks/ores/titanium"
+        }
+      },
+      "vibranium": {
+        "model": "lucraftcore:ore_vibranium"
+      },
+      "osmium": {
+        "textures": {
+          "all": "lucraftcore:blocks/ores/osmium"
+        }
+      },
+      "iridium": {
+        "textures": {
+          "all": "lucraftcore:blocks/ores/iridium"
+        }
+      },
+      "dwarf_star_alloy": {
+        "textures": {
+          "all": "lucraftcore:blocks/ores/dwarf_star_alloy"
+        }
+      },
+      "dwarfstaralloy": {
+        "textures": {
+          "all": "lucraftcore:blocks/ores/dwarf_star_alloy"
+        }
+      },
+      "uranium": {
+        "textures": {
+          "all": "lucraftcore:blocks/ores/uranium"
+        }
+      },
+      "uru": {
+        "textures": {
+          "all": "lucraftcore:blocks/ores/uru"
+        }
+      }
+    }
+  }
+}

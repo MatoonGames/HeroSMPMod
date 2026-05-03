@@ -1,0 +1,24 @@
+{
+  "result": {
+    "item": "lucraftcore:wire_cutter"
+  },
+  "pattern": [
+    " P ",
+    "S S"
+  ],
+  "conditions": [
+    {
+      "item": "lucraftcore:wire_cutter",
+      "type": "minecraft:item_exists"
+    }
+  ],
+  "type": "forge:ore_shaped",
+  "key": {
+    "P": {
+      "item": "#PLATEIRON"
+    },
+    "S": {
+      "item": "#STICKWOOD"
+    }
+  }
+}

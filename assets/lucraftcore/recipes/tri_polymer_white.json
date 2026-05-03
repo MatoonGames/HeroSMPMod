@@ -1,0 +1,28 @@
+{
+  "result": {
+    "item": "lucraftcore:tri_polymer_white"
+  },
+  "ingredients": [
+    {
+      "item": "#DYEWHITE"
+    },
+    {
+      "item": "#PLATEIRON"
+    },
+    {
+      "item": "minecraft:leather"
+    }
+  ],
+  "conditions": [
+    {
+      "item": "lucraftcore:tri_polymer_white",
+      "type": "minecraft:item_exists"
+    },
+    {
+      "item": "minecraft:leather",
+      "type": "minecraft:item_exists"
+    }
+  ],
+  "type": "forge:ore_shapeless",
+  "group": "lucraftcore:tri_polymer"
+}

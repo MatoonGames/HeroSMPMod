@@ -35,7 +35,7 @@ public class ItemSupeVirusArrow extends ItemArrow {
     public void addInformation(ItemStack stack, World worldIn, List<String> tooltip,
             net.minecraft.client.util.ITooltipFlag flagIn) {
         tooltip.add(net.minecraft.util.text.TextFormatting.GREEN + "Infects supes with the Supe Virus");
-        tooltip.add(net.minecraft.util.text.TextFormatting.GRAY + "Suppresses regen, drains 2% health/2s");
+        tooltip.add(net.minecraft.util.text.TextFormatting.GRAY + "Blocks all healing, drains 5% health/s");
         tooltip.add(net.minecraft.util.text.TextFormatting.GRAY + "No effect on non-supes");
         tooltip.add(net.minecraft.util.text.TextFormatting.DARK_GRAY + "Cure: Supe Virus Cure item");
     }

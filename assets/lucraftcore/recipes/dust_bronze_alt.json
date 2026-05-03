@@ -1,0 +1,28 @@
+{
+  "result": {
+    "item": "lucraftcore:dust_bronze",
+    "count": 2
+  },
+  "ingredients": [
+    {
+      "item": "#DUSTCOPPER"
+    },
+    {
+      "item": "#DUSTCOPPER"
+    },
+    {
+      "item": "#DUSTCOPPER"
+    },
+    {
+      "item": "#DUSTTIN"
+    }
+  ],
+  "conditions": [
+    {
+      "item": "lucraftcore:dust_bronze",
+      "type": "minecraft:item_exists"
+    }
+  ],
+  "type": "forge:ore_shapeless",
+  "group": "lucraftcore:alloys"
+}

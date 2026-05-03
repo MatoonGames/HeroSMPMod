@@ -1,0 +1,33 @@
+{
+  "result": {
+    "item": "lucraftcore:plate_uru"
+  },
+  "ingredients": [
+    {
+      "item": "lucraftcore:hammer",
+      "data": 32767
+    },
+    {
+      "item": "#INGOTURU"
+    },
+    {
+      "item": "lucraftcore:ingot_uru"
+    }
+  ],
+  "conditions": [
+    {
+      "item": "lucraftcore:plate_uru",
+      "type": "minecraft:item_exists"
+    },
+    {
+      "item": "lucraftcore:hammer",
+      "type": "minecraft:item_exists"
+    },
+    {
+      "item": "lucraftcore:ingot_uru",
+      "type": "minecraft:item_exists"
+    }
+  ],
+  "type": "forge:ore_shapeless",
+  "group": "lucraftcore:ingots_to_plate"
+}

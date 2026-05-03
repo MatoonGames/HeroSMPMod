@@ -1,0 +1,8 @@
+{
+    "parent": "block/orientable",
+    "textures": {
+        "top": "lucraftcore:blocks/machine_top",
+        "front": "lucraftcore:blocks/extractor_front",
+        "side": "lucraftcore:blocks/machine_side"
+    }
+}

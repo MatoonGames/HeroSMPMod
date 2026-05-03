@@ -1,0 +1,25 @@
+{
+  "result": {
+    "item": "lucraftcore:hammer"
+  },
+  "pattern": [
+    " XX",
+    "SSX",
+    " XX"
+  ],
+  "conditions": [
+    {
+      "item": "lucraftcore:hammer",
+      "type": "minecraft:item_exists"
+    }
+  ],
+  "type": "forge:ore_shaped",
+  "key": {
+    "S": {
+      "item": "#STICKWOOD"
+    },
+    "X": {
+      "item": "#INGOTIRON"
+    }
+  }
+}

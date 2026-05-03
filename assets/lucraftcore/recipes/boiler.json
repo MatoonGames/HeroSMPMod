@@ -1,0 +1,48 @@
+{
+  "result": {
+    "item": "lucraftcore:boiler"
+  },
+  "pattern": [
+    "PCP",
+    "BXB",
+    "PKP"
+  ],
+  "conditions": [
+    {
+      "item": "lucraftcore:boiler",
+      "type": "minecraft:item_exists"
+    },
+    {
+      "item": "minecraft:cauldron",
+      "type": "minecraft:item_exists"
+    },
+    {
+      "item": "minecraft:bucket",
+      "type": "minecraft:item_exists"
+    },
+    {
+      "item": "lucraftcore:lv_capacitor",
+      "type": "minecraft:item_exists"
+    }
+  ],
+  "type": "forge:ore_shaped",
+  "key": {
+    "P": {
+      "item": "#PLATEIRON"
+    },
+    "B": {
+      "item": "minecraft:bucket"
+    },
+    "C": {
+      "item": "#CIRCUITBASIC"
+    },
+    "X": {
+      "nbt": "{Energy:0}",
+      "item": "lucraftcore:lv_capacitor",
+      "type": "minecraft:item_nbt"
+    },
+    "K": {
+      "item": "minecraft:cauldron"
+    }
+  }
+}

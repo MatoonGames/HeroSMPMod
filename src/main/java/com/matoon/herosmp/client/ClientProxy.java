@@ -26,6 +26,12 @@ public class ClientProxy extends CommonProxy {
         MinecraftForge.EVENT_BUS.register(new ModItems.ClientRegistrationHandler());
         // Life Link chain renderer (client-only world renderer)
         MinecraftForge.EVENT_BUS.register(new LifeLinkChainRenderer());
+        // Infinity Gauntlet power-up overlay and sound
+        MinecraftForge.EVENT_BUS.register(new InfPowerUpOverlay());
+        // Snap white flash overlay and sound
+        MinecraftForge.EVENT_BUS.register(new SnapEffectOverlay());
+        // Snap permanent skin overlay (snapper's hand texture until death)
+        MinecraftForge.EVENT_BUS.register(new SnapSkinOverlay());
 
         File musicDir = new File(event.getModConfigurationDirectory().getParentFile(), "herosmp_hg_music");
         try {

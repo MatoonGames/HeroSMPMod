@@ -1,0 +1,32 @@
+{
+  "result": {
+    "item": "lucraftcore:suit_stand"
+  },
+  "pattern": [
+    " I ",
+    " A ",
+    "PPP"
+  ],
+  "conditions": [
+    {
+      "item": "lucraftcore:suit_stand",
+      "type": "minecraft:item_exists"
+    },
+    {
+      "item": "minecraft:armor_stand",
+      "type": "minecraft:item_exists"
+    }
+  ],
+  "type": "forge:ore_shaped",
+  "key": {
+    "P": {
+      "item": "#PLATEIRON"
+    },
+    "A": {
+      "item": "minecraft:armor_stand"
+    },
+    "I": {
+      "item": "#INGOTIRON"
+    }
+  }
+}

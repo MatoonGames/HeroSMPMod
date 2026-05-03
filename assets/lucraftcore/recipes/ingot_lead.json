@@ -1,0 +1,22 @@
+{
+  "result": {
+    "item": "lucraftcore:ingot_lead",
+    "count": 9
+  },
+  "pattern": [
+    "X"
+  ],
+  "conditions": [
+    {
+      "item": "lucraftcore:ingot_lead",
+      "type": "minecraft:item_exists"
+    }
+  ],
+  "type": "forge:ore_shaped",
+  "key": {
+    "X": {
+      "item": "#BLOCKLEAD"
+    }
+  },
+  "group": "lucraftcore:block_to_ingots"
+}

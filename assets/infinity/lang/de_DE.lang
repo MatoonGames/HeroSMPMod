@@ -1,0 +1,21 @@
+item.power_stone.name=Stein der Macht
+item.reality_stone.name=Realitätsstein
+item.soul_stone.name=Seelenstein
+item.time_stone.name=Zeitstein
+item.mind_stone.name=Gedankenstein
+item.space_stone.name=Raumstein
+infinity.snap.text=Du hättest auf den Kopf zielen sollen.
+infinity.snap.death=zerfiel zu Staub
+
+# Advancements
+
+infinity.advancements.infinity.time_stone.title=Zeit
+infinity.advancements.infinity.time_stone.description=Finde den Zeitstein
+infinity.advancements.infinity.soul_stone.title=Seele
+infinity.advancements.infinity.soul_stone.description=Finde den Seelenstein
+infinity.advancements.infinity.mind_stone.title=Gedanke
+infinity.advancements.infinity.mind_stone.description=Finde den Gedankenstein
+infinity.advancements.infinity.power_stone.title=Macht
+infinity.advancements.infinity.power_stone.description=Finde den Stein der Macht
+infinity.advancements.infinity.reality_stone.title=Realität
+infinity.advancements.infinity.reality_stone.description=Finde den Realitätsstein

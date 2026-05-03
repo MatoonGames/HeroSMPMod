@@ -1,0 +1,33 @@
+{
+  "result": {
+    "item": "lucraftcore:plate_gold"
+  },
+  "ingredients": [
+    {
+      "item": "lucraftcore:hammer",
+      "data": 32767
+    },
+    {
+      "item": "#INGOTGOLD"
+    },
+    {
+      "item": "minecraft:gold_ingot"
+    }
+  ],
+  "conditions": [
+    {
+      "item": "lucraftcore:plate_gold",
+      "type": "minecraft:item_exists"
+    },
+    {
+      "item": "lucraftcore:hammer",
+      "type": "minecraft:item_exists"
+    },
+    {
+      "item": "minecraft:gold_ingot",
+      "type": "minecraft:item_exists"
+    }
+  ],
+  "type": "forge:ore_shapeless",
+  "group": "lucraftcore:ingots_to_plate"
+}

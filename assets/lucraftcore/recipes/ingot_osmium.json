@@ -1,0 +1,22 @@
+{
+  "result": {
+    "item": "lucraftcore:ingot_osmium",
+    "count": 9
+  },
+  "pattern": [
+    "X"
+  ],
+  "conditions": [
+    {
+      "item": "lucraftcore:ingot_osmium",
+      "type": "minecraft:item_exists"
+    }
+  ],
+  "type": "forge:ore_shaped",
+  "key": {
+    "X": {
+      "item": "#BLOCKOSMIUM"
+    }
+  },
+  "group": "lucraftcore:block_to_ingots"
+}

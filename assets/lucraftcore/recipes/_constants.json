@@ -1,0 +1,653 @@
+[
+  {
+    "ingredient": {
+      "type": "forge:ore_dict",
+      "ore": "blockAdamantium"
+    },
+    "name": "BLOCKADAMANTIUM"
+  },
+  {
+    "ingredient": {
+      "type": "forge:ore_dict",
+      "ore": "blockBronze"
+    },
+    "name": "BLOCKBRONZE"
+  },
+  {
+    "ingredient": {
+      "type": "forge:ore_dict",
+      "ore": "blockCopper"
+    },
+    "name": "BLOCKCOPPER"
+  },
+  {
+    "ingredient": {
+      "type": "forge:ore_dict",
+      "ore": "blockDwarfStarAlloy"
+    },
+    "name": "BLOCKDWARFSTARALLOY"
+  },
+  {
+    "ingredient": {
+      "type": "forge:ore_dict",
+      "ore": "blockGoldTitaniumAlloy"
+    },
+    "name": "BLOCKGOLDTITANIUMALLOY"
+  },
+  {
+    "ingredient": {
+      "type": "forge:ore_dict",
+      "ore": "blockIntertium"
+    },
+    "name": "BLOCKINTERTIUM"
+  },
+  {
+    "ingredient": {
+      "type": "forge:ore_dict",
+      "ore": "blockIridium"
+    },
+    "name": "BLOCKIRIDIUM"
+  },
+  {
+    "ingredient": {
+      "type": "forge:ore_dict",
+      "ore": "blockLead"
+    },
+    "name": "BLOCKLEAD"
+  },
+  {
+    "ingredient": {
+      "type": "forge:ore_dict",
+      "ore": "blockNickel"
+    },
+    "name": "BLOCKNICKEL"
+  },
+  {
+    "ingredient": {
+      "type": "forge:ore_dict",
+      "ore": "blockOsmium"
+    },
+    "name": "BLOCKOSMIUM"
+  },
+  {
+    "ingredient": {
+      "type": "forge:ore_dict",
+      "ore": "blockPalladium"
+    },
+    "name": "BLOCKPALLADIUM"
+  },
+  {
+    "ingredient": {
+      "type": "forge:ore_dict",
+      "ore": "blockRedstone"
+    },
+    "name": "BLOCKREDSTONE"
+  },
+  {
+    "ingredient": {
+      "type": "forge:ore_dict",
+      "ore": "blockSilver"
+    },
+    "name": "BLOCKSILVER"
+  },
+  {
+    "ingredient": {
+      "type": "forge:ore_dict",
+      "ore": "blockSteel"
+    },
+    "name": "BLOCKSTEEL"
+  },
+  {
+    "ingredient": {
+      "type": "forge:ore_dict",
+      "ore": "blockTin"
+    },
+    "name": "BLOCKTIN"
+  },
+  {
+    "ingredient": {
+      "type": "forge:ore_dict",
+      "ore": "blockTitanium"
+    },
+    "name": "BLOCKTITANIUM"
+  },
+  {
+    "ingredient": {
+      "type": "forge:ore_dict",
+      "ore": "blockUranium"
+    },
+    "name": "BLOCKURANIUM"
+  },
+  {
+    "ingredient": {
+      "type": "forge:ore_dict",
+      "ore": "blockUru"
+    },
+    "name": "BLOCKURU"
+  },
+  {
+    "ingredient": {
+      "type": "forge:ore_dict",
+      "ore": "blockVibranium"
+    },
+    "name": "BLOCKVIBRANIUM"
+  },
+  {
+    "ingredient": {
+      "type": "forge:ore_dict",
+      "ore": "circuitAdvanced"
+    },
+    "name": "CIRCUITADVANCED"
+  },
+  {
+    "ingredient": {
+      "type": "forge:ore_dict",
+      "ore": "circuitBasic"
+    },
+    "name": "CIRCUITBASIC"
+  },
+  {
+    "ingredient": {
+      "type": "forge:ore_dict",
+      "ore": "dustCoal"
+    },
+    "name": "DUSTCOAL"
+  },
+  {
+    "ingredient": {
+      "type": "forge:ore_dict",
+      "ore": "dustCopper"
+    },
+    "name": "DUSTCOPPER"
+  },
+  {
+    "ingredient": {
+      "type": "forge:ore_dict",
+      "ore": "dustGold"
+    },
+    "name": "DUSTGOLD"
+  },
+  {
+    "ingredient": {
+      "type": "forge:ore_dict",
+      "ore": "dustIron"
+    },
+    "name": "DUSTIRON"
+  },
+  {
+    "ingredient": {
+      "type": "forge:ore_dict",
+      "ore": "dustOsmium"
+    },
+    "name": "DUSTOSMIUM"
+  },
+  {
+    "ingredient": {
+      "type": "forge:ore_dict",
+      "ore": "dustRedstone"
+    },
+    "name": "DUSTREDSTONE"
+  },
+  {
+    "ingredient": {
+      "type": "forge:ore_dict",
+      "ore": "dustSteel"
+    },
+    "name": "DUSTSTEEL"
+  },
+  {
+    "ingredient": {
+      "type": "forge:ore_dict",
+      "ore": "dustTin"
+    },
+    "name": "DUSTTIN"
+  },
+  {
+    "ingredient": {
+      "type": "forge:ore_dict",
+      "ore": "dustTitanium"
+    },
+    "name": "DUSTTITANIUM"
+  },
+  {
+    "ingredient": {
+      "type": "forge:ore_dict",
+      "ore": "dustVibranium"
+    },
+    "name": "DUSTVIBRANIUM"
+  },
+  {
+    "ingredient": {
+      "type": "forge:ore_dict",
+      "ore": "dyeBlack"
+    },
+    "name": "DYEBLACK"
+  },
+  {
+    "ingredient": {
+      "type": "forge:ore_dict",
+      "ore": "dyeBlue"
+    },
+    "name": "DYEBLUE"
+  },
+  {
+    "ingredient": {
+      "type": "forge:ore_dict",
+      "ore": "dyeBrown"
+    },
+    "name": "DYEBROWN"
+  },
+  {
+    "ingredient": {
+      "type": "forge:ore_dict",
+      "ore": "dyeCyan"
+    },
+    "name": "DYECYAN"
+  },
+  {
+    "ingredient": {
+      "type": "forge:ore_dict",
+      "ore": "dyeGray"
+    },
+    "name": "DYEGRAY"
+  },
+  {
+    "ingredient": {
+      "type": "forge:ore_dict",
+      "ore": "dyeGreen"
+    },
+    "name": "DYEGREEN"
+  },
+  {
+    "ingredient": {
+      "type": "forge:ore_dict",
+      "ore": "dyeLightBlue"
+    },
+    "name": "DYELIGHTBLUE"
+  },
+  {
+    "ingredient": {
+      "type": "forge:ore_dict",
+      "ore": "dyeLightGray"
+    },
+    "name": "DYELIGHTGRAY"
+  },
+  {
+    "ingredient": {
+      "type": "forge:ore_dict",
+      "ore": "dyeLime"
+    },
+    "name": "DYELIME"
+  },
+  {
+    "ingredient": {
+      "type": "forge:ore_dict",
+      "ore": "dyeMagenta"
+    },
+    "name": "DYEMAGENTA"
+  },
+  {
+    "ingredient": {
+      "type": "forge:ore_dict",
+      "ore": "dyeOrange"
+    },
+    "name": "DYEORANGE"
+  },
+  {
+    "ingredient": {
+      "type": "forge:ore_dict",
+      "ore": "dyePink"
+    },
+    "name": "DYEPINK"
+  },
+  {
+    "ingredient": {
+      "type": "forge:ore_dict",
+      "ore": "dyePurple"
+    },
+    "name": "DYEPURPLE"
+  },
+  {
+    "ingredient": {
+      "type": "forge:ore_dict",
+      "ore": "dyeRed"
+    },
+    "name": "DYERED"
+  },
+  {
+    "ingredient": {
+      "type": "forge:ore_dict",
+      "ore": "dyeWhite"
+    },
+    "name": "DYEWHITE"
+  },
+  {
+    "ingredient": {
+      "type": "forge:ore_dict",
+      "ore": "dyeYellow"
+    },
+    "name": "DYEYELLOW"
+  },
+  {
+    "ingredient": {
+      "type": "forge:ore_dict",
+      "ore": "ingotAdamantium"
+    },
+    "name": "INGOTADAMANTIUM"
+  },
+  {
+    "ingredient": {
+      "type": "forge:ore_dict",
+      "ore": "ingotBronze"
+    },
+    "name": "INGOTBRONZE"
+  },
+  {
+    "ingredient": {
+      "type": "forge:ore_dict",
+      "ore": "ingotCopper"
+    },
+    "name": "INGOTCOPPER"
+  },
+  {
+    "ingredient": {
+      "type": "forge:ore_dict",
+      "ore": "ingotDwarfStarAlloy"
+    },
+    "name": "INGOTDWARFSTARALLOY"
+  },
+  {
+    "ingredient": {
+      "type": "forge:ore_dict",
+      "ore": "ingotGold"
+    },
+    "name": "INGOTGOLD"
+  },
+  {
+    "ingredient": {
+      "type": "forge:ore_dict",
+      "ore": "ingotGoldTitaniumAlloy"
+    },
+    "name": "INGOTGOLDTITANIUMALLOY"
+  },
+  {
+    "ingredient": {
+      "type": "forge:ore_dict",
+      "ore": "ingotIntertium"
+    },
+    "name": "INGOTINTERTIUM"
+  },
+  {
+    "ingredient": {
+      "type": "forge:ore_dict",
+      "ore": "ingotIridium"
+    },
+    "name": "INGOTIRIDIUM"
+  },
+  {
+    "ingredient": {
+      "type": "forge:ore_dict",
+      "ore": "ingotIron"
+    },
+    "name": "INGOTIRON"
+  },
+  {
+    "ingredient": {
+      "type": "forge:ore_dict",
+      "ore": "ingotLead"
+    },
+    "name": "INGOTLEAD"
+  },
+  {
+    "ingredient": {
+      "type": "forge:ore_dict",
+      "ore": "ingotNickel"
+    },
+    "name": "INGOTNICKEL"
+  },
+  {
+    "ingredient": {
+      "type": "forge:ore_dict",
+      "ore": "ingotOsmium"
+    },
+    "name": "INGOTOSMIUM"
+  },
+  {
+    "ingredient": {
+      "type": "forge:ore_dict",
+      "ore": "ingotPalladium"
+    },
+    "name": "INGOTPALLADIUM"
+  },
+  {
+    "ingredient": {
+      "type": "forge:ore_dict",
+      "ore": "ingotSilver"
+    },
+    "name": "INGOTSILVER"
+  },
+  {
+    "ingredient": {
+      "type": "forge:ore_dict",
+      "ore": "ingotSteel"
+    },
+    "name": "INGOTSTEEL"
+  },
+  {
+    "ingredient": {
+      "type": "forge:ore_dict",
+      "ore": "ingotTin"
+    },
+    "name": "INGOTTIN"
+  },
+  {
+    "ingredient": {
+      "type": "forge:ore_dict",
+      "ore": "ingotTitanium"
+    },
+    "name": "INGOTTITANIUM"
+  },
+  {
+    "ingredient": {
+      "type": "forge:ore_dict",
+      "ore": "ingotUranium"
+    },
+    "name": "INGOTURANIUM"
+  },
+  {
+    "ingredient": {
+      "type": "forge:ore_dict",
+      "ore": "ingotUru"
+    },
+    "name": "INGOTURU"
+  },
+  {
+    "ingredient": {
+      "type": "forge:ore_dict",
+      "ore": "ingotVibranium"
+    },
+    "name": "INGOTVIBRANIUM"
+  },
+  {
+    "ingredient": {
+      "type": "forge:ore_dict",
+      "ore": "nuggetAdamantium"
+    },
+    "name": "NUGGETADAMANTIUM"
+  },
+  {
+    "ingredient": {
+      "type": "forge:ore_dict",
+      "ore": "nuggetBronze"
+    },
+    "name": "NUGGETBRONZE"
+  },
+  {
+    "ingredient": {
+      "type": "forge:ore_dict",
+      "ore": "nuggetCopper"
+    },
+    "name": "NUGGETCOPPER"
+  },
+  {
+    "ingredient": {
+      "type": "forge:ore_dict",
+      "ore": "nuggetDwarfStarAlloy"
+    },
+    "name": "NUGGETDWARFSTARALLOY"
+  },
+  {
+    "ingredient": {
+      "type": "forge:ore_dict",
+      "ore": "nuggetGoldTitaniumAlloy"
+    },
+    "name": "NUGGETGOLDTITANIUMALLOY"
+  },
+  {
+    "ingredient": {
+      "type": "forge:ore_dict",
+      "ore": "nuggetIntertium"
+    },
+    "name": "NUGGETINTERTIUM"
+  },
+  {
+    "ingredient": {
+      "type": "forge:ore_dict",
+      "ore": "nuggetIridium"
+    },
+    "name": "NUGGETIRIDIUM"
+  },
+  {
+    "ingredient": {
+      "type": "forge:ore_dict",
+      "ore": "nuggetLead"
+    },
+    "name": "NUGGETLEAD"
+  },
+  {
+    "ingredient": {
+      "type": "forge:ore_dict",
+      "ore": "nuggetNickel"
+    },
+    "name": "NUGGETNICKEL"
+  },
+  {
+    "ingredient": {
+      "type": "forge:ore_dict",
+      "ore": "nuggetOsmium"
+    },
+    "name": "NUGGETOSMIUM"
+  },
+  {
+    "ingredient": {
+      "type": "forge:ore_dict",
+      "ore": "nuggetPalladium"
+    },
+    "name": "NUGGETPALLADIUM"
+  },
+  {
+    "ingredient": {
+      "type": "forge:ore_dict",
+      "ore": "nuggetSilver"
+    },
+    "name": "NUGGETSILVER"
+  },
+  {
+    "ingredient": {
+      "type": "forge:ore_dict",
+      "ore": "nuggetSteel"
+    },
+    "name": "NUGGETSTEEL"
+  },
+  {
+    "ingredient": {
+      "type": "forge:ore_dict",
+      "ore": "nuggetTin"
+    },
+    "name": "NUGGETTIN"
+  },
+  {
+    "ingredient": {
+      "type": "forge:ore_dict",
+      "ore": "nuggetTitanium"
+    },
+    "name": "NUGGETTITANIUM"
+  },
+  {
+    "ingredient": {
+      "type": "forge:ore_dict",
+      "ore": "nuggetUranium"
+    },
+    "name": "NUGGETURANIUM"
+  },
+  {
+    "ingredient": {
+      "type": "forge:ore_dict",
+      "ore": "nuggetUru"
+    },
+    "name": "NUGGETURU"
+  },
+  {
+    "ingredient": {
+      "type": "forge:ore_dict",
+      "ore": "nuggetVibranium"
+    },
+    "name": "NUGGETVIBRANIUM"
+  },
+  {
+    "ingredient": {
+      "type": "forge:ore_dict",
+      "ore": "plateCopper"
+    },
+    "name": "PLATECOPPER"
+  },
+  {
+    "ingredient": {
+      "type": "forge:ore_dict",
+      "ore": "plateDwarfStarAlloy"
+    },
+    "name": "PLATEDWARFSTARALLOY"
+  },
+  {
+    "ingredient": {
+      "type": "forge:ore_dict",
+      "ore": "plateIntertium"
+    },
+    "name": "PLATEINTERTIUM"
+  },
+  {
+    "ingredient": {
+      "type": "forge:ore_dict",
+      "ore": "plateIron"
+    },
+    "name": "PLATEIRON"
+  },
+  {
+    "ingredient": {
+      "type": "forge:ore_dict",
+      "ore": "plateOsmium"
+    },
+    "name": "PLATEOSMIUM"
+  },
+  {
+    "ingredient": {
+      "type": "forge:ore_dict",
+      "ore": "plateTin"
+    },
+    "name": "PLATETIN"
+  },
+  {
+    "ingredient": {
+      "type": "forge:ore_dict",
+      "ore": "stickWood"
+    },
+    "name": "STICKWOOD"
+  },
+  {
+    "ingredient": {
+      "type": "forge:ore_dict",
+      "ore": "wireCopper"
+    },
+    "name": "WIRECOPPER"
+  }
+]

@@ -1,0 +1,48 @@
+{
+  "result": {
+    "item": "lucraftcore:extractor"
+  },
+  "pattern": [
+    "PIP",
+    "BCB",
+    "PXP"
+  ],
+  "conditions": [
+    {
+      "item": "lucraftcore:extractor",
+      "type": "minecraft:item_exists"
+    },
+    {
+      "item": "lucraftcore:injection",
+      "type": "minecraft:item_exists"
+    },
+    {
+      "item": "minecraft:bucket",
+      "type": "minecraft:item_exists"
+    },
+    {
+      "item": "lucraftcore:lv_capacitor",
+      "type": "minecraft:item_exists"
+    }
+  ],
+  "type": "forge:ore_shaped",
+  "key": {
+    "P": {
+      "item": "#PLATEIRON"
+    },
+    "B": {
+      "item": "minecraft:bucket"
+    },
+    "C": {
+      "item": "#CIRCUITBASIC"
+    },
+    "X": {
+      "nbt": "{Energy:0}",
+      "item": "lucraftcore:lv_capacitor",
+      "type": "minecraft:item_nbt"
+    },
+    "I": {
+      "item": "lucraftcore:injection"
+    }
+  }
+}

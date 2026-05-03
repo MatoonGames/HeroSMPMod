@@ -1,0 +1,23 @@
+{
+  "result": {
+    "item": "lucraftcore:block_vibranium"
+  },
+  "pattern": [
+    "XXX",
+    "XXX",
+    "XXX"
+  ],
+  "conditions": [
+    {
+      "item": "lucraftcore:block_vibranium",
+      "type": "minecraft:item_exists"
+    }
+  ],
+  "type": "forge:ore_shaped",
+  "key": {
+    "X": {
+      "item": "#INGOTVIBRANIUM"
+    }
+  },
+  "group": "lucraftcore:ingots_to_block"
+}

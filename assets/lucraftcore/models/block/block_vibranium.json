@@ -1,0 +1,7 @@
+{
+	"parent": "lucraftcore:block/glow_layer",
+	"textures": {
+		"base": "lucraftcore:blocks/blocks/vibranium_0",
+		"glow": "lucraftcore:blocks/blocks/vibranium_1"
+	}
+}

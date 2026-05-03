@@ -1,0 +1,19 @@
+{
+  "variants": {
+    "facing=north": {
+      "model": "lucraftcore:construction_table"
+    },
+    "facing=south": {
+      "model": "lucraftcore:construction_table",
+      "y": 180
+    },
+    "facing=west": {
+      "model": "lucraftcore:construction_table",
+      "y": 270
+    },
+    "facing=east": {
+      "model": "lucraftcore:construction_table",
+      "y": 90
+    }
+  }
+}

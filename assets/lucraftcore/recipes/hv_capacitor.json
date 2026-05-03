@@ -1,0 +1,37 @@
+{
+  "result": {
+    "nbt": "{Energy:0}",
+    "item": "lucraftcore:hv_capacitor",
+    "type": "minecraft:item_nbt"
+  },
+  "pattern": [
+    "IRI",
+    "PLP",
+    "PCP"
+  ],
+  "conditions": [
+    {
+      "item": "lucraftcore:hv_capacitor",
+      "type": "minecraft:item_exists"
+    }
+  ],
+  "type": "forge:ore_shaped",
+  "key": {
+    "P": {
+      "item": "#PLATEIRON"
+    },
+    "R": {
+      "item": "#BLOCKREDSTONE"
+    },
+    "C": {
+      "item": "#PLATEINTERTIUM"
+    },
+    "I": {
+      "item": "#INGOTSTEEL"
+    },
+    "L": {
+      "item": "#BLOCKLEAD"
+    }
+  },
+  "group": "lucraftcore:capacitor"
+}

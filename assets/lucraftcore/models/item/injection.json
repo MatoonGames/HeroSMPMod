@@ -1,0 +1,14 @@
+{
+  "parent": "item/generated",
+  "textures": {
+    "layer0": "lucraftcore:items/injection"
+  },
+  "overrides": [
+		{
+			"predicate": {
+				"injection": 1
+			},
+			"model": "lucraftcore:item/injection_full"
+		}
+   ]
+}

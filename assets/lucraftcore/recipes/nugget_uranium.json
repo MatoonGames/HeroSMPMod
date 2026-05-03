@@ -1,0 +1,22 @@
+{
+  "result": {
+    "item": "lucraftcore:nugget_uranium",
+    "count": 9
+  },
+  "pattern": [
+    "X"
+  ],
+  "conditions": [
+    {
+      "item": "lucraftcore:nugget_uranium",
+      "type": "minecraft:item_exists"
+    }
+  ],
+  "type": "forge:ore_shaped",
+  "key": {
+    "X": {
+      "item": "#INGOTURANIUM"
+    }
+  },
+  "group": "lucraftcore:ingot_to_nuggets"
+}

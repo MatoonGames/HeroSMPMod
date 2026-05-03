@@ -1,0 +1,109 @@
+{
+  "forge_marker": 1,
+  "defaults": {
+    "model": "cube_all",
+    "transform": "forge:default-block"
+  },
+  "variants": {
+    "type": {
+      "copper": {
+        "textures": {
+          "all": "lucraftcore:blocks/blocks/copper"
+        }
+      },
+      "tin": {
+        "textures": {
+          "all": "lucraftcore:blocks/blocks/tin"
+        }
+      },
+      "nickel": {
+        "textures": {
+          "all": "lucraftcore:blocks/blocks/nickel"
+        }
+      },
+      "lead": {
+        "textures": {
+          "all": "lucraftcore:blocks/blocks/lead"
+        }
+      },
+      "silver": {
+        "textures": {
+          "all": "lucraftcore:blocks/blocks/silver"
+        }
+      },
+      "palladium": {
+        "textures": {
+          "all": "lucraftcore:blocks/blocks/palladium"
+        }
+      },
+      "titanium": {
+        "textures": {
+          "all": "lucraftcore:blocks/blocks/titanium"
+        }
+      },
+      "vibranium": {
+        "model": "lucraftcore:block_vibranium"
+      },
+      "osmium": {
+        "textures": {
+          "all": "lucraftcore:blocks/blocks/osmium"
+        }
+      },
+      "iridium": {
+        "textures": {
+          "all": "lucraftcore:blocks/blocks/iridium"
+        }
+      },
+      "dwarf_star_alloy": {
+        "textures": {
+          "all": "lucraftcore:blocks/blocks/dwarf_star_alloy"
+        }
+      },
+      "dwarfstaralloy": {
+        "textures": {
+          "all": "lucraftcore:blocks/blocks/dwarf_star_alloy"
+        }
+      },
+      "bronze": {
+        "textures": {
+          "all": "lucraftcore:blocks/blocks/bronze"
+        }
+      },
+      "gold_titanium_alloy": {
+        "textures": {
+          "all": "lucraftcore:blocks/blocks/gold_titanium_alloy"
+        }
+      },
+      "goldtitaniumalloy": {
+        "textures": {
+          "all": "lucraftcore:blocks/blocks/gold_titanium_alloy"
+        }
+      },
+      "intertium": {
+        "textures": {
+          "all": "lucraftcore:blocks/blocks/intertium"
+        }
+      },
+      "uranium": {
+        "textures": {
+          "all": "lucraftcore:blocks/blocks/uranium"
+        }
+      },
+      "steel": {
+        "textures": {
+          "all": "lucraftcore:blocks/blocks/steel"
+        }
+      },
+      "adamantium": {
+        "textures": {
+          "all": "lucraftcore:blocks/blocks/adamantium"
+        }
+      },
+      "uru": {
+        "textures": {
+          "all": "lucraftcore:blocks/blocks/uru"
+        }
+      }
+    }
+  }
+}

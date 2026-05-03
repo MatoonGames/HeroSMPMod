@@ -1,0 +1,25 @@
+{
+  "result": {
+    "item": "lucraftcore:dust_intertium",
+    "count": 3
+  },
+  "ingredients": [
+    {
+      "item": "#DUSTIRON"
+    },
+    {
+      "item": "#DUSTIRON"
+    },
+    {
+      "item": "#DUSTOSMIUM"
+    }
+  ],
+  "conditions": [
+    {
+      "item": "lucraftcore:dust_intertium",
+      "type": "minecraft:item_exists"
+    }
+  ],
+  "type": "forge:ore_shapeless",
+  "group": "lucraftcore:alloys"
+}

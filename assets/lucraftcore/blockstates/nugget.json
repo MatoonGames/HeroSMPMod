@@ -1,0 +1,139 @@
+{
+  "forge_marker": 1,
+  "defaults": {
+    "model": "builtin/generated",
+    "textures": {
+      "layer0": "blocks/dirt"
+    },
+    "transform": "forge:default-item"
+  },
+  "variants": {
+    "copper": [
+      {
+        "textures": {
+          "layer0": "lucraftcore:items/nuggets/copper"
+        }
+      }
+    ],
+    "tin": [
+      {
+        "textures": {
+          "layer0": "lucraftcore:items/nuggets/tin"
+        }
+      }
+    ],
+    "nickel": [
+      {
+        "textures": {
+          "layer0": "lucraftcore:items/nuggets/nickel"
+        }
+      }
+    ],
+    "lead": [
+      {
+        "textures": {
+          "layer0": "lucraftcore:items/nuggets/lead"
+        }
+      }
+    ],
+    "silver": [
+      {
+        "textures": {
+          "layer0": "lucraftcore:items/nuggets/silver"
+        }
+      }
+    ],
+    "palladium": [
+      {
+        "textures": {
+          "layer0": "lucraftcore:items/nuggets/palladium"
+        }
+      }
+    ],
+    "titanium": [
+      {
+        "textures": {
+          "layer0": "lucraftcore:items/nuggets/titanium"
+        }
+      }
+    ],
+    "vibranium": [
+      {
+        "textures": {
+          "layer0": "lucraftcore:items/nuggets/vibranium"
+        }
+      }
+    ],
+    "osmium": [
+      {
+        "textures": {
+          "layer0": "lucraftcore:items/nuggets/osmium"
+        }
+      }
+    ],
+    "iridium": [
+      {
+        "textures": {
+          "layer0": "lucraftcore:items/nuggets/iridium"
+        }
+      }
+    ],
+    "dwarf_star_alloy": [
+      {
+        "textures": {
+          "layer0": "lucraftcore:items/nuggets/dwarf_star_alloy"
+        }
+      }
+    ],
+    "bronze": [
+      {
+        "textures": {
+          "layer0": "lucraftcore:items/nuggets/bronze"
+        }
+      }
+    ],
+    "gold_titanium_alloy": [
+      {
+        "textures": {
+          "layer0": "lucraftcore:items/nuggets/gold_titanium_alloy"
+        }
+      }
+    ],
+    "intertium": [
+      {
+        "textures": {
+          "layer0": "lucraftcore:items/nuggets/intertium"
+        }
+      }
+    ],
+    "uranium": [
+      {
+        "textures": {
+          "layer0": "lucraftcore:items/radiation",
+          "layer1": "lucraftcore:items/nuggets/uranium"
+        }
+      }
+    ],
+    "steel": [
+      {
+        "textures": {
+          "layer0": "lucraftcore:items/nuggets/steel"
+        }
+      }
+    ],
+    "adamantium": [
+      {
+        "textures": {
+          "layer0": "lucraftcore:items/nuggets/adamantium"
+        }
+      }
+    ],
+    "uru": [
+      {
+        "textures": {
+          "layer0": "lucraftcore:items/nuggets/uru"
+        }
+      }
+    ]
+  }
+}

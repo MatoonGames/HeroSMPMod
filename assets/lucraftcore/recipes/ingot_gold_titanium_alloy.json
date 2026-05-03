@@ -1,0 +1,22 @@
+{
+  "result": {
+    "item": "lucraftcore:ingot_gold_titanium_alloy",
+    "count": 9
+  },
+  "pattern": [
+    "X"
+  ],
+  "conditions": [
+    {
+      "item": "lucraftcore:ingot_gold_titanium_alloy",
+      "type": "minecraft:item_exists"
+    }
+  ],
+  "type": "forge:ore_shaped",
+  "key": {
+    "X": {
+      "item": "#BLOCKGOLDTITANIUMALLOY"
+    }
+  },
+  "group": "lucraftcore:block_to_ingots"
+}

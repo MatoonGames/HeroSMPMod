@@ -8,6 +8,10 @@ import net.minecraftforge.fml.common.eventhandler.SubscribeEvent;
 public class ModSounds {
 
     public static SoundEvent TIME_EFFECT;
+    public static SoundEvent INF_POWER_UP;
+    public static SoundEvent SNAP_1;
+    public static SoundEvent SNAP_2;
+    public static SoundEvent SNAP_3;
 
     /**
      * Called during RegistryEvent.Register<SoundEvent> to register all mod sounds.
@@ -15,7 +19,11 @@ public class ModSounds {
      */
     @SubscribeEvent
     public void onRegisterSounds(RegistryEvent.Register<SoundEvent> event) {
-        TIME_EFFECT = register(event, "time_effect");
+        TIME_EFFECT  = register(event, "time_effect");
+        INF_POWER_UP = register(event, "inf_power_up");
+        SNAP_1       = register(event, "snap_1");
+        SNAP_2       = register(event, "snap_2");
+        SNAP_3       = register(event, "snap_3");
     }
 
     private static SoundEvent register(RegistryEvent.Register<SoundEvent> event, String name) {

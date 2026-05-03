@@ -1,0 +1,153 @@
+{
+  "forge_marker": 1,
+  "defaults": {
+    "model": "builtin/generated",
+    "textures": {
+      "layer0": "blocks/dirt"
+    },
+    "transform": "forge:default-item"
+  },
+  "variants": {
+    "iron": [
+      {
+        "textures": {
+          "layer0": "lucraftcore:items/plates/iron"
+        }
+      }
+    ],
+    "gold": [
+      {
+        "textures": {
+          "layer0": "lucraftcore:items/plates/gold"
+        }
+      }
+    ],
+    "copper": [
+      {
+        "textures": {
+          "layer0": "lucraftcore:items/plates/copper"
+        }
+      }
+    ],
+    "tin": [
+      {
+        "textures": {
+          "layer0": "lucraftcore:items/plates/tin"
+        }
+      }
+    ],
+    "nickel": [
+      {
+        "textures": {
+          "layer0": "lucraftcore:items/plates/nickel"
+        }
+      }
+    ],
+    "lead": [
+      {
+        "textures": {
+          "layer0": "lucraftcore:items/plates/lead"
+        }
+      }
+    ],
+    "silver": [
+      {
+        "textures": {
+          "layer0": "lucraftcore:items/plates/silver"
+        }
+      }
+    ],
+    "palladium": [
+      {
+        "textures": {
+          "layer0": "lucraftcore:items/plates/palladium"
+        }
+      }
+    ],
+    "titanium": [
+      {
+        "textures": {
+          "layer0": "lucraftcore:items/plates/titanium"
+        }
+      }
+    ],
+    "vibranium": [
+      {
+        "textures": {
+          "layer0": "lucraftcore:items/plates/vibranium"
+        }
+      }
+    ],
+    "osmium": [
+      {
+        "textures": {
+          "layer0": "lucraftcore:items/plates/osmium"
+        }
+      }
+    ],
+    "iridium": [
+      {
+        "textures": {
+          "layer0": "lucraftcore:items/plates/iridium"
+        }
+      }
+    ],
+    "dwarf_star_alloy": [
+      {
+        "textures": {
+          "layer0": "lucraftcore:items/plates/dwarf_star_alloy"
+        }
+      }
+    ],
+    "bronze": [
+      {
+        "textures": {
+          "layer0": "lucraftcore:items/plates/bronze"
+        }
+      }
+    ],
+    "gold_titanium_alloy": [
+      {
+        "textures": {
+          "layer0": "lucraftcore:items/plates/gold_titanium_alloy"
+        }
+      }
+    ],
+    "intertium": [
+      {
+        "textures": {
+          "layer0": "lucraftcore:items/plates/intertium"
+        }
+      }
+    ],
+    "uranium": [
+      {
+        "textures": {
+          "layer0": "lucraftcore:items/radiation",
+          "layer1": "lucraftcore:items/plates/uranium"
+        }
+      }
+    ],
+    "steel": [
+      {
+        "textures": {
+          "layer0": "lucraftcore:items/plates/steel"
+        }
+      }
+    ],
+    "adamantium": [
+      {
+        "textures": {
+          "layer0": "lucraftcore:items/plates/adamantium"
+        }
+      }
+    ],
+    "uru": [
+      {
+        "textures": {
+          "layer0": "lucraftcore:items/plates/uru"
+        }
+      }
+    ]
+  }
+}

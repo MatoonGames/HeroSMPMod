@@ -1,0 +1,25 @@
+{
+  "result": {
+    "item": "lucraftcore:dust_adamantium",
+    "count": 3
+  },
+  "ingredients": [
+    {
+      "item": "#DUSTSTEEL"
+    },
+    {
+      "item": "#DUSTSTEEL"
+    },
+    {
+      "item": "#DUSTVIBRANIUM"
+    }
+  ],
+  "conditions": [
+    {
+      "item": "lucraftcore:dust_adamantium",
+      "type": "minecraft:item_exists"
+    }
+  ],
+  "type": "forge:ore_shapeless",
+  "group": "lucraftcore:alloys"
+}

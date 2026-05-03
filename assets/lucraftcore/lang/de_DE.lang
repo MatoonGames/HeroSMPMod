@@ -1,0 +1,461 @@
+itemGroup.tabLucraftCore=Lucraft: Core
+itemGroup.tabMaterials=Lucraft: Core | Materialien
+itemGroup.tabAddonPacks=Lucraft: Core | Addonpakete
+itemGroup.tabInfinity=Lucraft: Core | Infinity
+
+
+# Items
+item.hammer.name=Hammer
+item.wire_cutter.name=Kabelschneider
+item.injection.name=Injektion
+item.instruction.name=Anleitung
+item.lv_capacitor.name=LV Batterie
+item.mv_capacitor.name=MV Batterie
+item.hv_capacitor.name=HV Batterie
+item.servo_motor.name=Servomotor
+item.basic_circuit.name=Schaltkreis
+item.advanced_circuit.name=Erweiterter Schaltkreis
+item.tri_polymer_white.name=Weißes verstärktes Tripolymer
+item.tri_polymer_orange.name=Orange verstärktes Tripolymer
+item.tri_polymer_magenta.name=Magenta verstärktes Tripolymer
+item.tri_polymer_light_blue.name=Hellblaues verstärktes Tripolymer
+item.tri_polymer_yellow.name=Gelbes verstärktes Tripolymer
+item.tri_polymer_lime.name=Hellgrünes verstärktes Tripolymer
+item.tri_polymer_pink.name=Rosa verstärktes Tripolymer
+item.tri_polymer_gray.name=Graues verstärktes Tripolymer
+item.tri_polymer_silver.name=Silbernes verstärktes Tripolymer
+item.tri_polymer_cyan.name=Türkises verstärktes Tripolymer
+item.tri_polymer_purple.name=Violettes verstärktes Tripolymer
+item.tri_polymer_blue.name=Blaues verstärktes Tripolymer
+item.tri_polymer_brown.name=Braunes verstärktes Tripolymer
+item.tri_polymer_green.name=Grünes verstärktes Tripolymer
+item.tri_polymer_red.name=Rotes verstärktes Tripolymer
+item.tri_polymer_black.name=Schwarzes verstärktes Tripolymer
+item.infinity_gauntlet.name=Infinity Gauntlet
+item.infinity_gauntlet_cast.name=Infinity Gauntlet Gussform
+
+
+# Blocks
+tile.construction_table.name=Konstruktionstisch
+tile.suit_stand.name=Anzugsstand
+tile.extractor.name=Extrahierer
+tile.boiler.name=Kessel
+tile.infinity_generator.name=Infinity-Generator
+tile.furnace_generator.name=Kohlegenerator
+
+
+# Materials Items & Blocks
+item.ingot_copper.name=Kupferbarren
+item.ingot_tin.name=Zinnbarren
+item.ingot_nickel.name=Nickelbarren
+item.ingot_lead.name=Bleibarren
+item.ingot_silver.name=Silberbarren
+item.ingot_palladium.name=Palladiumbarren
+item.ingot_titanium.name=Titaniumbarren
+item.ingot_vibranium.name=Vibraniumbarren
+item.ingot_osmium.name=Osmiumbarren
+item.ingot_iridium.name=Iridium
+item.ingot_dwarf_star_alloy.name=Zwergsternlegierungsbarren
+item.ingot_bronze.name=Bronzebarren
+item.ingot_gold_titanium_alloy.name=Gold-Titanium-Legierungsbarren
+item.ingot_intertium.name=Intertiumbarren
+item.ingot_uranium.name=Uran
+item.ingot_steel.name=Stahlbarren
+item.ingot_adamantium.name=Adamantiumbarren
+item.ingot_uru.name=Urubarren
+
+item.dust_iron.name=Eisenstaub
+item.dust_gold.name=Goldstaub
+item.dust_copper.name=Kupferstaub
+item.dust_tin.name=Zinnstaub
+item.dust_nickel.name=Nickelstaub
+item.dust_lead.name=Bleistaub
+item.dust_silver.name=Silberstaub
+item.dust_palladium.name=Palladiumstaub
+item.dust_titanium.name=Titaniumstaub
+item.dust_vibranium.name=Vibraniumstaub
+item.dust_osmium.name=Osmiumstaub
+item.dust_iridium.name=Iridiumstaub
+item.dust_dwarf_star_alloy.name=Zwergsternlegierungsstaub
+item.dust_bronze.name=Bronzestaub
+item.dust_gold_titanium_alloy.name=Gold-Titanium-Legierungsstaub
+item.dust_intertium.name=Intertiumstaub
+item.dust_uranium.name=Uranstaub
+item.dust_steel.name=Stahlstaub
+item.dust_adamantium.name=Adamantiumstaub
+item.dust_uru.name=Urustaub
+item.dust_coal.name=Kohlestaub
+item.dust_charcoal.name=Holzkohlestaub
+
+item.nugget_copper.name=Kupfernugget
+item.nugget_tin.name=Zinnnugget
+item.nugget_nickel.name=Nickelnugget
+item.nugget_lead.name=Bleinugget
+item.nugget_silver.name=Silbernugget
+item.nugget_palladium.name=Palladiumnugget
+item.nugget_titanium.name=Titaniumnugget
+item.nugget_vibranium.name=Vibraniumnugget
+item.nugget_osmium.name=Osmiumnugget
+item.nugget_iridium.name=Iridiumnugget
+item.nugget_dwarf_star_alloy.name=Zwergsternlegierungsnugget
+item.nugget_bronze.name=Bronzenugget
+item.nugget_gold_titanium_alloy.name=Gold-Titanium-Legierungsnugget
+item.nugget_intertium.name=Intertiumnugget
+item.nugget_uranium.name=Urannugget
+item.nugget_steel.name=Stahlnugget
+item.nugget_adamantium.name=Adamantiumnugget
+item.nugget_uru.name=Urunugget
+
+item.plate_iron.name=Eisenplatte
+item.plate_gold.name=Goldplatte
+item.plate_copper.name=Kupferplatte
+item.plate_tin.name=Zinnplatte
+item.plate_nickel.name=Nickelplatte
+item.plate_lead.name=Bleiplatte
+item.plate_silver.name=Silberplatte
+item.plate_palladium.name=Palladiumplatte
+item.plate_titanium.name=Titaniumplatte
+item.plate_vibranium.name=Vibraniumplatte
+item.plate_osmium.name=Osmiumplatte
+item.plate_iridium.name=Iridiumplatte
+item.plate_dwarf_star_alloy.name=Zwergsternlegierungsplatte
+item.plate_bronze.name=Bronzeplatte
+item.plate_gold_titanium_alloy.name=Gold-Titanium-Legierungsplatte
+item.plate_intertium.name=Intertiumplatte
+item.plate_uranium.name=Uranplatte
+item.plate_steel.name=Stahlplatte
+item.plate_adamantium.name=Adamantiumplatte
+item.plate_uru.name=Uruplatte
+
+item.wiring_copper.name=Kupferkabel
+
+tile.ore_copper.name=Kupfererz
+tile.ore_tin.name=Zinnerz
+tile.ore_nickel.name=Nickelerz
+tile.ore_lead.name=Bleierz
+tile.ore_silver.name=Silbererz
+tile.ore_palladium.name=Palladiumerz
+tile.ore_titanium.name=Titaniumerz
+tile.ore_vibranium.name=Vibraniumerz
+tile.ore_osmium.name=Osmiumerz
+tile.ore_iridium.name=Iridiumerz
+tile.ore_dwarf_star_alloy.name=Zwergsternmeteor
+tile.ore_uran.name=Uranerz
+tile.ore_uru.name=Uruerz
+
+tile.block_copper.name=Kupferblock
+tile.block_tin.name=Zinnblock
+tile.block_nickel.name=Nickelblock
+tile.block_lead.name=Bleiblock
+tile.block_silver.name=Silberblock
+tile.block_palladium.name=Palladiumblock
+tile.block_titanium.name=Titaniumblock
+tile.block_vibranium.name=Vibraniumblock
+tile.block_osmium.name=Osmiumblock
+tile.block_iridium.name=Iridiumblock
+tile.block_dwarf_star_alloy.name=Zwergsternlegierungsblock
+tile.block_bronze.name=Bronzeblock
+tile.block_gold_titanium_alloy.name=Gold-Titanium-Legierungsblock
+tile.block_intertium.name=Intertiumblock
+tile.block_uran.name=Uranblock
+tile.block_steel.name=Stahlblock
+tile.block_adamantium.name=Adamantiumblock
+tile.block_uru.name=Urublock
+
+fluid.iron=Geschmolzenes Eisen
+fluid.gold=Geschmolzenes Gold
+fluid.copper=Geschmolzenes Kupfer
+fluid.tin=Geschmolzenes Zinn
+fluid.nickel=Geschmolzenes Nickel
+fluid.lead=Geschmolzenes Blei
+fluid.silver=Geschmolzenes Silber
+fluid.palladium=Geschmolzenes Palladium
+fluid.titanium=Geschmolzenes Titanium
+fluid.vibranium=Geschmolzenes Vibranium
+fluid.osmium=Geschmolzenes Osmium
+fluid.iridium=Geschmolzenes Iridium
+fluid.dwarfstaralloy=Geschmolzene Zwergsternlegierung
+fluid.bronze=Geschmolzenes Bronze
+fluid.goldtitaniumalloy=Geschmolzene Gold-Titanium-Legierung
+fluid.intertium=Geschmolzenes Intertium
+fluid.steel=Geschmolzener Stahl
+fluid.adamantium=Geschmolzenes Adamantium
+fluid.uranium=Geschmolzenes Uran
+fluid.uru=Geschmolzenes Uru
+
+
+# Potions
+potion.radiation=Verstrahlung
+potion.knockOut=K.O.
+
+
+# Damage
+death.attack.radiation=%1$s starb durch Strahlung
+
+
+# Materials
+lucraftcore.materials.iron.name=Eisen
+lucraftcore.materials.gold.name=Gold
+lucraftcore.materials.copper.name=Kupfer
+lucraftcore.materials.tin.name=Zinn
+lucraftcore.materials.nickel.name=Nickel
+lucraftcore.materials.lead.name=Blei
+lucraftcore.materials.silver.name=Silber
+lucraftcore.materials.palladium.name=Palladium
+lucraftcore.materials.titanium.name=Titanium
+lucraftcore.materials.vibranium.name=Vibranium
+lucraftcore.materials.osmium.name=Osmium
+lucraftcore.materials.iridium.name=Iridium
+lucraftcore.materials.dwarfStarAlloy.name=Zwergsternlegierung
+lucraftcore.materials.bronze.name=Bronze
+lucraftcore.materials.goldTitaniumAlloy.name=Gold-Titanium-Legierung
+lucraftcore.materials.intertium.name=Intertium
+lucraftcore.materials.uranium.name=Uran
+lucraftcore.materials.steel.name=Stahl
+lucraftcore.materials.adamantium.name=Adamantium
+lucraftcore.materials.uru.name=Uru
+lucraftcore.materials.coal.name=Kohle
+lucraftcore.materials.charcoal.name=Holzkohle
+
+
+# Traits
+lucraftcore.trait.super_heavy.name=Superschwer
+lucraftcore.trait.super_heavy.desc=Nur sehr starke Spieler können diese Werkzeuge heben.
+
+
+# Abilities
+lucraftcore.abilities.toggle_power.name=Kraft ak-/deaktivieren
+lucraftcore.abilities.toggle_power.desc=Lässt dich deine Kraft ak-/deaktivieren
+lucraftcore.abilities.health.name=Gesundheit
+lucraftcore.abilities.health.desc=Erhöht deine Gesundheit
+lucraftcore.abilities.healing.name=Heilung
+lucraftcore.abilities.healing.desc=Verschnellert deine Heilung
+lucraftcore.abilities.strength.name=Stärke
+lucraftcore.abilities.strength.desc=Verleiht dir mehr Stärke
+lucraftcore.abilities.punch.name=Schlagkraft
+lucraftcore.abilities.punch.desc=Verleiht dir mehr Kraft mit der Faust
+lucraftcore.abilities.sprint.name=Sprintgeschwindigkeit
+lucraftcore.abilities.sprint.desc=Verleiht dir mehr Geschwindigkeit beim Sprinten
+lucraftcore.abilities.jump_boost.name=Sprungkraft
+lucraftcore.abilities.jump_boost.desc=Verleiht dir mehr Sprungkraft
+lucraftcore.abilities.resistance.name=Resistenz
+lucraftcore.abilities.resistance.desc=Reduziert jeglichen Schaden
+lucraftcore.abilities.fall_resistance.name=Fallresistenz
+lucraftcore.abilities.fall_resistance.desc=Reduziert Fallschaden
+lucraftcore.abilities.fire_resistance.name=Feuerschutz
+lucraftcore.abilities.fire_resistance.desc=Verhindert Schaden durch Feuer oder Lava
+lucraftcore.abilities.step_assist.name=Schritthilfe
+lucraftcore.abilities.step_assist.desc=Lässt dich automatisch mehr Blöcke hochlaufen
+lucraftcore.abilities.size_change.name=Größe ändern
+lucraftcore.abilities.size_change.desc=Lässt dich deine Größe ändern
+lucraftcore.abilities.teleport.name=Teleportation
+lucraftcore.abilities.teleport.desc=Teleportiere dich zu dem Block, den du anschaust
+lucraftcore.abilities.knockback_resistance.name=Rückstoßschutz
+lucraftcore.abilities.knockback_resistance.desc=Verringert deinen Rückstoß
+lucraftcore.abilities.potion_punch.name=Zaubertranksschlag
+lucraftcore.abilities.potion_punch.desc=Verleiht geschlagenen Wesen Effekte
+lucraftcore.abilities.slowfall.name=Langsamer Fall
+lucraftcore.abilities.slowfall.desc=Lässt dich beim Fallen langsam nach unten gleiten
+lucraftcore.abilities.energy_blast.name=Energieschuss
+lucraftcore.abilities.energy_blast.desc=Lässt dich Energie schießen
+lucraftcore.abilities.fire_punch.name=Feuerschlag
+lucraftcore.abilities.fire_punch.desc=Brennt geschlagene Wesen an
+lucraftcore.abilities.flight.name=Fliegen
+lucraftcore.abilities.flight.desc=Gibt dir die Fähigkeit zu fliegen
+lucraftcore.abilities.water_breathing.name=Wasseratmung
+lucraftcore.abilities.water_breathing.desc=Lässt dich unter Wasser atmen
+lucraftcore.abilities.tough_lungs.name=Starke Lungen
+lucraftcore.abilities.tough_lungs.desc=Lässt dich im Weltraum atmen (benötigt Galacticraft)
+lucraftcore.abilities.invisibility.name=Unsichtbarkeit
+lucraftcore.abilities.invisibility.desc=Macht dich unsichtbar
+lucraftcore.abilities.command.name=Befehl
+lucraftcore.abilities.command.desc=Führt einen Befehl aus
+lucraftcore.abilities.command_loop.name=Befehl
+lucraftcore.abilities.command_loop.desc=Führt ständig einen Befehl aus
+lucraftcore.abilities.command_toggle.name=Befehl
+lucraftcore.abilities.command_toggle.desc=Führt einen Befehl aus when aktiv
+lucraftcore.abilities.command_held.name=Befehl
+lucraftcore.abilities.command_held.desc=Führt einen Befehl aus when aktiv
+lucraftcore.abilities.command_on_gain.name=Befehl
+lucraftcore.abilities.command_on_gain.desc=Führt einen Befehl aus, wenn Superkraft erhalten wird
+lucraftcore.abilities.command_on_lose.name=Befehl
+lucraftcore.abilities.command_on_lose.desc=Führt einen Befehl aus, wenn man Superkraft verliert
+lucraftcore.abilities.set_punch.name=Schlag
+lucraftcore.abilities.set_punch.desc=Lässt dich einen mächtigen Schlag ausführen
+
+lucraftcore.ability.condition.superpower=Benötigt Superkraft %s
+lucraftcore.ability.condition.ability=Benötigt Fähigkeit %s
+lucraftcore.ability.condition.level=Benötigt Level %s
+lucraftcore.ability.condition.requires=Benötigt...
+lucraftcore.ability.condition.or=ODER
+lucraftcore.ability.condition.requires_not=Benötigt folgendes deaktiviert...
+lucraftcore.ability.condition.and=UND
+lucraftcore.ability.condition.held_item=Benötigt %s in %s
+lucraftcore.ability.condition.main_hand=Haupthand
+lucraftcore.ability.condition.off_hand=Zweithand
+lucraftcore.ability.condition.open_armor=Rüstung im %s Slot muss geöffnet sein
+lucraftcore.ability.condition.open_armor.head=Helm
+lucraftcore.ability.condition.open_armor.chest=Brustpanzer
+lucraftcore.ability.condition.open_armor.legs=Hose
+lucraftcore.ability.condition.open_armor.feet=Schuhe
+lucraftcore.ability.condition.potion_weakness=Deaktiviert wenn %s Trank aktiv ist
+lucraftcore.ability.condition.scoreboard_tag=Aktiv, wenn %s Tag vorhanden ist
+
+
+# Key Bindings
+lucraftcore.abilitybar.1=Fähigkeit 1
+lucraftcore.abilitybar.2=Fähigkeit 2
+lucraftcore.abilitybar.3=Fähigkeit 3
+lucraftcore.abilitybar.4=Fähigkeit 4
+lucraftcore.abilitybar.5=Fähigkeit 5
+lucraftcore.abilitybar.up=Runterscrollen
+lucraftcore.abilitybar.down=Hochscrollen
+lucraftcore.keybinding.keyKnockOut=K.O. Modus
+
+
+# Karma
+karma.karmaclass.tyrant=Tyrann
+karma.karmaclass.superVillain=Superschurke
+karma.karmaclass.villain=Schurke
+karma.karmaclass.thug=Verbrecher
+karma.karmaclass.neutral=Neutral
+karma.karmaclass.vigilante=Selbstjustizler
+karma.karmaclass.hero=Held
+karma.karmaclass.superHero=Superheld
+karma.karmaclass.legend=Legende
+
+karma.karmastats.monster_kill=Monster Kills
+karma.karmastats.monster_kill.desc=Anzahl an getöteten Monstern.
+
+karma.karmastats.good_player_kill=Mord eines guten Spielers
+karma.karmastats.good_player_kill.desc=Anzahl an getöten, guten Spielern.
+
+karma.karmastats.bad_player_kill=Mord eines bösen Spielers
+karma.karmastats.bad_player_kill.desc=Anzahl an getöten, bösen Spielern.
+
+karma.karmastats.good_knockout=Unschuldige K.O.s
+karma.karmastats.good_knockout.desc=Anzahl an ausgeknockten, unschuldigen Lebewesen (z.B. Dorfbewohner, gute Spieler).
+
+karma.karmastats.bad_knockout=Feindliche Knock Outs
+karma.karmastats.bad_knockout.desc=Anzahl an ausgeknockten, bösen Lebewesen (z.B. Zombies, böse Spieler).
+
+karma.karmastats.taming=Gezähmte Tiere
+karma.karmastats.taming.desc=Anzahl an gezähmten Tieren.
+
+karma.karmastats.saves=Rettungen
+karma.karmastats.saves.desc=Anzahl an getöteten/ausgeknockten Lebewesen, die ein anderes töten wollten (z.B. Zombie der Dorfbewohner jagt).
+
+karma.karmastats.thefts=Diebstähle
+karma.karmastats.thefts.desc=Anzahl an Diebstählen (Das Rechtklicken eines ausgeknockten Dorfbewohners gibt dir seine Gegenstände).
+
+karma.karmastats.modified=Modifiziert
+karma.karmastats.modified.desc=Ein Wert, der nur durch Admins mit /karma verändert werden kann.
+
+
+# Advanced Combat
+lucraftcore.abilities.grab.name=Gegner packen
+lucraftcore.abilities.sweep_kick.name=Rundumkick
+lucraftcore.abilities.drawback_punch.name=Ruckzuckhieb
+lucraftcore.abilities.drawback_weapon.name=Ruckzuckhieb
+
+lucraftcore.keybinding.keyCombatMode=Kampfmodus
+lucraftcore.keybinding.keyContest=Kampftaste
+
+lucraftcore.advancedcombat.you_are_grabbed=Du wurdest gepackt! Drücke %s um dich zu wehren!!
+lucraftcore.advancedcombat.you_are_grabbing=Du hast jemanden gepackt! Drücke %s um ihn zu erwürgen!
+
+
+# Commands
+commands.superpower.usage=/superpower [Lebewesen] [Superkraft/remove]
+commands.superpower.success.self=Deine neue Superkraft ist %s
+commands.superpower.success.other=%ss neue Superkraft ist %s
+commands.superpower.remove.success.self=Deine Superkraft wurde entfernt
+commands.superpower.remove.success.other=%ss Superkraft wurde entfernt
+commands.superpower.playerspower=%ss Superkraft ist %s
+commands.superpower.nopower=%s hat keine Superkraft
+commands.superpower.powerdoesntexist=Diese Superkraft existiert nicht!
+commands.superpower.not_living_entity=Dieses Objekt kann keine Superkraft besitzen!
+
+commands.superpowerxp.failure.widthdrawXp=Lebewesen kann keine negative Anzahl an Superkrafterfahrungspunkte gegegeben werden
+commands.superpowerxp.success=%s Superkrafterfahrungspunkt(e) an %s gegeben
+commands.superpowerxp.success.levels=%s Superkraftlevel an %s gegeben
+commands.superpowerxp.success.negative.levels=%s Superkraftlevel von %s entfernt
+commands.superpowerxp.usage=/superpowerxp <Menge> [Lebewesen] ODER /superpowerxp <Menge>L [Lebewesen]
+commands.superpowerxp.nosuperpower=Dieses Lebewesen hat keine Superkraft!
+commands.superpowerxp.cantlevelup=Die Superkraft dieses Lebewesens kann keine Erfahrungspunkte aufnehmen!
+
+commands.karma.usage=/karma [Spieler] ODER [set] [Spieler] [Wert]
+commands.karma.playersstats=%ss Statistiken:
+commands.karma.class=Klasse: 
+commands.karma.karma=Karma: 
+commands.karma.karmaset=%ss modifizierter Karmawert auf %s gesetzt
+
+commands.size.usage=/sizechange [Größe] [Größenveränderer] ODER /sizechange <Entity> [Größe] [Größenveränderer]
+commands.size.yoursize=Deine Größe ist %s
+commands.size.notaplayer=Du bist kein Spieler!
+commands.size.wrongentity=Dieses Entity kann sich nicht in der Größe ändern!
+commands.size.entitysize=%ss Größe ist %s
+commands.size.entitysizechanged=%ss Größe wurde auf %s gesetzt
+commands.size.nosizechanger=Dieser Größenveränderer existiert nicht!
+
+
+# Sounds
+subtitles.energy_blast=Energieschuss
+subtitles.infinity_stone_equip=Infinitystein ausgerüstet
+subtitles.use_infinity_gauntlet=Infinity Gauntlet benutzt
+
+
+#Advancements
+lucraftcore.advancements.infinity.root.title=Na schön, ich kümmere mich selbst darum.
+lucraftcore.advancements.infinity.root.description=Fertige eine besondere Ausrüstung an
+
+
+# Misc
+lucraftcore.info.clickdownload=Klicke um zu downloaden
+lucraftcore.info.newupdateavailable=Ein neues Update ist verfügbar!
+lucraftcore.info.shifttooltip=Drücke %KEY für mehr Informationen
+lucraftcore.info.controltooltip=Drücke %KEY für die Anzugsfähigkeiten
+lucraftcore.info.abilitybar=Fähigkeitenanzeige
+lucraftcore.info.abilities=Fähigkeiten
+lucraftcore.info.suitabilities=Anzugsfähigkeiten
+lucraftcore.info.customizer=Anpassung
+lucraftcore.info.levelup=Du hast Level %s erreicht!
+lucraftcore.info.xp=XP
+lucraftcore.info.unlocked=§eDu hast §6%s %efreigeschaltet!
+lucraftcore.info.frequency=Frequenz
+lucraftcore.info.interval=Intervall
+lucraftcore.info.amount=Anzahl
+lucraftcore.info.hearts=Herzen
+lucraftcore.info.damage=Schaden
+lucraftcore.info.requiressuperpower=Benötigt %SUPERPOWER
+lucraftcore.info.requiresability=Benötigt %ABILITY
+lucraftcore.info.requireslevel=Benötigt Level %LEVEL
+lucraftcore.info.red=Rot
+lucraftcore.info.green=Grün
+lucraftcore.info.blue=Blau
+lucraftcore.info.save=Speichern
+lucraftcore.info.hiddeninabilitybar=In Fähigkeitsanzeige versteckt
+lucraftcore.info.injectionsuccess=%s%-iger Erfolg
+lucraftcore.info.modulesettingswrong=Deine LucraftCore-Modul-Einstellungen passen nicht zu denen des Servers!
+lucraftcore.info.openaddonpacksfolder=Addon Packs Ordner öffnen
+lucraftcore.info.addonpackbutton=Addonpakete...
+lucraftcore.info.totalkarma=Insgesamt: %s
+lucraftcore.info.confirm=Bestätigen
+lucraftcore.info.close=Schließen
+lucraftcore.info.chooseasuperpower=Wähle eine Superkraft!
+lucraftcore.info.distance=Entfernung: %s
+lucraftcore.info.openarmor=%s öffnen
+lucraftcore.info.too_heavy=§cDieses Werkzeug ist zu schwer!
+lucraftcore.info.disabled=Deaktiviert
+lucraftcore.jei.information=Informationen
+lucraftcore.info.infinity_gauntlet_cast_info=Du kannst diese Gussform bei einem Schmied in einem Dorf finden.
+lucraftcore.info.no_perm_ability=§cDu hast für diese Fähigkeit keine Rechte!
+lucraftcore.info.no_perms=§cDu hast keine Berechtigung dazu!
+lucraftcore.info.energy_display=%,d %s
+lucraftcore.info.energy_storage_display=%,d / %,d %s
+lucraftcore.info.fluid_display=%,d %s
+lucraftcore.info.fluidtank_display=%,d / %,d %s
+lucraftcore.ability.condition.superpower=Needs %s superpower
+lucraftcore.ability.condition.ability=Needs %s ability
+lucraftcore.ability.condition.level=Requires level %s
+lucraftcore.info.superpower.playernopower=%s has no superpower!

@@ -1,0 +1,20 @@
+{
+	"forge_marker": 1,
+	"variants": {
+		"inventory": {
+			"model": "lucraftcore:infinity_gauntlet_model",
+			"textures": {
+				"base": "lucraftcore:items/infinity_gauntlet",
+				"space": "lucraftcore:items/infinity_gauntlet_space",
+				"reality": "lucraftcore:items/infinity_gauntlet_reality",
+				"power": "lucraftcore:items/infinity_gauntlet_power",
+				"soul": "lucraftcore:items/infinity_gauntlet_soul",
+				"mind": "lucraftcore:items/infinity_gauntlet_mind",
+				"time": "lucraftcore:items/infinity_gauntlet_time"
+			},
+			"transform": "forge:default-item",
+			"custom": {
+			}
+		}
+	}
+}
