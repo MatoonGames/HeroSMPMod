@@ -65,13 +65,16 @@ public class MindControlManager {
         state.targets.put(target.getUniqueID(), new Controlled(target, owner.world.getTotalWorldTime()+HeroSMP.mindControlDurationSeconds*20L));
         TARGET_OWNER.put(target.getUniqueID(), owner.getUniqueID());
         aura(target, true);
-        if (target instanceof EntityPlayerMP) {ModNetwork.CHANNEL.sendTo(new PacketMindControlLock(true,HeroSMP.mindControlDurationSeconds*20),(EntityPlayerMP)target);status((EntityPlayerMP)target,"You've been mind controlled by "+owner.getName());}
-        status(owner,"You have mind controlled "+target.getName());
+        if (target instanceof EntityPlayerMP) {ModNetwork.CHANNEL.sendTo(new PacketMindControlLock(true,HeroSMP.mindControlDurationSeconds*20),(EntityPlayerMP)target);success((EntityPlayerMP)target,"You've been mind controlled by "+owner.getName());}
+        success(owner,"You have mind controlled "+target.getName());
         sync(state);
     }
     private static void startResistance(EntityPlayerMP owner,EntityPlayerMP target,boolean escape,int level){if(owner==target||RESISTANCE.containsKey(target.getUniqueID()))return;long now=owner.world.getTotalWorldTime();ResistanceAttempt attempt=new ResistanceAttempt(owner,target,escape,now,level);RESISTANCE.put(target.getUniqueID(),attempt);ModNetwork.CHANNEL.sendTo(new PacketMindControlResistance(attempt.token,40,attempt.windowStart,attempt.windowEnd,escape),target);}
-    public static void resistanceResponse(EntityPlayerMP target,UUID token,int elapsed){ResistanceAttempt a=RESISTANCE.get(target.getUniqueID());if(a==null||a.answered||!a.token.equals(token)||elapsed<0||elapsed>40)return;a.answered=true;RESISTANCE.remove(target.getUniqueID());boolean success=elapsed>=a.windowStart&&elapsed<=a.windowEnd;ModNetwork.CHANNEL.sendTo(new PacketMindControlResistanceResult(),target);if(success){if(a.escape){status(a.owner,target.getName()+" has broken your mind control");status(target,"You broke free from "+a.owner.getName()+"'s mind control");release(a.owner,target.getUniqueID(),false);}else{status(a.owner,target.getName()+" has resisted your mind control attempt");status(target,"You resisted "+a.owner.getName()+"'s mind control attempt");}}else if(!a.escape)applyControl(a.owner,target);}
-    private static void status(EntityPlayerMP player,String message){player.sendStatusMessage(new net.minecraft.util.text.TextComponentString(message),true);}
+    public static void resistanceResponse(EntityPlayerMP target,UUID token,int elapsed){ResistanceAttempt a=RESISTANCE.get(target.getUniqueID());if(a==null||a.answered||!a.token.equals(token)||elapsed<0||elapsed>40)return;a.answered=true;RESISTANCE.remove(target.getUniqueID());boolean resisted=elapsed>=a.windowStart&&elapsed<=a.windowEnd;ModNetwork.CHANNEL.sendTo(new PacketMindControlResistanceResult(),target);if(resisted){if(a.escape){failure(a.owner,target.getName()+" has broken your mind control");failure(target,"You broke free from "+a.owner.getName()+"'s mind control");release(a.owner,target.getUniqueID(),false);}else{failure(a.owner,target.getName()+" has resisted your mind control attempt");failure(target,"You resisted "+a.owner.getName()+"'s mind control attempt");}}else if(!a.escape)applyControl(a.owner,target);}
+    private static void status(EntityPlayerMP player,String message,net.minecraft.util.text.TextFormatting color){player.sendStatusMessage(new net.minecraft.util.text.TextComponentString(color+message),true);}
+    private static void sound(EntityPlayerMP player,net.minecraft.util.SoundEvent sound,float pitch){player.connection.sendPacket(new net.minecraft.network.play.server.SPacketSoundEffect(sound,SoundCategory.PLAYERS,player.posX,player.posY,player.posZ,1F,pitch));}
+    private static void success(EntityPlayerMP player,String message){status(player,message,net.minecraft.util.text.TextFormatting.LIGHT_PURPLE);sound(player,SoundEvents.ENTITY_PLAYER_LEVELUP,1.2F);}
+    private static void failure(EntityPlayerMP player,String message){status(player,message,net.minecraft.util.text.TextFormatting.RED);sound(player,SoundEvents.BLOCK_GLASS_BREAK,.9F);}
 
     public static boolean release(EntityPlayerMP owner, UUID targetId, boolean sacrifice) {
         if (!owner.getUniqueID().equals(TARGET_OWNER.get(targetId))) return false;
@@ -175,7 +178,8 @@ public class MindControlManager {
                 Controlled c=it.next().getValue(); EntityLivingBase target=c.target;
                 // A freshly drained target may be controlled again at half a heart. Only release
                 // for low health when it fell there during this particular control session.
-                if (target.isDead || target.world!=owner.world || (target.getHealth()<=LOW_HEALTH&&c.startingHealth>LOW_HEALTH) || now>=c.expires) { stopAutomaticAbilities(c,false); it.remove(); TARGET_OWNER.remove(target.getUniqueID()); aura(target,false); if(target instanceof EntityPlayerMP)ModNetwork.CHANNEL.sendTo(new PacketMindControlLock(false),(EntityPlayerMP)target); sync(state); continue; }
+                boolean healthBreak=target.getHealth()<=LOW_HEALTH&&c.startingHealth>LOW_HEALTH;
+                if (target.isDead || target.world!=owner.world || healthBreak || now>=c.expires) { if(healthBreak){failure(owner,"Your mind control was broken on "+target.getName());if(target instanceof EntityPlayerMP)sound((EntityPlayerMP)target,SoundEvents.BLOCK_GLASS_BREAK,.9F);}stopAutomaticAbilities(c,false); it.remove(); TARGET_OWNER.remove(target.getUniqueID()); aura(target,false); if(target instanceof EntityPlayerMP)ModNetwork.CHANNEL.sendTo(new PacketMindControlLock(false),(EntityPlayerMP)target); sync(state); continue; }
                 if(target instanceof EntityPlayerMP) robot((EntityPlayerMP)target,owner,c,now);
                 autocast(owner,c,now);
                 if(target instanceof EntityPlayerMP&&now>=c.nextResistance&&!RESISTANCE.containsKey(target.getUniqueID())){startResistance(owner,(EntityPlayerMP)target,true,c.resistanceLevel);c.resistanceLevel++;c.nextResistance=now+400;}
