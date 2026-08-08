@@ -19,8 +19,11 @@ import com.matoon.herosmp.timestone.AbilityTimeUnlocker;
 import com.matoon.herosmp.timestone.TimeStoneDimensionManager;
 import com.matoon.herosmp.timestone.TimeStoneChargeManager;
 import com.matoon.herosmp.timestone.TimeStoneAbilityAdder;
+import com.matoon.herosmp.mindstone.AbilityMindControl;
+import com.matoon.herosmp.mindstone.MindStoneAbilityAdder;
 import lucraft.mods.lucraftcore.superpowers.abilities.Ability;
 import lucraft.mods.lucraftcore.superpowers.abilities.AbilityEntry;
+import lucraft.mods.lucraftcore.superpowers.abilities.supplier.AbilityContainer;
 import lucraft.mods.lucraftcore.superpowers.events.InitAbilitiesEvent;
 import lucraft.mods.lucraftcore.superpowers.SuperpowerHandler;
 import lucraft.mods.lucraftcore.util.attributes.LCAttributes;
@@ -30,6 +33,8 @@ import net.minecraft.entity.ai.attributes.AttributeModifier;
 import net.minecraft.entity.ai.attributes.IAttributeInstance;
 import net.minecraft.entity.player.EntityPlayerMP;
 import net.minecraft.inventory.EntityEquipmentSlot;
+import net.minecraft.item.ItemStack;
+import net.minecraft.nbt.NBTTagCompound;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.util.ResourceLocation;
 import net.minecraft.potion.PotionEffect;
@@ -68,6 +73,26 @@ public class LucraftCoreIntegration {
      * Used to detect the false→true edge (trigger start) and true→false edge (trigger stop).
      */
     private static final Set<UUID> FULL_GAUNTLET_PLAYERS = new HashSet<>();
+
+    /**
+     * Last observed identity + stone contents of the gauntlet each player holds in
+     * their MAIN hand / OFF hand, keyed by player UUID. Used by
+     * {@link #refreshGauntletAbilitiesIfStonesChanged} to detect when stones are
+     * slotted into an already-held gauntlet so the ability set can be rebuilt without
+     * requiring a re-equip. See that method for the full rationale.
+     */
+    private static final Map<UUID, GauntletState> MAIN_HAND_GAUNTLET_STATE = new HashMap<>();
+    private static final Map<UUID, GauntletState> OFF_HAND_GAUNTLET_STATE  = new HashMap<>();
+
+    /** Snapshot of a held gauntlet's identity ("AbilityUUID") and stone contents ("Items"). */
+    private static final class GauntletState {
+        final String abilityUuid;
+        final String stones;
+        GauntletState(String abilityUuid, String stones) {
+            this.abilityUuid = abilityUuid;
+            this.stones = stones;
+        }
+    }
 
     /**
      * Stores each player's AbilitySnap cooldown from the previous server tick.
@@ -149,6 +174,7 @@ public class LucraftCoreIntegration {
 
     public static void init(FMLInitializationEvent event) {
         AbilityAdderHandler.register(new TimeStoneAbilityAdder());
+        AbilityAdderHandler.register(new MindStoneAbilityAdder());
     }
 
     /**
@@ -164,7 +190,8 @@ public class LucraftCoreIntegration {
             new AbilityEntry(AbilitySlowTime.class,     new ResourceLocation("herosmp", "slow_time")),
             new AbilityEntry(AbilitySpeedTime.class,    new ResourceLocation("herosmp", "speed_time")),
             new AbilityEntry(AbilityResetTime.class,    new ResourceLocation("herosmp", "reset_time")),
-            new AbilityEntry(AbilityTimeUnlocker.class, new ResourceLocation("herosmp", "time_unlocker"))
+            new AbilityEntry(AbilityTimeUnlocker.class, new ResourceLocation("herosmp", "time_unlocker")),
+            new AbilityEntry(AbilityMindControl.class, new ResourceLocation("herosmp", "mind_control"))
         );
     }
 
@@ -228,6 +255,8 @@ public class LucraftCoreIntegration {
         SNAP_PREV_COOLDOWN.remove(player.getUniqueID());
         POWER_UP_TICKS.remove(player.getUniqueID());
         STRAIN_HITS.remove(player.getUniqueID());
+        MAIN_HAND_GAUNTLET_STATE.remove(player.getUniqueID());
+        OFF_HAND_GAUNTLET_STATE.remove(player.getUniqueID());
         if (player.getUniqueID().equals(lastSnapper)) {
             lastSnapper = null;
             lastSnapperMatchPlayers = null;
@@ -717,6 +746,123 @@ public class LucraftCoreIntegration {
             if (!GauntelHelper.hasPowerStone(p)) {
                 cleanupInfinityStoneDamageModifiers(p);
             }
+            // Rebuild abilities (and their effects) when stones are slotted into an
+            // already-held gauntlet — LucraftCore otherwise only rebuilds on
+            // equip/unequip. Checked per hand so a gauntlet in either hand refreshes the
+            // matching ability container.
+            refreshGauntletAbilitiesIfStonesChanged(p, p.getHeldItemMainhand(), MAIN_HAND_GAUNTLET_STATE, Ability.EnumAbilityContext.MAIN_HAND);
+            refreshGauntletAbilitiesIfStonesChanged(p, p.getHeldItemOffhand(),  OFF_HAND_GAUNTLET_STATE,  Ability.EnumAbilityContext.OFF_HAND);
+        }
+    }
+
+    /**
+     * Forces LucraftCore to rebuild a player's ability set — abilities AND their actual
+     * effects — when the stones slotted into a gauntlet they are already holding have
+     * changed since the last check. This covers both adding and removing stones: the
+     * signature comparison below triggers on any change to the gauntlet's "Items", and
+     * the rebuild both grants newly-slotted stones' effects and drops removed ones.
+     *
+     * Why this is needed: LucraftCore's {@code AbilityContainerItem.onUpdate()} only
+     * rebuilds the held-item ability set (via {@code switchProvider} →
+     * {@code addDefaultAbilities}, which applies each ability's attribute modifiers) on
+     * an equip/unequip transition or when the stack's {@code "AbilityUUID"} differs from
+     * the copy the container cached at the last rebuild. Slotting a stone through the GUI
+     * only rewrites the gauntlet's {@code "Items"} NBT and leaves {@code "AbilityUUID"}
+     * untouched, so neither trigger fires.
+     *
+     * Crucially, the container caches {@code this.stack} as the SAME {@code ItemStack}
+     * object that sits in the hand slot, so mutating that stack's NBT (e.g. bumping
+     * {@code "AbilityUUID"}) is invisible to its equality check — the server never
+     * rebuilds. That left the ability list looking updated on the client (which receives
+     * a freshly deserialized stack) while the server-side effects, and the server-side
+     * {@code AbilitySnap} the power-up depends on, were never applied until a real
+     * re-equip.
+     *
+     * We close the gap by driving the container through a clean rebuild directly (see
+     * {@link #forceAbilityRebuild}): clear the provider so the old abilities'
+     * {@code lastTick()} removes their modifiers, then re-run the container tick so it
+     * re-detects the held gauntlet, rebuilds the ability set from the current stones,
+     * applies their effects, and syncs the new set to the client — all in this tick.
+     *
+     * A fresh equip or a swap to a different gauntlet is intentionally ignored here (its
+     * {@code "AbilityUUID"} differs from the stored one), because LucraftCore's equip
+     * trigger already rebuilds the abilities in that case.
+     */
+    private static void refreshGauntletAbilitiesIfStonesChanged(EntityPlayerMP player, ItemStack stack,
+                                                                Map<UUID, GauntletState> store,
+                                                                Ability.EnumAbilityContext context) {
+        UUID uuid = player.getUniqueID();
+
+        if (stack.isEmpty() || !(stack.getItem() instanceof ItemInfinityGauntlet)) {
+            store.remove(uuid);
+            return;
+        }
+
+        NBTTagCompound tag = stack.getTagCompound();
+        String stones      = (tag != null && tag.hasKey("Items"))       ? tag.getTag("Items").toString()       : "";
+        String abilityUuid = (tag != null && tag.hasKey("AbilityUUID")) ? tag.getTag("AbilityUUID").toString() : "";
+
+        GauntletState prev = store.get(uuid);
+
+        // Same physical gauntlet still held (LucraftCore has assigned an AbilityUUID and
+        // it hasn't changed) but the stones differ → force the rebuild.
+        boolean sameGauntlet = prev != null && !abilityUuid.isEmpty() && prev.abilityUuid.equals(abilityUuid);
+        if (sameGauntlet && !prev.stones.equals(stones)) {
+            // Rebuild the hand container FIRST so the freshly granted abilities (e.g.
+            // AbilitySnap when the gauntlet is completed) exist server-side before the
+            // power-up state is evaluated below. switchProvider(null) also runs each
+            // current ability's lastTick(), which removes the attribute modifiers of any
+            // stone that was just taken out; the following onUpdate re-applies only the
+            // remaining stones' effects.
+            forceAbilityRebuild(player, context);
+
+            // Belt-and-suspenders effect removal for a stone that was removed: strip any
+            // lingering oversized attribute modifiers whose owning stone is no longer
+            // held. This covers the case LucraftCore's own lastTick can miss (it fires
+            // only for abilities whose isUnlocked() was true at switch time), e.g.
+            // removing the Soul stone while the Power stone stays in — which the per-tick
+            // cleanup above skips because it requires BOTH stones absent. Present stones'
+            // effects were just re-applied by the rebuild and are gated out here, so this
+            // never strips an effect that should still be active.
+            //   Soul  -> MAX_HEALTH                 (cleanupInfinityStoneHealthModifiers)
+            //   Power -> ATTACK_DAMAGE/ARMOR/PUNCH   (cleanupInfinityStoneDamageModifiers)
+            if (!GauntelHelper.hasSoulStone(player)) cleanupInfinityStoneHealthModifiers(player);
+            if (!GauntelHelper.hasPowerStone(player)) cleanupInfinityStoneDamageModifiers(player);
+
+            // Record the current stones so this fires only once per change. The
+            // AbilityUUID is unchanged (we no longer bump it).
+            store.put(uuid, new GauntletState(abilityUuid, stones));
+
+            // The full-gauntlet power-up transition is normally detected only on equip
+            // or item toss; re-evaluate it here so completing (or breaking) the gauntlet
+            // in-hand also drives the snap power-up state (and its strain damage).
+            updateFullGauntletState(player);
+            return;
+        }
+
+        store.put(uuid, new GauntletState(abilityUuid, stones));
+    }
+
+    /**
+     * Cleanly rebuilds the held-item ability container for {@code context}
+     * ({@code MAIN_HAND}/{@code OFF_HAND}) on the server, mimicking a re-equip within a
+     * single tick.
+     *
+     * {@code switchProvider(null)} deactivates the current gauntlet abilities — running
+     * each one's {@code lastTick()} so their attribute modifiers are removed — and clears
+     * the provider. The immediate {@code onUpdate()} then re-detects the held gauntlet,
+     * rebuilds the ability set from the current stones (re-applying their effects that
+     * same tick) and syncs the new container to the client. Because the intermediate
+     * empty state is never synced on its own, the ability HUD does not flicker.
+     */
+    private static void forceAbilityRebuild(EntityPlayerMP player, Ability.EnumAbilityContext context) {
+        try {
+            AbilityContainer container = Ability.getAbilityContainer(context, player);
+            if (container == null) return;
+            container.switchProvider(null);
+            container.onUpdate();
+        } catch (Exception e) {
+            System.err.println("[HeroSMP] forceAbilityRebuild: " + e.getMessage());
         }
     }
 

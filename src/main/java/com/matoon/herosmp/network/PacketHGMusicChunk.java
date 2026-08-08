@@ -76,9 +76,38 @@ public class PacketHGMusicChunk implements IMessage {
             pending.clear();
         }
 
-        /** Returns the client-side herosmp_hg_music directory. */
-        public static File getMusicDir(Minecraft mc) {
-            return new File(mc.gameDir, "herosmp_hg_music");
+        /**
+         * Returns the client-side music CACHE directory that downloaded copies of the
+         * server's files are written to and that {@code HungerGamesMusicResourcePack}
+         * serves from. This is intentionally DISTINCT from the server's source folder
+         * ({@code herosmp_hg_music}) so that pruning the cache on an integrated server
+         * (where client and server share one game dir) can never delete the admin's
+         * source music.
+         */
+        public static File getCacheDir(Minecraft mc) {
+            return new File(mc.gameDir, "herosmp_hg_music_cache");
+        }
+
+        /**
+         * Re-registers the {@code hg_music.*} sound events after new tracks land in the
+         * cache by asking the SoundHandler to re-read {@code sounds.json} from the
+         * already-registered resource packs (including the dynamic
+         * {@code HungerGamesMusicResourcePack}, which regenerates it from the current
+         * cache contents on demand).
+         *
+         * This is far cheaper than {@link Minecraft#refreshResources()} — it reloads
+         * only the sound registry, not every texture/model — but it can only see packs
+         * that were already incorporated into the resource manager by the one-time full
+         * refresh in {@code ClientProxy.init()}. If the lightweight path throws for any
+         * reason we fall back to the full reload so sound registration still happens.
+         */
+        public static void reloadSounds(Minecraft mc) {
+            try {
+                mc.getSoundHandler().onResourceManagerReload(mc.getResourceManager());
+            } catch (Exception e) {
+                System.err.println("[HeroSMP] HG music sound reload failed, falling back to full refresh: " + e.getMessage());
+                mc.refreshResources();
+            }
         }
 
         @Override
@@ -108,9 +137,9 @@ public class PacketHGMusicChunk implements IMessage {
                     System.err.println("[HeroSMP] Failed to write music file " + key + ": " + e.getMessage());
                 }
 
-                // When all files are done, reload sound resources.
+                // When all files are done, re-register the hg_music.* sound events.
                 if (pendingFiles.decrementAndGet() <= 0) {
-                    mc.refreshResources();
+                    reloadSounds(mc);
                 }
             });
 
@@ -118,7 +147,7 @@ public class PacketHGMusicChunk implements IMessage {
         }
 
         private static void writeFile(Minecraft mc, String phase, String filename, byte[][] chunks) throws IOException {
-            File phaseDir = new File(getMusicDir(mc), phase);
+            File phaseDir = new File(getCacheDir(mc), phase);
             phaseDir.mkdirs();
             File out = new File(phaseDir, filename);
 

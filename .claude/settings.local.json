@@ -50,7 +50,8 @@
       "Bash(python -c \"import sys,json; jobs=json.load\\(sys.stdin\\); [print\\(j.get\\('id'\\), j.get\\('name'\\), j.get\\('ref'\\)\\) for j in jobs[:10]]\")",
       "Bash(curl -L -v \"https://mediafilez.forgecdn.net/files/2762/537/HeroesExpansion-1.12.2-1.3.5-deobf.jar\" --referer \"https://www.curseforge.com/\" -A \"Mozilla/5.0 \\(Windows NT 10.0; Win64; x64\\) AppleWebKit/537.36\" -o /tmp/test.jar)",
       "Bash(curl -sIL \"https://edge.forgecdn.net/files/2762/537/HeroesExpansion-1.12.2-1.3.5-deobf.jar\")",
-      "Bash(curl -L -o /tmp/test_he.jar \"https://mediafilez.forgecdn.net/files/2762/537/HeroesExpansion-1.12.2-1.3.5.jar\" -w \"\\\\nHTTP: %{http_code}\\\\nSize: %{size_download}\")"
+      "Bash(curl -L -o /tmp/test_he.jar \"https://mediafilez.forgecdn.net/files/2762/537/HeroesExpansion-1.12.2-1.3.5.jar\" -w \"\\\\nHTTP: %{http_code}\\\\nSize: %{size_download}\")",
+      "Bash(cd /tmp/dec/infinitycraft && unzip -o -q InfinityCraft-deobf.jar -d ic_src *)"
     ]
   }
 }

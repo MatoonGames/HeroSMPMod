@@ -2,6 +2,9 @@ package com.matoon.herosmp.client;
 
 import com.matoon.herosmp.CommonProxy;
 import com.matoon.herosmp.events.EventHandler;
+import com.matoon.herosmp.mindstone.MindControlAbilityBarProvider;
+import com.matoon.herosmp.mindstone.MindControlAuraRenderer;
+import com.matoon.herosmp.mindstone.MindControlPlayerLock;
 import com.matoon.herosmp.hungergames.music.HungerGamesMusicResourcePack;
 import com.matoon.herosmp.registry.ModEntities;
 import com.matoon.herosmp.registry.ModItems;
@@ -32,24 +35,32 @@ public class ClientProxy extends CommonProxy {
         MinecraftForge.EVENT_BUS.register(new SnapEffectOverlay());
         // Snap permanent skin overlay (snapper's hand texture until death)
         MinecraftForge.EVENT_BUS.register(new SnapSkinOverlay());
+        lucraft.mods.lucraftcore.util.abilitybar.AbilityBarHandler.registerProvider(new MindControlAbilityBarProvider());
+        MinecraftForge.EVENT_BUS.register(new MindControlAuraRenderer());
+        MinecraftForge.EVENT_BUS.register(new MindControlPlayerLock());
 
-        File musicDir = new File(event.getModConfigurationDirectory().getParentFile(), "herosmp_hg_music");
         try {
             Minecraft mc = FMLClientHandler.instance().getClient();
+            // Serve downloaded tracks from the client CACHE dir (distinct from the
+            // server's source folder) so pruning the cache can never delete an admin's
+            // source music on an integrated server, where both share one game dir.
+            File cacheDir = com.matoon.herosmp.network.PacketHGMusicChunk.Handler.getCacheDir(mc);
             List<IResourcePack> packs = ReflectionHelper.getPrivateValue(
                 Minecraft.class, mc,
                 "defaultResourcePacks", "field_110449_ao");
-            packs.add(new HungerGamesMusicResourcePack(musicDir));
+            packs.add(new HungerGamesMusicResourcePack(cacheDir));
         } catch (ReflectionHelper.UnableToFindFieldException e) {
             e.printStackTrace();
         }
     }
 
     /**
-     * After all mods have initialised, reload resources so the dynamic sounds.json
-     * from HungerGamesMusicResourcePack is picked up by the SoundHandler.
-     * Without this call Minecraft never re-reads sounds.json and the phase music
-     * events are never registered, causing all music packets to be silently ignored.
+     * After all mods have initialised, do one full resource refresh. This incorporates
+     * HungerGamesMusicResourcePack (added to defaultResourcePacks above, after the
+     * initial startup load already ran) into the resource manager. That one-time full
+     * reload is required because a lightweight sound-only reload cannot add a new pack —
+     * it only re-reads sounds.json from packs already registered here. Runtime track
+     * downloads then use the cheap {@code PacketHGMusicChunk.Handler.reloadSounds} path.
      */
     @Override
     public void init(FMLInitializationEvent event) {

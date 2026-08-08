@@ -11,7 +11,9 @@ import net.minecraftforge.fml.relauncher.SideOnly;
 
 import java.io.File;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 
 /**
  * Server → Client. Sent on player login.
@@ -70,38 +72,73 @@ public class PacketHGMusicManifest implements IMessage {
         @Override
         @SideOnly(Side.CLIENT)
         public IMessage onMessage(PacketHGMusicManifest msg, MessageContext ctx) {
-            if (msg.entries.isEmpty()) return null;
-
             Minecraft mc = Minecraft.getMinecraft();
-            mc.addScheduledTask(() -> {
-                // Clear stale cached files so the client always mirrors the server exactly.
-                File musicDir = PacketHGMusicChunk.Handler.getMusicDir(mc);
-                clearDirectory(musicDir);
-
-                // Track how many files we expect so the chunk handler knows when to reload.
-                PacketHGMusicChunk.Handler.setPendingCount(msg.entries.size());
-            });
-
-            // Request every file from the server (back on the netty thread is fine for sends).
-            for (FileEntry e : msg.entries) {
-                ModNetwork.CHANNEL.sendToServer(new PacketHGMusicRequest(e.phase, e.filename));
-            }
-
+            // Do EVERYTHING on the client main thread — reconcile the cache, set the
+            // pending count, and only THEN send the download requests. Sending the
+            // requests after setPendingCount (which clears the chunk-accumulation map)
+            // on the same thread guarantees no chunk can arrive and be wiped mid-flight,
+            // fixing the race that previously stranded files and prevented the reload.
+            mc.addScheduledTask(() -> reconcileAndDownload(mc, msg.entries));
             return null;
         }
 
-        private static void clearDirectory(File dir) {
-            if (dir == null || !dir.exists()) return;
-            File[] children = dir.listFiles();
-            if (children == null) return;
-            for (File child : children) {
-                if (child.isDirectory()) {
-                    clearDirectory(child);
-                    child.delete();
-                } else {
-                    child.delete();
+        /**
+         * Brings the client cache in line with the server's manifest: deletes tracks the
+         * server no longer has, keeps ones that already match (so rejoins don't
+         * re-download), and requests only the files that are missing or the wrong size.
+         */
+        @SideOnly(Side.CLIENT)
+        private static void reconcileAndDownload(Minecraft mc, List<FileEntry> entries) {
+            File cacheDir = PacketHGMusicChunk.Handler.getCacheDir(mc);
+
+            // Relative "Phase/filename" paths the server currently offers.
+            Set<String> wanted = new HashSet<>();
+            for (FileEntry e : entries) wanted.add(e.phase + "/" + e.filename);
+
+            // Remove cached files the server no longer has.
+            boolean pruned = pruneStale(cacheDir, wanted);
+
+            // Download anything missing or size-mismatched; keep exact matches.
+            List<FileEntry> toDownload = new ArrayList<>();
+            for (FileEntry e : entries) {
+                File f = new File(new File(cacheDir, e.phase), e.filename);
+                if (!f.isFile() || f.length() != e.totalBytes) toDownload.add(e);
+            }
+
+            if (toDownload.isEmpty()) {
+                // Cache already current. Only re-register sounds if we removed stale
+                // tracks; otherwise the startup/previous-login registration still holds.
+                if (pruned) PacketHGMusicChunk.Handler.reloadSounds(mc);
+                return;
+            }
+
+            PacketHGMusicChunk.Handler.setPendingCount(toDownload.size());
+            for (FileEntry e : toDownload) {
+                ModNetwork.CHANNEL.sendToServer(new PacketHGMusicRequest(e.phase, e.filename));
+            }
+        }
+
+        /**
+         * Deletes cached "phase/filename" files not present in {@code wanted}.
+         * Never touches the server's source directory (the cache dir is separate).
+         * Returns true if anything was deleted.
+         */
+        @SideOnly(Side.CLIENT)
+        private static boolean pruneStale(File cacheDir, Set<String> wanted) {
+            if (cacheDir == null || !cacheDir.isDirectory()) return false;
+            File[] phaseDirs = cacheDir.listFiles(File::isDirectory);
+            if (phaseDirs == null) return false;
+
+            boolean deleted = false;
+            for (File phaseDir : phaseDirs) {
+                File[] files = phaseDir.listFiles(File::isFile);
+                if (files == null) continue;
+                for (File f : files) {
+                    String rel = phaseDir.getName() + "/" + f.getName();
+                    if (!wanted.contains(rel) && f.delete()) deleted = true;
                 }
             }
+            return deleted;
         }
     }
 }

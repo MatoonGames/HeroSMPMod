@@ -2,7 +2,7 @@
   {
     "modid": "herosmp",
     "name": "Beyonder",
-    "description": "/hg and /pvp for modded mc servers",
+    "description": "Welcome to Battleworld",
     "version": "1.3",
     "mcversion": "1.12.2",
     "authorList": ["Matoon"],
@@ -11,6 +11,6 @@
     "logoFile": "assets/herosmp/icon.png",
     "updateUrl": "",
     "screenshots": [],
-    "dependencies": ["required-after:lucraft_core", "required-after:heroesexpansion", "required-after:infinity"]
+    "dependencies": ["required-after:lucraft_core", "required-after:heroesexpansion", "required-after:infinity", "required-after:tickratechanger"]
   }
 ]

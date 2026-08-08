@@ -45,6 +45,7 @@ public class HeroSMP {
     public static float   timeStoneSlowDrainMultiplier   = 0.67f;
     public static float   timeStoneSpeedDrainMultiplier  = 1.0f;
     public static float   timeStonePvpDrainMultiplier    = 1.0f;
+    public static int     mindControlDurationSeconds     = 120;
 
     @SidedProxy(clientSide = "com.matoon.herosmp.client.ClientProxy", serverSide = "com.matoon.herosmp.server.ServerProxy")
     public static CommonProxy proxy;
@@ -107,6 +108,8 @@ public class HeroSMP {
                     "Drain rate multiplier when time is sped up (rate > 20). Linear by deviation. Higher = drains faster.");
             timeStonePvpDrainMultiplier = config.getFloat("pvpDrainMultiplier", CAT_TIMESTONE, 1.0f, 0.01f, 1000.0f,
                     "Additional drain multiplier applied on top of slow/speed multipliers inside PVP and Hunger Games matches.");
+            mindControlDurationSeconds = config.getInt("durationSeconds", "mindStone", 120, 1, 3600,
+                    "Mind Stone control duration in seconds. Targets also break free at one heart.");
         } catch (Exception e) {
             System.err.println("Error loading config for " + MODID);
         } finally {

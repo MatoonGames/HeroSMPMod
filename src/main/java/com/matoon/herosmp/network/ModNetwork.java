@@ -31,5 +31,16 @@ public final class ModNetwork {
         CHANNEL.registerMessage(PacketInfPowerUp.Handler.class, PacketInfPowerUp.class, id++, Side.CLIENT);
         CHANNEL.registerMessage(PacketSnapEffect.Handler.class, PacketSnapEffect.class, id++, Side.CLIENT);
         CHANNEL.registerMessage(PacketSnapOverlay.Handler.class, PacketSnapOverlay.class, id++, Side.CLIENT);
+        CHANNEL.registerMessage(PacketMindControlEntries.Handler.class, PacketMindControlEntries.class, id++, Side.CLIENT);
+        CHANNEL.registerMessage(PacketReleaseMindControl.Handler.class, PacketReleaseMindControl.class, id++, Side.SERVER);
+        CHANNEL.registerMessage(PacketMindControlAura.Handler.class, PacketMindControlAura.class, id++, Side.CLIENT);
+        CHANNEL.registerMessage(PacketMindControlLock.Handler.class, PacketMindControlLock.class, id++, Side.CLIENT);
+        CHANNEL.registerMessage(PacketOpenMindControlMenuRequest.Handler.class, PacketOpenMindControlMenuRequest.class, id++, Side.SERVER);
+        CHANNEL.registerMessage(PacketOpenMindControlMenu.Handler.class, PacketOpenMindControlMenu.class, id++, Side.CLIENT);
+        CHANNEL.registerMessage(PacketMindControlMenuAction.Handler.class, PacketMindControlMenuAction.class, id++, Side.SERVER);
+        CHANNEL.registerMessage(PacketMindControlAbilityAction.Handler.class, PacketMindControlAbilityAction.class, id++, Side.SERVER);
+        CHANNEL.registerMessage(PacketMindControlResistance.Handler.class, PacketMindControlResistance.class, id++, Side.CLIENT);
+        CHANNEL.registerMessage(PacketMindControlResistanceResponse.Handler.class, PacketMindControlResistanceResponse.class, id++, Side.SERVER);
+        CHANNEL.registerMessage(PacketMindControlResistanceResult.Handler.class, PacketMindControlResistanceResult.class, id++, Side.CLIENT);
     }
 }
