@@ -9,7 +9,6 @@ import lucraft.mods.lucraftcore.superpowers.abilities.Ability;
 import lucraft.mods.lucraftcore.superpowers.abilities.supplier.AbilityContainer;
 import lucraft.mods.lucraftcore.superpowers.abilities.supplier.AbilityContainerSuperpower;
 import lucraft.mods.lucraftcore.utilities.items.ItemInjection;
-import net.minecraft.entity.Entity;
 import net.minecraft.entity.player.EntityPlayerMP;
 import net.minecraft.init.SoundEvents;
 import net.minecraft.item.ItemStack;
@@ -217,7 +216,7 @@ public class HungerGamesEvents {
     }
 
     /**
-     * Each world tick, check every loaded {@link EntityLucraftInjection}.
+     * Completes a claimed {@link EntityLucraftInjection} directly on the server thread.
      * When one has been claimed (atomically, by its own onUpdate proximity check),
      * grant the superpower to the claiming player, play effects, and kill the entity.
      *
@@ -225,36 +224,11 @@ public class HungerGamesEvents {
      * instead of the old isCollected() nearest-player search guarantees exactly one
      * player receives the power — the entity already records who claimed it.
      */
-    @SubscribeEvent
-    public void onWorldTickForInjections(TickEvent.WorldTickEvent event) {
-        if (event.phase != TickEvent.Phase.END || event.side.isClient()) return;
-
-        int dim = event.world.provider.getDimension();
-        boolean isHgOrPvpDim = dim < 0 || HeroSMP.HUNGER_GAMES_MANAGER.isHGDimension(dim);
-        if (!isHgOrPvpDim) return;
-
-        for (Entity entity : event.world.loadedEntityList.toArray(new Entity[0])) {
-            if (!(entity instanceof EntityLucraftInjection)) continue;
-            EntityLucraftInjection inj = (EntityLucraftInjection) entity;
-            if (!inj.isClaimed() || inj.isDead) continue;
-
-            ItemStack injStack = inj.getInjectionStack();
-            if (!LucraftInjectionEntry.isValidInjection(injStack)) {
-                inj.setDead();
-                continue;
-            }
-
-            UUID claimedBy = inj.getClaimedBy();
-            net.minecraft.entity.player.EntityPlayer ep = event.world.getPlayerEntityByUUID(claimedBy);
-            if (!(ep instanceof EntityPlayerMP)) {
-                inj.setDead();
-                continue;
-            }
-
-            // Kill the entity FIRST so no second tick can process it.
-            inj.setDead();
-            grantSuperpower((EntityPlayerMP) ep, injStack, event.world);
-        }
+    public static void claimInjection(EntityLucraftInjection injection, EntityPlayerMP player) {
+        if (injection == null || player == null || injection.isDead || !injection.isClaimed()) return;
+        ItemStack stack = injection.getInjectionStack();
+        injection.setDead();
+        if (LucraftInjectionEntry.isValidInjection(stack)) grantSuperpower(player, stack, player.world);
     }
 
     /**
@@ -296,7 +270,7 @@ public class HungerGamesEvents {
         }
     }
 
-    private void grantSuperpower(EntityPlayerMP player, ItemStack injStack, net.minecraft.world.World world) {
+    private static void grantSuperpower(EntityPlayerMP player, ItemStack injStack, net.minecraft.world.World world) {
         try {
             ItemInjection.Injection injection = ItemInjection.getInjection(injStack);
             if (injection == null) {

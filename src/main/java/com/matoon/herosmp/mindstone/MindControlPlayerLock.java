@@ -33,7 +33,7 @@ public class MindControlPlayerLock {
     public static void finishResistance(){resistanceToken=null;resistanceSent=false;}
     public static boolean isLocked(){return locked;}
     @SubscribeEvent public void tick(TickEvent.ClientTickEvent e){
-        if(!locked)return;
+        if(e.phase!=TickEvent.Phase.START||!locked)return;
         Minecraft mc=Minecraft.getMinecraft(); if(mc.player==null)return;
         clearAll(mc);
     }

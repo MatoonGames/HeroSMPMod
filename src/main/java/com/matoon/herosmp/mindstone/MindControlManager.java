@@ -48,9 +48,9 @@ public class MindControlManager {
     private static final Set<UUID> AUTOMATED_ATTACKS = new HashSet<>();
     private static final Map<UUID,ResistanceAttempt> RESISTANCE=new HashMap<>();
     private static final int LOW_HEALTH = 2;
-    private static class Controlled { final EntityLivingBase target; final long expires; final float startingHealth; final PlayerBotNavigator navigator=new PlayerBotNavigator(); final Set<String> autoToggles=new HashSet<>(); long nextAi, nextAbilityCast, heldRelease,nextResistance; int blockedTicks,resistanceLevel; boolean abilityAutocast=true,navigationFlight; Ability heldAbility; Controlled(EntityLivingBase t, long e) { target=t; expires=e; startingHealth=t.getHealth(); nextResistance=t.world.getTotalWorldTime()+400; } }
+    private static class Controlled { final EntityLivingBase target; final long expires; final float startingHealth; final PlayerBotNavigator navigator=new PlayerBotNavigator(); final Set<String> autoToggles=new HashSet<>(); long nextAi, nextAbilityCast, heldRelease,nextResistance,abilityCacheTick=Long.MIN_VALUE; int blockedTicks,resistanceLevel; boolean abilityAutocast=true,navigationFlight; Ability heldAbility,flightAbility; List<Ability> activeAbilities=Collections.emptyList(); Controlled(EntityLivingBase t, long e) { target=t; expires=e; startingHealth=t.getHealth(); nextResistance=t.world.getTotalWorldTime()+400; } }
     private static class ResistanceAttempt { final UUID token=UUID.randomUUID();final EntityPlayerMP owner,target;final boolean escape;final long start,end;final int windowStart,windowEnd;boolean answered;ResistanceAttempt(EntityPlayerMP o,EntityPlayerMP t,boolean escape,long now,int level){owner=o;target=t;this.escape=escape;start=now;end=now+40;int width=Math.min(14,4+level*2),center=12+o.getRNG().nextInt(17);windowStart=center-width/2;windowEnd=center+width/2;} }
-    private static class OwnerControl { EntityPlayerMP owner; final Map<UUID, Controlled> targets=new HashMap<>(); boolean soulLast; EntityLivingBase threat; long threatUntil; OwnerControl(EntityPlayerMP p) { owner=p; soulLast=GauntelHelper.hasSoulStone(p); } }
+    private static class OwnerControl { EntityPlayerMP owner; final Map<UUID, Controlled> targets=new HashMap<>(); boolean soulLast; EntityLivingBase threat,resolvedThreat; long threatUntil,resolvedThreatTick=Long.MIN_VALUE; OwnerControl(EntityPlayerMP p) { owner=p; soulLast=GauntelHelper.hasSoulStone(p); } }
 
     public static void control(EntityPlayerMP owner, EntityLivingBase target) {
         if(target instanceof EntityPlayerMP){startResistance(owner,(EntityPlayerMP)target,false,0);return;}
@@ -105,26 +105,35 @@ public class MindControlManager {
     /** Ability controls are deliberately server-side: the client can only request an action for its own companion. */
     public static void triggerAbility(EntityPlayerMP owner, UUID targetId, String key) {
         Controlled control=get(owner.getUniqueID(),targetId); if(control==null||key==null)return;
-        for(Ability ability:getActiveAbilities(control.target)) if(key.equals(ability.getKey())&&!ability.isCoolingdown()) { activate(control,ability,owner.world.getTotalWorldTime(),false); return; }
+        long now=owner.world.getTotalWorldTime();control.abilityCacheTick=Long.MIN_VALUE;for(Ability ability:getActiveAbilities(control,now)) if(key.equals(ability.getKey())&&!ability.isCoolingdown()) { activate(control,ability,now,false); return; }
     }
     public static void setAbilityAutocast(EntityPlayerMP owner, UUID targetId, boolean enabled) { Controlled control=get(owner.getUniqueID(),targetId); if(control!=null){control.abilityAutocast=enabled; control.nextAbilityCast=0;} }
-    private static List<Ability> getActiveAbilities(EntityLivingBase entity) { List<Ability> result=new ArrayList<>(); for(Ability ability:Ability.getAbilities(entity))if(ability.isUnlocked()&&!ability.isHidden()&&ability.getAbilityType()!=Ability.AbilityType.CONSTANT)result.add(ability); return result; }
+    private static List<Ability> getActiveAbilities(Controlled control,long now) { refreshAbilities(control,now); return control.activeAbilities; }
+    private static Ability findFlight(Controlled control,long now){refreshAbilities(control,now);return control.flightAbility;}
+    private static void refreshAbilities(Controlled control,long now){
+        // Lucraft containers may replace Ability instances as their providers rebuild.
+        // Reuse the snapshot only within this server tick; retaining those objects across
+        // ticks can leave autopilot invoking detached actions and observing stale flight state.
+        if(control.abilityCacheTick==now)return;
+        List<Ability> result=new ArrayList<>(); Ability flight=null;
+        for(Ability ability:Ability.getAbilities(control.target))if(ability.isUnlocked()&&!ability.isHidden()){if(flight==null&&ability instanceof AbilityFlight)flight=ability;if(ability.getAbilityType()!=Ability.AbilityType.CONSTANT)result.add(ability);}
+        control.activeAbilities=result;control.flightAbility=flight;control.abilityCacheTick=now;
+    }
     private static void activate(Controlled control,Ability ability,long now,boolean automatic){
         if(ability.getAbilityType()==Ability.AbilityType.HELD){if(control.heldAbility!=null)control.heldAbility.onKeyReleased();ability.onKeyPressed();control.heldAbility=ability;control.heldRelease=now+30;}
         else {ability.onKeyPressed();ability.onKeyReleased();if(automatic&&ability.getAbilityType()==Ability.AbilityType.TOGGLE&&ability.isEnabled())control.autoToggles.add(ability.getKey());}
     }
     private static void stopAutomaticAbilities(Controlled control,boolean preserveNavigationFlight){
         if(control.heldAbility!=null){control.heldAbility.onKeyReleased();control.heldAbility=null;}
-        if(!control.autoToggles.isEmpty()){for(Ability ability:getActiveAbilities(control.target))if(control.autoToggles.contains(ability.getKey())&&!(preserveNavigationFlight&&ability instanceof AbilityFlight)&&ability.getAbilityType()==Ability.AbilityType.TOGGLE&&ability.isEnabled()){ability.onKeyPressed();ability.onKeyReleased();}if(preserveNavigationFlight)control.autoToggles.removeIf(key->{Ability flight=findFlight(control.target);return flight==null||!key.equals(flight.getKey());});else control.autoToggles.clear();}
+        if(!control.autoToggles.isEmpty()){long now=control.target.world.getTotalWorldTime();Ability flight=findFlight(control,now);for(Ability ability:getActiveAbilities(control,now))if(control.autoToggles.contains(ability.getKey())&&!(preserveNavigationFlight&&ability==flight)&&ability.getAbilityType()==Ability.AbilityType.TOGGLE&&ability.isEnabled()){ability.onKeyPressed();ability.onKeyReleased();}if(preserveNavigationFlight){String flightKey=flight==null?null:flight.getKey();control.autoToggles.removeIf(key->!key.equals(flightKey));}else control.autoToggles.clear();}
     }
     private static void autocast(EntityPlayerMP owner, Controlled control, long now) {
         if(control.heldAbility!=null&&now>=control.heldRelease){control.heldAbility.onKeyReleased();control.heldAbility=null;}
         EntityLivingBase enemy=combatThreat(owner,control.target);if(!control.abilityAutocast||enemy==null){stopAutomaticAbilities(control,control.navigationFlight);return;}if(now<control.nextAbilityCast||control.heldAbility!=null)return;
-        face(control.target,enemy);List<Ability> ready=new ArrayList<>(); for(Ability ability:getActiveAbilities(control.target))if(!(ability instanceof AbilityFlight)&&!ability.isCoolingdown()&&(ability.getAbilityType()!=Ability.AbilityType.TOGGLE||!ability.isEnabled()))ready.add(ability);
+        face(control.target,enemy);Ability selected=null;int candidates=0;for(Ability ability:getActiveAbilities(control,now))if(!(ability instanceof AbilityFlight)&&!ability.isCoolingdown()&&(ability.getAbilityType()!=Ability.AbilityType.TOGGLE||!ability.isEnabled())&&owner.getRNG().nextInt(++candidates)==0)selected=ability;
         control.nextAbilityCast=now+80+owner.getRNG().nextInt(61);
-        if(!ready.isEmpty())activate(control,ready.get(owner.getRNG().nextInt(ready.size())),now,true);
+        if(selected!=null)activate(control,selected,now,true);
     }
-    private static Ability findFlight(EntityLivingBase entity){for(Ability ability:Ability.getAbilities(entity))if(ability instanceof AbilityFlight&&ability.isUnlocked()&&!ability.isHidden())return ability;return null;}
     private static void face(EntityLivingBase source,EntityLivingBase target){double dx=target.posX-source.posX,dz=target.posZ-source.posZ,dy=target.posY+target.getEyeHeight()-(source.posY+source.getEyeHeight()),flat=Math.sqrt(dx*dx+dz*dz);source.rotationYaw=(float)(Math.atan2(-dx,dz)*180D/Math.PI);source.rotationYawHead=source.rotationYaw;source.rotationPitch=(float)(-Math.atan2(dy,flat)*180D/Math.PI);}
     /** Autopilot is also valid for injected mobs; use their actual combat target as well as threats to the controller. */
     private static EntityLivingBase combatThreat(EntityPlayerMP owner, EntityLivingBase companion) {
@@ -193,14 +202,15 @@ public class MindControlManager {
         if(mob.getAttackTarget()==owner||!validThreat(mob.getAttackTarget(),owner))mob.setAttackTarget(null);
         EntityLivingBase threat=threat(owner);
         EntityLivingBase destination=threat!=null&&threat!=mob?threat:owner;if(threat!=null&&threat!=mob)mob.setAttackTarget(threat);else if(mob.getAttackTarget()==mob||isControlled(mob.getAttackTarget()))mob.setAttackTarget(null);
-        Ability flight=findFlight(mob);double distance=Math.sqrt(mob.getDistanceSq(destination)),dy=destination.posY-mob.posY;boolean needed=control.abilityAutocast&&flight!=null&&(Math.abs(dy)>3D||distance>20D||hasUnsafeGap(mob,destination.posX,destination.posZ));control.navigationFlight=needed;
+        Ability flight=findFlight(control,now);double distance=Math.sqrt(mob.getDistanceSq(destination)),dy=destination.posY-mob.posY;boolean needed=control.abilityAutocast&&flight!=null&&(Math.abs(dy)>3D||distance>20D||hasUnsafeGap(mob,destination.posX,destination.posZ));control.navigationFlight=needed;
         if(needed&&!flight.isEnabled())activate(control,flight,now,true);else if(!needed&&flight!=null&&control.autoToggles.remove(flight.getKey())&&flight.isEnabled()){flight.onKeyPressed();flight.onKeyReleased();}
         if(flight!=null&&flight.isEnabled()){double dx=destination.posX-mob.posX,dz=destination.posZ-mob.posZ,targetY=destination.posY+Math.max(1D,destination.height*.5D),fy=targetY-mob.posY,length=Math.sqrt(dx*dx+fy*fy+dz*dz);if(length>.4D){face(mob,destination);double speed=distance>12D?.38D:.24D;mob.moveForward=1F;mob.motionX=dx/length*speed;mob.motionY=fy/length*speed;mob.motionZ=dz/length*speed;mob.fallDistance=0;}else{mob.moveForward=0;mob.motionX=mob.motionY=mob.motionZ=0;}return;}
         if(destination==owner&&mob.getDistanceSq(owner)>25)mob.getNavigator().tryMoveToEntityLiving(owner,1.15D);
     }
     private static EntityLivingBase threat(EntityPlayerMP owner) {
         OwnerControl state=BY_OWNER.get(owner.getUniqueID()); long now=owner.world.getTotalWorldTime();
-        if(state!=null&&state.threat!=null&&state.threatUntil>=now&&validThreat(state.threat,owner)&&owner.getDistanceSq(state.threat)<=324)return state.threat;
+        if(state!=null&&state.resolvedThreatTick==now)return state.resolvedThreat;
+        if(state!=null&&state.threat!=null&&state.threatUntil>=now&&validThreat(state.threat,owner)&&owner.getDistanceSq(state.threat)<=324){state.resolvedThreat=state.threat;state.resolvedThreatTick=now;return state.threat;}
         EntityLivingBase result=owner.getRevengeTarget();
         if(!validThreat(result,owner)||owner.getDistanceSq(result)>324){
             result=null; List<EntityMob> mobs=owner.world.getEntitiesWithinAABB(EntityMob.class,owner.getEntityBoundingBox().grow(12));
@@ -208,7 +218,7 @@ public class MindControlManager {
             // hostile to this controller, preventing phantom/punching-at-air targets.
             for(EntityMob mob:mobs)if(validThreat(mob,owner)&&(mob.getAttackTarget()==owner||mob.getRevengeTarget()==owner)){result=mob;break;}
         }
-        return result;
+        if(state!=null){state.resolvedThreat=result;state.resolvedThreatTick=now;}return result;
     }
     private static boolean validThreat(EntityLivingBase entity, EntityPlayerMP owner) {
         return entity!=null&&!entity.isDead&&!entity.isInvisible()&&entity!=owner&&!isControlled(entity)&&!(entity instanceof net.minecraft.entity.item.EntityArmorStand)
@@ -225,7 +235,7 @@ public class MindControlManager {
         boolean holdFormation=destination==owner&&controllerDistance>=4D&&controllerDistance<=8D;
         double desiredX=destination.posX,desiredY=destination.getEntityBoundingBox().minY,desiredZ=destination.posZ;
         if(destination==owner) { net.minecraft.util.math.Vec3d facing=owner.getLookVec(); desiredX-=facing.x*6D; desiredZ-=facing.z*6D; }
-        Ability flight=findFlight(player);double verticalDifference=desiredY-player.posY,horizontalToDestination=player.getDistance(destination);
+        Ability flight=findFlight(control,now);double verticalDifference=desiredY-player.posY,horizontalToDestination=player.getDistance(destination);
         boolean gap=hasUnsafeGap(player,desiredX,desiredZ),flightNeeded=control.abilityAutocast&&flight!=null&&(Math.abs(verticalDifference)>3D||horizontalToDestination>20D||control.blockedTicks>=6||gap);
         control.navigationFlight=flightNeeded;
         if(flightNeeded&&!flight.isEnabled()){activate(control,flight,now,true);}
@@ -302,7 +312,7 @@ public class MindControlManager {
             e.setCanceled(true); if(source instanceof EntityCreature)((EntityCreature)source).setAttackTarget(null); return;
         }
         if(isControlled(source)||!validThreat((EntityLivingBase)source,e.getEntityLiving() instanceof EntityPlayerMP?(EntityPlayerMP)e.getEntityLiving():null))return;
-        OwnerControl state=BY_OWNER.get(e.getEntityLiving().getUniqueID());if(state!=null){state.threat=(EntityLivingBase)source;state.threatUntil=e.getEntityLiving().world.getTotalWorldTime()+100;for(Controlled c:state.targets.values())if(c.target instanceof EntityCreature&&c.target!=source)((EntityCreature)c.target).setAttackTarget((EntityLivingBase)source);}
+        OwnerControl state=BY_OWNER.get(e.getEntityLiving().getUniqueID());if(state!=null){state.threat=(EntityLivingBase)source;state.threatUntil=e.getEntityLiving().world.getTotalWorldTime()+100;state.resolvedThreatTick=Long.MIN_VALUE;for(Controlled c:state.targets.values())if(c.target instanceof EntityCreature&&c.target!=source)((EntityCreature)c.target).setAttackTarget((EntityLivingBase)source);}
     }
     @SubscribeEvent public void targetChanged(net.minecraftforge.event.entity.living.LivingSetAttackTargetEvent e) {
         if(!(e.getEntityLiving() instanceof EntityCreature)||!isControlled(e.getEntityLiving()))return;

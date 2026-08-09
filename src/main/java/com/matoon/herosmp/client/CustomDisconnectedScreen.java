@@ -26,13 +26,10 @@ public class CustomDisconnectedScreen extends GuiScreen {
         this.parentScreen = parentScreen != null ? parentScreen : new GuiScreen() {};
         this.message = message != null ? message : new TextComponentString("Disconnected from the server");
 
-        // Move this line to after the null check to avoid issues
-        System.out.println("CustomDisconnectedScreen initialized with message: " + this.message.getUnformattedText());
     }
 
     @Override
     public void initGui() {
-        System.out.println("CustomDisconnectedScreen initGui called");
         int centerX = (this.width - imageWidth) / 2;
         int centerY = (this.height - imageHeight) / 2;
 
@@ -55,7 +52,6 @@ public class CustomDisconnectedScreen extends GuiScreen {
 
     @Override
     public void drawScreen(int mouseX, int mouseY, float partialTicks) {
-        System.out.println("CustomDisconnectedScreen drawScreen called");
         Minecraft.getMinecraft().getTextureManager().bindTexture(DISCONNECTED_BACKGROUND);
         GL11.glColor4f(1.0F, 1.0F, 1.0F, 1.0F);
         drawModalRectWithCustomSizedTexture(0, 0, 0, 0, this.width, this.height, this.width, this.height);

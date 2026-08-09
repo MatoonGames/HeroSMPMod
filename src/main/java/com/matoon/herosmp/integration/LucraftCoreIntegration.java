@@ -740,18 +740,24 @@ public class LucraftCoreIntegration {
             if (hasTimeAbility(p)) {
                 TimeStoneChargeManager.tickPlayer(p);
             }
-            if (!GauntelHelper.hasSoulStone(p) && !GauntelHelper.hasPowerStone(p)) {
+            boolean hasSoulStone = GauntelHelper.hasSoulStone(p);
+            boolean hasPowerStone = GauntelHelper.hasPowerStone(p);
+            if (!hasSoulStone && !hasPowerStone) {
                 cleanupInfinityStoneHealthModifiers(p);
             }
-            if (!GauntelHelper.hasPowerStone(p)) {
+            if (!hasPowerStone) {
                 cleanupInfinityStoneDamageModifiers(p);
             }
             // Rebuild abilities (and their effects) when stones are slotted into an
             // already-held gauntlet — LucraftCore otherwise only rebuilds on
             // equip/unequip. Checked per hand so a gauntlet in either hand refreshes the
             // matching ability container.
-            refreshGauntletAbilitiesIfStonesChanged(p, p.getHeldItemMainhand(), MAIN_HAND_GAUNTLET_STATE, Ability.EnumAbilityContext.MAIN_HAND);
-            refreshGauntletAbilitiesIfStonesChanged(p, p.getHeldItemOffhand(),  OFF_HAND_GAUNTLET_STATE,  Ability.EnumAbilityContext.OFF_HAND);
+            // NBT signatures are comparatively expensive and stone changes are infrequent.
+            // A five-tick poll keeps the UI responsive while cutting this work by 80%.
+            if (p.ticksExisted % 5 == 0) {
+                refreshGauntletAbilitiesIfStonesChanged(p, p.getHeldItemMainhand(), MAIN_HAND_GAUNTLET_STATE, Ability.EnumAbilityContext.MAIN_HAND);
+                refreshGauntletAbilitiesIfStonesChanged(p, p.getHeldItemOffhand(),  OFF_HAND_GAUNTLET_STATE,  Ability.EnumAbilityContext.OFF_HAND);
+            }
         }
     }
 
@@ -934,14 +940,15 @@ public class LucraftCoreIntegration {
             Collection<AttributeModifier> modifiers = maxHealthAttr.getModifiers();
             if (modifiers == null || modifiers.isEmpty()) return;
 
-            java.util.List<AttributeModifier> toRemove = new ArrayList<>();
+            java.util.List<AttributeModifier> toRemove = null;
             for (AttributeModifier mod : modifiers) {
                 if (Math.abs(mod.getAmount()) > 1024.0) {
+                    if (toRemove == null) toRemove = new ArrayList<>();
                     toRemove.add(mod);
                 }
             }
 
-            if (toRemove.isEmpty()) return;
+            if (toRemove == null) return;
 
             for (AttributeModifier mod : toRemove) {
                 maxHealthAttr.removeModifier(mod);
@@ -973,14 +980,15 @@ public class LucraftCoreIntegration {
                 if (attr == null) continue;
                 Collection<AttributeModifier> modifiers = attr.getModifiers();
                 if (modifiers == null || modifiers.isEmpty()) continue;
-                java.util.List<AttributeModifier> toRemove = new ArrayList<>();
+                java.util.List<AttributeModifier> toRemove = null;
                 for (AttributeModifier mod : modifiers) {
                     if (Math.abs(mod.getAmount()) > 1024.0) {
+                        if (toRemove == null) toRemove = new ArrayList<>();
                         toRemove.add(mod);
                     }
                 }
-                for (AttributeModifier mod : toRemove) {
-                    attr.removeModifier(mod);
+                if (toRemove != null) {
+                    for (AttributeModifier mod : toRemove) attr.removeModifier(mod);
                 }
             }
         } catch (Exception e) {

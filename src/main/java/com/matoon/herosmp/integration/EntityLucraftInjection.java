@@ -168,6 +168,9 @@ public class EntityLucraftInjection extends Entity {
         claimedBy = player.getUniqueID();
         dataManager.set(NAME_TAG_VISIBLE, false);
         setCollected(true);
+        // Claims run on the server thread. Complete this one directly instead of scanning
+        // every loaded entity in every match dimension on every world tick.
+        com.matoon.herosmp.hungergames.events.HungerGamesEvents.claimInjection(this, player);
     }
 
     public boolean isClaimed()   { return claimedBy != null; }

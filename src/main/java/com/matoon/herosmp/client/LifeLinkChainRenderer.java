@@ -16,6 +16,7 @@ import net.minecraftforge.fml.relauncher.SideOnly;
 import org.lwjgl.opengl.GL11;
 
 import java.util.Map;
+import java.util.HashMap;
 import java.util.UUID;
 
 /**
@@ -28,6 +29,9 @@ import java.util.UUID;
  */
 @SideOnly(Side.CLIENT)
 public class LifeLinkChainRenderer {
+
+    private final Map<UUID, EntityLivingBase> entityCache = new HashMap<>();
+    private net.minecraft.world.World cachedWorld;
 
     private static final ResourceLocation CHAIN_TEXTURE =
             new ResourceLocation("herosmp", "textures/items/life_link_chain.png");
@@ -42,6 +46,7 @@ public class LifeLinkChainRenderer {
     public void onRenderWorldLast(RenderWorldLastEvent event) {
         Minecraft mc = Minecraft.getMinecraft();
         if (mc.world == null || mc.player == null) return;
+        if (cachedWorld != mc.world) { entityCache.clear(); cachedWorld = mc.world; }
 
         Map<UUID, UUID> links = LifeLinkClientMap.getLinks();
         if (links.isEmpty()) return;
@@ -159,9 +164,16 @@ public class LifeLinkChainRenderer {
     }
 
     private EntityLivingBase findEntityByUUID(Minecraft mc, UUID uuid) {
+        EntityLivingBase cached = entityCache.get(uuid);
+        if (cached != null && !cached.isDead && cached.world == mc.world && uuid.equals(cached.getUniqueID())) {
+            return cached;
+        }
+        entityCache.remove(uuid);
         for (Entity e : mc.world.loadedEntityList) {
             if (e instanceof EntityLivingBase && e.getUniqueID().equals(uuid)) {
-                return (EntityLivingBase) e;
+                EntityLivingBase found = (EntityLivingBase) e;
+                entityCache.put(uuid, found);
+                return found;
             }
         }
         return null;

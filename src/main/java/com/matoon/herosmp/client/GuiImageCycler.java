@@ -16,9 +16,6 @@ public class GuiImageCycler {
     public void renderCyclingImages(ScaledResolution scaledRes) {
         Minecraft mc = Minecraft.getMinecraft();
 
-        // Log for debugging
-        System.out.println("Rendering image: image_1");
-
         // Calculate the position to center the image at the top
         int centerX = (scaledRes.getScaledWidth() - imageWidth) / 2;
         int centerY = 0;  // Anchored near the top, adjust Y-coordinate as necessary

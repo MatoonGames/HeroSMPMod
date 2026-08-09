@@ -22,6 +22,8 @@ import java.util.*;
 /** One cached head texture per companion; no entity model is rendered during normal HUD frames. */
 @SideOnly(Side.CLIENT)
 public class MindControlAbilityBarProvider implements IAbilityBarProvider {
+    private static final ResourceLocation FALLBACK_ICON=new ResourceLocation("herosmp","textures/abilities/mind_control.png");
+    private static int nextGlobalCaptureTick;
     private final Map<UUID,CompanionEntry> cached=new HashMap<>(); private List<IAbilityBarEntry> displayed=Collections.emptyList(); private int revision=-1;
     @Override public List<IAbilityBarEntry> getEntries(){
         if(revision==MindControlClientState.revision())return displayed;revision=MindControlClientState.revision();Set<UUID> keep=new HashSet<>();List<IAbilityBarEntry> next=new ArrayList<>();
@@ -44,9 +46,9 @@ public class MindControlAbilityBarProvider implements IAbilityBarProvider {
             // Mob heads are rendered once into a tiny FBO and reused as a normal 2D texture.
             // Renderers can be unavailable for one client tick as an entity arrives. Retry at a
             // low rate instead of permanently falling back to the generic Mind Stone icon.
-            if(mobHead==null&&found instanceof EntityLivingBase&&mc.player!=null&&mc.player.ticksExisted>=nextCaptureAttempt)capture(mc,(EntityLivingBase)found);
+            if(mobHead==null&&found instanceof EntityLivingBase&&mc.player!=null&&mc.player.ticksExisted>=nextCaptureAttempt&&mc.player.ticksExisted>=nextGlobalCaptureTick){nextGlobalCaptureTick=mc.player.ticksExisted+2;capture(mc,(EntityLivingBase)found);}
             if(mobHead!=null){drawFramebuffer(mobHead,x,y);return;}
-            mc.getTextureManager().bindTexture(new ResourceLocation("herosmp","textures/abilities/mind_control.png"));Gui.drawModalRectWithCustomSizedTexture(x,y,0,0,16,16,16,16);
+            mc.getTextureManager().bindTexture(FALLBACK_ICON);Gui.drawModalRectWithCustomSizedTexture(x,y,0,0,16,16,16,16);
         }
         private void capture(Minecraft mc,EntityLivingBase entity){
             nextCaptureAttempt=mc.player==null?20:mc.player.ticksExisted+40;

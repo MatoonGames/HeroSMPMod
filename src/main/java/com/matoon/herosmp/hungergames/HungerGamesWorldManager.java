@@ -40,6 +40,7 @@ public class HungerGamesWorldManager {
     private final AtomicInteger dimensionIdCounter = new AtomicInteger(1);
     private final AtomicInteger matchIdCounter     = new AtomicInteger(1);
     private final Map<Integer, HungerGamesMatch>             activeMatches    = new HashMap<>();
+    private final List<HungerGamesMatch>                     activeMatchTickView = new ArrayList<>();
     private final Map<Integer, DimensionType>                registeredDimensionTypes = new HashMap<>();
     private final Deque<UUID>                                queue            = new ArrayDeque<>();
     private final Set<UUID>                                  queuedPlayers    = new HashSet<>();
@@ -205,11 +206,12 @@ public class HungerGamesWorldManager {
             if (currentQueueCountdown <= 0) startMatchFromQueue(server);
         }
 
-        for (Map.Entry<UUID, Integer> entry : new ArrayList<>(spectatorSetupCountdown.entrySet())) {
+        for (Iterator<Map.Entry<UUID, Integer>> iterator=spectatorSetupCountdown.entrySet().iterator();iterator.hasNext();) {
+            Map.Entry<UUID, Integer> entry=iterator.next();
             UUID id = entry.getKey();
             int count = entry.getValue() - 1;
-            if (count > 0) { spectatorSetupCountdown.put(id, count); continue; }
-            spectatorSetupCountdown.remove(id);
+            if (count > 0) { entry.setValue(count); continue; }
+            iterator.remove();
             Integer matchId = pendingHGSpectators.remove(id);
             if (matchId == null) continue;
             EntityPlayerMP player = server.getPlayerList().getPlayerByUUID(id);
@@ -227,18 +229,20 @@ public class HungerGamesWorldManager {
         // Delayed state restore: apply saved overworld state 2 ticks after changeDimension()
         // completes, giving the client time to finish loading the dimension before we
         // push inventory / capability packets.
-        for (Map.Entry<UUID, Integer> entry : new ArrayList<>(pendingHGReturns.entrySet())) {
+        for (Iterator<Map.Entry<UUID, Integer>> iterator=pendingHGReturns.entrySet().iterator();iterator.hasNext();) {
+            Map.Entry<UUID, Integer> entry=iterator.next();
             UUID id = entry.getKey();
             int count = entry.getValue() - 1;
-            if (count > 0) { pendingHGReturns.put(id, count); continue; }
-            pendingHGReturns.remove(id);
+            if (count > 0) { entry.setValue(count); continue; }
+            iterator.remove();
             EntityPlayerMP player = server.getPlayerList().getPlayerByUUID(id);
             if (player == null) { PlayerDataIsolationManager.clearStoredState(id); continue; }
             PlayerDataIsolationManager.restorePlayerState(player);
             sendMessage(player, TextFormatting.GREEN + "Returned from Hunger Games.");
         }
 
-        for (HungerGamesMatch match : new ArrayList<>(activeMatches.values())) {
+        activeMatchTickView.clear();activeMatchTickView.addAll(activeMatches.values());
+        for (HungerGamesMatch match : activeMatchTickView) {
             match.tick(server);
             if (match.isEnded() && match.getPhase() == HungerGamesMatch.GamePhase.ENDING) {
                 endMatch(server, match.getMatchId());

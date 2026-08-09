@@ -7,9 +7,11 @@ import net.minecraftforge.fml.common.FMLCommonHandler;
 
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 
 /**
@@ -30,6 +32,8 @@ public class LifeLinkManager {
 
     /** linked entity UUID → linker entity UUID */
     private static final Map<UUID, UUID> LINKS = new HashMap<>();
+    /** linker/recipient UUID -> linked source UUIDs, for constant-time reverse cleanup. */
+    private static final Map<UUID, Set<UUID>> LINKS_BY_TARGET = new HashMap<>();
 
     /**
      * Attempts to create a life link where {@code linker} linked {@code linked}.
@@ -58,6 +62,7 @@ public class LifeLinkManager {
         }
 
         LINKS.put(linkedUuid, linkerUuid);
+        LINKS_BY_TARGET.computeIfAbsent(linkerUuid, ignored -> new HashSet<>()).add(linkedUuid);
         broadcastAdd(linkedUuid, linkerUuid);
         return true;
     }
@@ -80,7 +85,10 @@ public class LifeLinkManager {
 
     /** Removes the link for the given linked entity (called when effect expires). */
     public static void removeLink(UUID linkedUuid) {
-        if (LINKS.remove(linkedUuid) != null) {
+        UUID linkerUuid=LINKS.remove(linkedUuid);
+        if (linkerUuid != null) {
+            Set<UUID> linked=LINKS_BY_TARGET.get(linkerUuid);
+            if(linked!=null){linked.remove(linkedUuid);if(linked.isEmpty())LINKS_BY_TARGET.remove(linkerUuid);}
             broadcastRemove(linkedUuid);
         }
     }
@@ -90,13 +98,9 @@ public class LifeLinkManager {
      * Called when the target's potion effect expires, to clean up shooter-side entries.
      */
     public static void removeLinksPointingTo(UUID linkerUuid) {
-        List<UUID> toRemove = new ArrayList<>();
-        for (Map.Entry<UUID, UUID> entry : LINKS.entrySet()) {
-            if (linkerUuid.equals(entry.getValue())) {
-                toRemove.add(entry.getKey());
-            }
-        }
-        for (UUID linked : toRemove) {
+        Set<UUID> pointing=LINKS_BY_TARGET.get(linkerUuid);
+        if(pointing==null||pointing.isEmpty())return;
+        for (UUID linked : new ArrayList<>(pointing)) {
             removeLink(linked);
         }
     }
@@ -129,10 +133,8 @@ public class LifeLinkManager {
 
     /** Returns true if the given entity is the chain-end target (value) of any active link. */
     public static boolean hasLinkerFor(UUID targetUuid) {
-        for (UUID value : LINKS.values()) {
-            if (targetUuid.equals(value)) return true;
-        }
-        return false;
+        Set<UUID> linked=LINKS_BY_TARGET.get(targetUuid);
+        return linked!=null&&!linked.isEmpty();
     }
 
     /**
@@ -150,6 +152,7 @@ public class LifeLinkManager {
     /** Clears all links (e.g. on server stop). */
     public static void clear() {
         LINKS.clear();
+        LINKS_BY_TARGET.clear();
     }
 
     /**

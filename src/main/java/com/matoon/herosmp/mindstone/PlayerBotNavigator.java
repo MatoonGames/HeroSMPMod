@@ -13,6 +13,7 @@ import java.util.*;
  */
 final class PlayerBotNavigator {
     private static final int SEARCH_LIMIT=384, RANGE=20;
+    private static final Comparator<Node> BY_SCORE=(a,b)->Double.compare(a.f,b.f);
     private List<BlockPos> path=Collections.emptyList(); private int index; private BlockPos goal; private long nextRepath;
 
     BlockPos next(EntityPlayerMP player, BlockPos requested, long tick) {
@@ -28,13 +29,15 @@ final class PlayerBotNavigator {
     private static BlockPos closestWalkable(World w,BlockPos pos){for(int dy=2;dy>=-3;dy--){BlockPos p=pos.up(dy);if(walkable(w,p))return p;}return pos;}
     private static List<BlockPos> find(World w,BlockPos start,BlockPos end) {
         if(!walkable(w,start))start=closestWalkable(w,start); if(!walkable(w,end))return Collections.emptyList();
-        PriorityQueue<Node> open=new PriorityQueue<>(Comparator.comparingDouble(n->n.f)); Map<BlockPos,Node> known=new HashMap<>(); Set<BlockPos> closed=new HashSet<>();
+        PriorityQueue<Node> open=new PriorityQueue<>(64,BY_SCORE); Map<BlockPos,Node> known=new HashMap<>(512); Set<BlockPos> closed=new HashSet<>(512);
         Node first=new Node(start,null,0,heuristic(start,end)); open.add(first);known.put(start,first);int searched=0;
         while(!open.isEmpty()&&searched++<SEARCH_LIMIT){Node n=open.poll();if(!closed.add(n.pos))continue;if(n.pos.distanceSq(end)<=1)return build(n);
-            for(BlockPos candidate:neighbors(w,n.pos)){if(closed.contains(candidate)||Math.abs(candidate.getX()-start.getX())>RANGE||Math.abs(candidate.getZ()-start.getZ())>RANGE)continue;double g=n.g+(candidate.getY()==n.pos.getY()?1:1.4);Node old=known.get(candidate);if(old==null||g<old.g){Node next=new Node(candidate,n,g,g+heuristic(candidate,end));known.put(candidate,next);open.add(next);}}
+            addDirection(w,n,1,0,start,end,open,known,closed);addDirection(w,n,-1,0,start,end,open,known,closed);addDirection(w,n,0,1,start,end,open,known,closed);addDirection(w,n,0,-1,start,end,open,known,closed);
+            if(ladder(w,n.pos)){BlockPos up=n.pos.up(),down=n.pos.down();if(walkable(w,up))addCandidate(n,up,start,end,open,known,closed);if(walkable(w,down))addCandidate(n,down,start,end,open,known,closed);}
         } return Collections.emptyList();
     }
-    private static List<BlockPos> neighbors(World w,BlockPos p){List<BlockPos> out=new ArrayList<>(8);int[][] dirs={{1,0},{-1,0},{0,1},{0,-1}};for(int[] d:dirs){for(int dy=1;dy>=-1;dy--){BlockPos n=p.add(d[0],dy,d[1]);if(walkable(w,n)){out.add(n);break;}}}if(ladder(w,p)){BlockPos up=p.up(),down=p.down();if(walkable(w,up))out.add(up);if(walkable(w,down))out.add(down);}return out;}
+    private static void addDirection(World w,Node node,int dx,int dz,BlockPos start,BlockPos end,PriorityQueue<Node> open,Map<BlockPos,Node> known,Set<BlockPos> closed){for(int dy=1;dy>=-1;dy--){BlockPos candidate=node.pos.add(dx,dy,dz);if(walkable(w,candidate)){addCandidate(node,candidate,start,end,open,known,closed);return;}}}
+    private static void addCandidate(Node node,BlockPos candidate,BlockPos start,BlockPos end,PriorityQueue<Node> open,Map<BlockPos,Node> known,Set<BlockPos> closed){if(closed.contains(candidate)||Math.abs(candidate.getX()-start.getX())>RANGE||Math.abs(candidate.getZ()-start.getZ())>RANGE)return;double g=node.g+(candidate.getY()==node.pos.getY()?1:1.4);Node old=known.get(candidate);if(old==null||g<old.g){Node next=new Node(candidate,node,g,g+heuristic(candidate,end));known.put(candidate,next);open.add(next);}}
     private static boolean walkable(World w,BlockPos p){if(!w.isBlockLoaded(p)||!clear(w,p)||!clear(w,p.up()))return false;return solid(w,p.down())||ladder(w,p);}
     private static boolean clear(World w,BlockPos p){return w.isAirBlock(p)||ladder(w,p);}
     private static boolean solid(World w,BlockPos p){return w.getBlockState(p).getMaterial().blocksMovement();}

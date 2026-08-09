@@ -26,7 +26,7 @@ import java.util.*;
 @SideOnly(Side.CLIENT)
 public class GuiMindControl extends GuiScreen {
     private final UUID target; private final int entityId; private final String name; private final boolean playerInventory; private final List<ItemStack> items; private final float snapshotHealth,maxHealth; private final int armor,remainingTicks; private final List<AbilityInfo> abilities; private final String superpowerId,superpowerName; private boolean abilityAutocast, abilitiesTab;
-    private int left,top,w,h,abilityScroll; private long openedWorldTick;
+    private int left,top,w,h,abilityScroll; private long openedWorldTick; private List<Ability> frameAbilities=Collections.emptyList();
 
     public GuiMindControl(UUID target,int entityId,String name,boolean playerInventory,List<ItemStack> items,float health,float maxHealth,int armor,int remainingTicks,List<AbilityInfo> abilities,boolean abilityAutocast,String superpowerId,String superpowerName){this.target=target;this.entityId=entityId;this.name=name;this.playerInventory=playerInventory;this.items=items;this.snapshotHealth=health;this.maxHealth=maxHealth;this.armor=armor;this.remainingTicks=remainingTicks;this.abilities=abilities;this.abilityAutocast=abilityAutocast;this.superpowerId=superpowerId;this.superpowerName=superpowerName;}
 
@@ -76,7 +76,7 @@ public class GuiMindControl extends GuiScreen {
     }
 
     private void updateTabButtons(){ for(GuiButton b:buttonList)if(b.id==2)b.visible=abilitiesTab; }
-    private Ability localAbility(EntityLivingBase entity,String key){if(entity!=null)for(Ability a:Ability.getAbilities(entity))if(key.equals(a.getKey()))return a;return null;}
+    private Ability localAbility(EntityLivingBase ignored,String key){for(Ability a:frameAbilities)if(key.equals(a.getKey()))return a;return null;}
     private Superpower localSuperpower(EntityLivingBase entity){return entity==null?null:SuperpowerHandler.getSuperpower(entity);}
     /** The upper-left sigil is the injected superpower itself, never merely one of its abilities. */
     private void drawPrimaryAbility(EntityLivingBase entity,int x,int y){
@@ -94,6 +94,7 @@ public class GuiMindControl extends GuiScreen {
         if(abilities.size()>count)tip.add(TextFormatting.GRAY+"+ "+(abilities.size()-count)+" more abilities");tip.add(TextFormatting.GOLD+"Click to command its abilities");drawHoveringText(tip,mouseX,mouseY);
     }
     private void drawAbilities(EntityLivingBase entity,int mouseX,int mouseY){
+        frameAbilities=entity==null?Collections.emptyList():Ability.getAbilities(entity);
         int x=left+13, right=left+w-13; drawString(fontRenderer,superpowerName.isEmpty()?"NO INJECTED SUPERPOWER":superpowerName.toUpperCase(Locale.ROOT),x,top+48,0xFFFFD86A);drawString(fontRenderer,"Its active abilities can be compelled; passive abilities are observed.",x,top+61,0xFFE9E3D2);
         int toggleY=top+75;Gui.drawRect(x,toggleY,right,toggleY+20,0xB01B1712);drawString(fontRenderer,"COMBAT AUTOPILOT",x+8,toggleY+6,0xFFFFD86A);int toggleX=right-53;Gui.drawRect(toggleX,toggleY+4,right-6,toggleY+16,abilityAutocast?0xFF36783A:0xFF5D2426);drawCenteredString(fontRenderer,abilityAutocast?"ON":"OFF",(toggleX+right-6)/2,toggleY+6,0xFFFFFFFF);
         int y=top+102; if(abilities.isEmpty())drawString(fontRenderer,"This mind has no usable Lucraft actions.",x,y+8,0xFFB9AF96);
@@ -116,7 +117,7 @@ public class GuiMindControl extends GuiScreen {
         // Counter-rotating warped rings.
         for(int ring=0;ring<5;ring++){double spin=time*(ring%2==0?1D:-.68D)+ring*1.21D,r=radius-ring*8D+Math.sin(time*1.4+ring)*2.2D;b.begin(GL11.GL_LINE_STRIP,DefaultVertexFormats.POSITION_COLOR);for(int i=0;i<=48;i++){double a=spin+i*Math.PI*2/48,warp=Math.sin(a*(2+ring%3)+time*1.8)*2.8;float alpha=.88F-ring*.10F;b.pos(cx+Math.cos(a)*(r+warp),cy+Math.sin(a)*(r+warp)*.78,0).color(1F,.48F+ring*.07F,.05F,alpha).endVertex();}tess.draw();}
         // Broken rune arcs keep the portal from reading as simple concentric circles.
-        for(int rune=0;rune<16;rune++){double a=time*.38+rune*Math.PI*2/16,r=radius+5+Math.sin(rune*4.7)*3;b.begin(GL11.GL_LINES,DefaultVertexFormats.POSITION_COLOR);b.pos(cx+Math.cos(a)*r,cy+Math.sin(a)*r*.78,0).color(1F,.86F,.28F,.9F).endVertex();b.pos(cx+Math.cos(a+.10)*(r+4),cy+Math.sin(a+.10)*(r+4)*.78,0).color(1F,.42F,.03F,.18F).endVertex();tess.draw();}
+        b.begin(GL11.GL_LINES,DefaultVertexFormats.POSITION_COLOR);for(int rune=0;rune<16;rune++){double a=time*.38+rune*Math.PI*2/16,r=radius+5+Math.sin(rune*4.7)*3;b.pos(cx+Math.cos(a)*r,cy+Math.sin(a)*r*.78,0).color(1F,.86F,.28F,.9F).endVertex();b.pos(cx+Math.cos(a+.10)*(r+4),cy+Math.sin(a+.10)*(r+4)*.78,0).color(1F,.42F,.03F,.18F).endVertex();}tess.draw();
         GlStateManager.depthMask(true);GlStateManager.blendFunc(GL11.GL_SRC_ALPHA,GL11.GL_ONE_MINUS_SRC_ALPHA);GlStateManager.disableBlend();GlStateManager.enableTexture2D();GlStateManager.enableLighting();GlStateManager.color(1F,1F,1F,1F);GlStateManager.popMatrix();
     }
 

@@ -399,6 +399,10 @@ public class ArrowEffectHandler {
     // -------------------------------------------------------------------------
 
     private EntityLivingBase findEntityByUUID(EntityLivingBase relativeTo, UUID uuid) {
+        if(relativeTo.world instanceof net.minecraft.world.WorldServer){
+            net.minecraft.entity.Entity entity=((net.minecraft.world.WorldServer)relativeTo.world).getEntityFromUuid(uuid);
+            return entity instanceof EntityLivingBase?(EntityLivingBase)entity:null;
+        }
         for (net.minecraft.entity.Entity e : relativeTo.world.loadedEntityList) {
             if (e instanceof EntityLivingBase && e.getUniqueID().equals(uuid)) {
                 return (EntityLivingBase) e;

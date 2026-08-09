@@ -106,6 +106,14 @@ public class PvpQueueManager {
     private final Map<UUID, ActiveMatch> playerToMatch = new HashMap<UUID, ActiveMatch>();
     private final Map<UUID, FfaMatch> playerToFfaMatch = new HashMap<UUID, FfaMatch>();
     private final Map<UUID, SoloMatch> soloMatches = new HashMap<UUID, SoloMatch>();
+    // Reused server-thread snapshots avoid several sets/lists of garbage every tick.
+    private final Set<ActiveMatch> activeMatchTickView = new HashSet<ActiveMatch>();
+    private final Set<FfaMatch> ffaMatchTickView = new HashSet<FfaMatch>();
+    private final List<SoloMatch> soloMatchTickView = new ArrayList<SoloMatch>();
+
+    private Set<ActiveMatch> activeMatchesForTick() { activeMatchTickView.clear(); activeMatchTickView.addAll(playerToMatch.values()); return activeMatchTickView; }
+    private Set<FfaMatch> ffaMatchesForTick() { ffaMatchTickView.clear(); ffaMatchTickView.addAll(playerToFfaMatch.values()); return ffaMatchTickView; }
+    private List<SoloMatch> soloMatchesForTick() { soloMatchTickView.clear(); soloMatchTickView.addAll(soloMatches.values()); return soloMatchTickView; }
     private final Map<UUID, ReturnState> pendingReturns = new HashMap<UUID, ReturnState>();
     private final Map<UUID, PlayerInventorySnapshot> pendingInventoryReturns = new HashMap<UUID, PlayerInventorySnapshot>();
     private final Set<UUID> awaitingKitSelection = new HashSet<UUID>();
@@ -1543,13 +1551,13 @@ public class PvpQueueManager {
 
     public synchronized void tickMatchProgress(MinecraftServer server) {
         tickFfaQueue(server);
-        for (ActiveMatch match : new HashSet<ActiveMatch>(playerToMatch.values())) {
+        for (ActiveMatch match : activeMatchesForTick()) {
             tickMatch(server, match);
         }
-        for (FfaMatch match : new HashSet<FfaMatch>(playerToFfaMatch.values())) {
+        for (FfaMatch match : ffaMatchesForTick()) {
             tickFfaMatch(server, match);
         }
-        for (SoloMatch solo : new ArrayList<SoloMatch>(soloMatches.values())) {
+        for (SoloMatch solo : soloMatchesForTick()) {
             tickSoloMatch(server, solo);
         }
         tickSpectatorBats(server);
@@ -2630,17 +2638,17 @@ public class PvpQueueManager {
     }
 
     public synchronized void tickArenaSafety(MinecraftServer server) {
-        for (ActiveMatch match : new HashSet<ActiveMatch>(playerToMatch.values())) {
+        for (ActiveMatch match : activeMatchesForTick()) {
             enforcePlayerInsideArena(server, match.firstPlayer, match.dimensionId, match.slot);
             enforcePlayerInsideArena(server, match.secondPlayer, match.dimensionId, match.slot);
         }
-        for (FfaMatch match : new HashSet<FfaMatch>(playerToFfaMatch.values())) {
+        for (FfaMatch match : ffaMatchesForTick()) {
             for (UUID playerId : match.playerOrder) {
                 enforcePlayerInsideArena(server, playerId, match.dimensionId, match.slot);
             }
         }
 
-        for (SoloMatch solo : new ArrayList<SoloMatch>(soloMatches.values())) {
+        for (SoloMatch solo : soloMatchesForTick()) {
             enforcePlayerInsideArena(server, solo.playerId, solo.dimensionId, solo.slot);
         }
     }
@@ -2653,16 +2661,16 @@ public class PvpQueueManager {
      * forfeit mid-tick from here.
      */
     public synchronized void tickDimensionEscapeCheck(MinecraftServer server) {
-        for (ActiveMatch match : new HashSet<ActiveMatch>(playerToMatch.values())) {
+        for (ActiveMatch match : activeMatchesForTick()) {
             confirmArrival(server, match.firstPlayer, match.dimensionId);
             confirmArrival(server, match.secondPlayer, match.dimensionId);
         }
-        for (FfaMatch match : new HashSet<FfaMatch>(playerToFfaMatch.values())) {
+        for (FfaMatch match : ffaMatchesForTick()) {
             for (UUID playerId : new ArrayList<UUID>(match.playerOrder)) {
                 confirmArrival(server, playerId, match.dimensionId);
             }
         }
-        for (SoloMatch solo : new ArrayList<SoloMatch>(soloMatches.values())) {
+        for (SoloMatch solo : soloMatchesForTick()) {
             confirmArrival(server, solo.playerId, solo.dimensionId);
         }
         // Also clear pendingArenaArrivals for spectators/returners who have completed

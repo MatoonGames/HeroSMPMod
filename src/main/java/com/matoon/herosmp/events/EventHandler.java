@@ -145,15 +145,12 @@ public class EventHandler {
             return;
         }
 
-        System.out.println("Detected disconnect GUI: " + guiName);
-
         ITextComponent message = extractDisconnectMessage(openedGui);
         if (message == null) {
             message = new TextComponentString("Disconnected from the server.");
         }
 
         event.setGui(new CustomDisconnectedScreen(openedGui, message));
-        System.out.println("CustomDisconnectedScreen set after disconnection");
     }
 
     private ITextComponent extractDisconnectMessage(GuiScreen gui) {

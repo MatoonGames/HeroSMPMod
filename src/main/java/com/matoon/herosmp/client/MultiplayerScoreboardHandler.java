@@ -12,18 +12,14 @@ public class MultiplayerScoreboardHandler {
     public void renderScoreboard(ScaledResolution scaledRes) {
         // Check if the scoreboard is enabled in the config
         if (!HeroSMP.enableScoreboard) {
-            System.out.println("Scoreboard is disabled in the config, skipping render.");
             return;
         }
 
         Minecraft mc = Minecraft.getMinecraft();
 
         if (mc == null || mc.player == null || mc.getCurrentServerData() == null) {
-            System.out.println("Minecraft instance, player, or server data is null, skipping scoreboard render.");
             return;
         }
-
-        System.out.println("Rendering scoreboard...");
 
         // Set position to right-center of the screen
         int centerX = scaledRes.getScaledWidth() - 10; // 10 pixels from the right edge

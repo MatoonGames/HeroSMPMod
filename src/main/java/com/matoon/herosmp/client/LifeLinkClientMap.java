@@ -21,6 +21,7 @@ import java.util.UUID;
 public final class LifeLinkClientMap {
 
     private static final Map<UUID, UUID> LINKS = new HashMap<>();
+    private static final Map<UUID, UUID> READ_ONLY_LINKS = Collections.unmodifiableMap(LINKS);
 
     private LifeLinkClientMap() {
     }
@@ -39,6 +40,6 @@ public final class LifeLinkClientMap {
 
     /** Returns an unmodifiable view of all current client-side links. */
     public static Map<UUID, UUID> getLinks() {
-        return Collections.unmodifiableMap(LINKS);
+        return READ_ONLY_LINKS;
     }
 }

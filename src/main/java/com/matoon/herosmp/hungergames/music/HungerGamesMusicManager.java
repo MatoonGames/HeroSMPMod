@@ -10,6 +10,7 @@ import net.minecraft.util.ResourceLocation;
 import javax.annotation.Nullable;
 import java.io.File;
 import java.io.IOException;
+import java.io.InputStream;
 import java.nio.file.Files;
 import java.util.*;
 
@@ -25,6 +26,7 @@ public class HungerGamesMusicManager {
     private final File musicDir;
     private final Random random = new Random();
     private final Map<String, List<String>> tracksByPhase = new HashMap<>();
+    private List<PacketHGMusicManifest.FileEntry> manifestEntries = Collections.emptyList();
 
     public HungerGamesMusicManager(File musicDir) {
         this.musicDir = musicDir;
@@ -36,16 +38,20 @@ public class HungerGamesMusicManager {
 
     public void scan() {
         tracksByPhase.clear();
+        List<PacketHGMusicManifest.FileEntry> manifest = new ArrayList<>();
         for (String phase : ALL_PHASES) {
             List<String> tracks = new ArrayList<>();
             File dir = new File(musicDir, phase);
             File[] files = dir.listFiles(f -> f.isFile() && f.getName().endsWith(".ogg"));
             if (files != null) {
-                for (File f : files)
+                for (File f : files) {
                     tracks.add(f.getName().substring(0, f.getName().length() - 4));
+                    manifest.add(new PacketHGMusicManifest.FileEntry(phase, f.getName(), (int) f.length()));
+                }
             }
             tracksByPhase.put(phase, tracks);
         }
+        manifestEntries = Collections.unmodifiableList(manifest);
     }
 
     public boolean hasTracks(String phase) {
@@ -84,15 +90,7 @@ public class HungerGamesMusicManager {
 
     /** Builds a manifest listing every .ogg file on the server. */
     public PacketHGMusicManifest buildManifest() {
-        List<PacketHGMusicManifest.FileEntry> entries = new ArrayList<>();
-        for (String phase : ALL_PHASES) {
-            File dir = new File(musicDir, phase);
-            File[] files = dir.listFiles(f -> f.isFile() && f.getName().endsWith(".ogg"));
-            if (files == null) continue;
-            for (File f : files)
-                entries.add(new PacketHGMusicManifest.FileEntry(phase, f.getName(), (int) f.length()));
-        }
-        return new PacketHGMusicManifest(entries);
+        return new PacketHGMusicManifest(manifestEntries);
     }
 
     /**
@@ -113,22 +111,22 @@ public class HungerGamesMusicManager {
         File file = new File(new File(musicDir, phase), filename);
         if (!file.exists() || !file.isFile()) return;
 
-        byte[] bytes;
-        try {
-            bytes = Files.readAllBytes(file.toPath());
-        } catch (IOException e) {
-            System.err.println("[HeroSMP] Could not read music file " + file + ": " + e.getMessage());
-            return;
-        }
-
-        int total = (int) Math.ceil(bytes.length / (double) PacketHGMusicChunk.CHUNK_SIZE);
+        long fileLength = file.length();
+        int total = (int) Math.ceil(fileLength / (double) PacketHGMusicChunk.CHUNK_SIZE);
         if (total == 0) total = 1;
 
-        for (int i = 0; i < total; i++) {
-            int start  = i * PacketHGMusicChunk.CHUNK_SIZE;
-            int end    = Math.min(start + PacketHGMusicChunk.CHUNK_SIZE, bytes.length);
-            byte[] chunk = Arrays.copyOfRange(bytes, start, end);
-            ModNetwork.CHANNEL.sendTo(new PacketHGMusicChunk(phase, filename, i, total, chunk), player);
+        // Stream one network chunk at a time. Large tracks no longer require a second full-file
+        // byte array (plus every copied packet chunk) to coexist on the server heap.
+        try (InputStream input = Files.newInputStream(file.toPath())) {
+            for (int i = 0; i < total; i++) {
+                int expected=(int)Math.min(PacketHGMusicChunk.CHUNK_SIZE,fileLength-(long)i*PacketHGMusicChunk.CHUNK_SIZE);
+                byte[] chunk=new byte[Math.max(0,expected)];int offset=0;
+                while(offset<chunk.length){int read=input.read(chunk,offset,chunk.length-offset);if(read<0)break;offset+=read;}
+                if(offset<chunk.length)chunk=Arrays.copyOf(chunk,offset);
+                ModNetwork.CHANNEL.sendTo(new PacketHGMusicChunk(phase, filename, i, total, chunk), player);
+            }
+        } catch (IOException e) {
+            System.err.println("[HeroSMP] Could not read music file " + file + ": " + e.getMessage());
         }
     }
 }
