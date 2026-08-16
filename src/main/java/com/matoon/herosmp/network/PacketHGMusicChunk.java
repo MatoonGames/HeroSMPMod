@@ -13,6 +13,8 @@ import java.io.File;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicInteger;
 
 /**
@@ -69,9 +71,16 @@ public class PacketHGMusicChunk implements IMessage {
         private static final ConcurrentHashMap<String, byte[][]> pending = new ConcurrentHashMap<>();
         // How many files we still need to finish writing before we reload resources.
         private static final AtomicInteger pendingFiles = new AtomicInteger(0);
+        private static final AtomicInteger downloadGeneration = new AtomicInteger(0);
+        private static final ExecutorService FILE_IO = Executors.newSingleThreadExecutor(runnable -> {
+            Thread thread = new Thread(runnable, "HeroSMP music file writer");
+            thread.setDaemon(true);
+            return thread;
+        });
 
         /** Called by PacketHGMusicManifest.Handler before requests are sent. */
         public static void setPendingCount(int count) {
+            downloadGeneration.incrementAndGet();
             pendingFiles.set(count);
             pending.clear();
         }
@@ -130,16 +139,18 @@ public class PacketHGMusicChunk implements IMessage {
             // Assemble and write to disk on the main thread.
             byte[][] finalChunks = pending.remove(key);
             Minecraft mc = Minecraft.getMinecraft();
-            mc.addScheduledTask(() -> {
+            int generation = downloadGeneration.get();
+            FILE_IO.execute(() -> {
                 try {
                     writeFile(mc, msg.phase, msg.filename, finalChunks);
                 } catch (IOException e) {
                     System.err.println("[HeroSMP] Failed to write music file " + key + ": " + e.getMessage());
                 }
 
-                // When all files are done, re-register the hg_music.* sound events.
-                if (pendingFiles.decrementAndGet() <= 0) {
-                    reloadSounds(mc);
+                // Only the lightweight sound-registry reload must run on Minecraft's thread.
+                // Ignore completions from an older manifest so they cannot decrement a new batch.
+                if (generation == downloadGeneration.get() && pendingFiles.decrementAndGet() <= 0) {
+                    mc.addScheduledTask(() -> reloadSounds(mc));
                 }
             });
 

@@ -45,7 +45,7 @@ public final class ModEntities {
                 "lucraft_injection",
                 LUCRAFT_INJECTION_ID,
                 HeroSMP.MODID,
-                64,
+                256,
                 1,
                 false,
                 0xAA44FF,

@@ -592,11 +592,19 @@ public class HungerGamesMatch {
         if (gMin == 0 && gMax == 0) { gMin = 3; gMax = 8; }
         if (gMax > 0 && gMax < gMin) gMax = gMin;
 
-        // Determine target spawn count using player count as a hint,
-        // clamped to [gMin, gMax].
+        // Determine the lower bound from player count, then roll within the configured
+        // range. Taking the best of one/two/three rolls makes later phases naturally
+        // trend toward more pickups without ever exceeding the administrator's cap.
         int playerBased = Math.max(gMin, playerOrder.size() / 2);
-        int spawnCount  = gMax > 0 ? Math.min(playerBased, gMax) : playerBased;
-        if (spawnCount < gMin) spawnCount = gMin;
+        int lowerBound = gMax > 0 ? Math.min(playerBased, gMax) : playerBased;
+        lowerBound = Math.max(lowerBound, gMin);
+        int upperBound = gMax > 0 ? gMax : lowerBound + phase * 2;
+        int spawnCount = lowerBound;
+        for (int roll = 0; roll < Math.max(1, phase); roll++) {
+            int candidate = lowerBound + (upperBound > lowerBound
+                    ? rand.nextInt(upperBound - lowerBound + 1) : 0);
+            spawnCount = Math.max(spawnCount, candidate);
+        }
 
         // Build a weighted list for random selection.
         List<ItemStack> weighted = new ArrayList<>();
@@ -635,30 +643,25 @@ public class HungerGamesMatch {
             int tx = cx + dx;
             int tz = cz + dz;
 
-            int surfaceY = world.getHeight(tx, tz);
-            int blockY   = surfaceY - 1;
-            if (blockY < 1) continue;
-
-            net.minecraft.util.math.BlockPos surfacePos = new net.minecraft.util.math.BlockPos(tx, blockY, tz);
-            net.minecraft.block.Block surfaceBlock = world.getBlockState(surfacePos).getBlock();
-
-            // Skip invalid surfaces: unloaded chunks return height 0, air, or problematic materials.
-            if (surfaceBlock == Blocks.AIR) continue;
-            String rn = surfaceBlock.getRegistryName() != null ? surfaceBlock.getRegistryName().toString() : "";
-            if (rn.contains("water") || rn.contains("lava") || rn.contains("leaves")
-                    || rn.contains("ice") || rn.contains("flower") || rn.contains("grass_path")) {
-                continue;
-            }
-            if (!world.isAirBlock(surfacePos.up())) continue;
+            BlockPos spawnPos = EntityLucraftInjection.findSurfaceSpawn(world, tx, tz);
+            if (spawnPos == null) continue;
 
             // Pass the real lucraftcore:injection ItemStack so the entity (and its renderer)
             // always display the correct tinted vial for this superpower.
             EntityLucraftInjection injection = new EntityLucraftInjection(
-                    world, tx + 0.5, surfaceY + 0.5, tz + 0.5, chosen.copy());
-            world.spawnEntity(injection);
-            onMapCount.merge(lucraftId, 1, Integer::sum);
-            spawned++;
+                    world, tx + 0.5, spawnPos.getY() + 0.5, tz + 0.5,
+                    chosen.copy(), shouldLockInjection(phase));
+            if (world.spawnEntity(injection)) {
+                onMapCount.merge(lucraftId, 1, Integer::sum);
+                spawned++;
+            }
         }
+    }
+
+    /** Later phases deliberately have a greater chance to require a key. */
+    private boolean shouldLockInjection(int phase) {
+        float chance = phase >= 3 ? 0.65F : phase == 2 ? 0.40F : 0.20F;
+        return rand.nextFloat() < chance;
     }
 
     private void fillChestsWithLoot(MinecraftServer server, int phase) {
@@ -674,7 +677,8 @@ public class HungerGamesMatch {
         }
         List<ItemStack> effectivePool = new ArrayList<>(phasePool);
         effectivePool.addAll(lootAllPhases);
-        if (effectivePool.isEmpty()) return;
+        boolean needsPowerKeys = hasInjectionPickupsForPhase(phase);
+        if (effectivePool.isEmpty() && !needsPowerKeys) return;
 
         // Build weighted candidate list: each item appears `weight` times.
         List<ItemStack> weighted = new ArrayList<>();
@@ -682,8 +686,6 @@ public class HungerGamesMatch {
             int w = HungerGamesLootEntry.getWeight(entry);
             for (int i = 0; i < w; i++) weighted.add(entry);
         }
-        if (weighted.isEmpty()) return;
-
         // Collect chests.
         List<TileEntityChest> chests = new ArrayList<>();
         for (TileEntity te : new ArrayList<>(hgWorld.loadedTileEntityList))
@@ -752,6 +754,42 @@ public class HungerGamesMatch {
                 globalSpawned.put(chosen, globalSpawned.getOrDefault(chosen, 0) + 1);
                 perChestSpawned.put(chosen, perChestSpawned.getOrDefault(chosen, 0) + 1);
             }
+        }
+
+        if (needsPowerKeys) addPowerKeysToChests(chests, Math.min(phase, chests.size()));
+    }
+
+    private boolean hasInjectionPickupsForPhase(int phase) {
+        List<ItemStack> phasePool;
+        switch (phase) {
+            case 2: phasePool = injectionPhase2; break;
+            case 3: phasePool = injectionPhase3; break;
+            default: phasePool = injectionPhase1; break;
+        }
+        for (ItemStack stack : phasePool) {
+            if (LucraftInjectionEntry.isValidInjection(stack)) return true;
+        }
+        for (ItemStack stack : injectionAllPhases) {
+            if (LucraftInjectionEntry.isValidInjection(stack)) return true;
+        }
+        return false;
+    }
+
+    private void addPowerKeysToChests(List<TileEntityChest> chests, int keyCount) {
+        List<TileEntityChest> shuffled = new ArrayList<>(chests);
+        java.util.Collections.shuffle(shuffled, rand);
+        int placed = 0;
+        for (TileEntityChest chest : shuffled) {
+            List<Integer> emptySlots = new ArrayList<>();
+            for (int slot = 0; slot < chest.getSizeInventory(); slot++) {
+                if (chest.getStackInSlot(slot).isEmpty()) emptySlots.add(slot);
+            }
+            if (emptySlots.isEmpty()) continue;
+            int slot = emptySlots.get(rand.nextInt(emptySlots.size()));
+            chest.setInventorySlotContents(slot,
+                    new ItemStack(com.matoon.herosmp.registry.ModItems.POWER_KEY));
+            chest.markDirty();
+            if (++placed >= keyCount) break;
         }
     }
 

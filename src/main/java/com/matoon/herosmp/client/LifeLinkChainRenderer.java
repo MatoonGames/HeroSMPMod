@@ -1,14 +1,15 @@
 package com.matoon.herosmp.client;
 
-import com.matoon.herosmp.client.LifeLinkClientMap;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.renderer.BufferBuilder;
 import net.minecraft.client.renderer.GlStateManager;
 import net.minecraft.client.renderer.Tessellator;
+import net.minecraft.client.renderer.culling.Frustum;
 import net.minecraft.client.renderer.vertex.DefaultVertexFormats;
 import net.minecraft.entity.Entity;
 import net.minecraft.entity.EntityLivingBase;
 import net.minecraft.util.ResourceLocation;
+import net.minecraft.util.math.AxisAlignedBB;
 import net.minecraftforge.client.event.RenderWorldLastEvent;
 import net.minecraftforge.fml.common.eventhandler.SubscribeEvent;
 import net.minecraftforge.fml.relauncher.Side;
@@ -31,6 +32,7 @@ import java.util.UUID;
 public class LifeLinkChainRenderer {
 
     private final Map<UUID, EntityLivingBase> entityCache = new HashMap<>();
+    private final Map<UUID, Integer> nextEntityLookupTick = new HashMap<>();
     private net.minecraft.world.World cachedWorld;
 
     private static final ResourceLocation CHAIN_TEXTURE =
@@ -41,12 +43,17 @@ public class LifeLinkChainRenderer {
 
     /** How many texture repeats per block of chain length. */
     private static final float TEX_REPEAT_PER_BLOCK = 1.0f;
+    private static final double MAX_CHAIN_DISTANCE_SQ = 96.0D * 96.0D;
 
     @SubscribeEvent
     public void onRenderWorldLast(RenderWorldLastEvent event) {
         Minecraft mc = Minecraft.getMinecraft();
         if (mc.world == null || mc.player == null) return;
-        if (cachedWorld != mc.world) { entityCache.clear(); cachedWorld = mc.world; }
+        if (cachedWorld != mc.world) {
+            entityCache.clear();
+            nextEntityLookupTick.clear();
+            cachedWorld = mc.world;
+        }
 
         Map<UUID, UUID> links = LifeLinkClientMap.getLinks();
         if (links.isEmpty()) return;
@@ -65,6 +72,10 @@ public class LifeLinkChainRenderer {
 
         Tessellator tessellator = Tessellator.getInstance();
         BufferBuilder buffer = tessellator.getBuffer();
+        Frustum frustum = new Frustum();
+        frustum.setPosition(cx, cy, cz);
+        buffer.begin(GL11.GL_QUADS, DefaultVertexFormats.POSITION_TEX_COLOR);
+        boolean hasGeometry = false;
 
         for (Map.Entry<UUID, UUID> entry : links.entrySet()) {
             UUID linkedUuid = entry.getKey();
@@ -82,24 +93,35 @@ public class LifeLinkChainRenderer {
             double ly2 = lerp(linkerEntity.lastTickPosY, linkerEntity.posY, partialTicks) + linkerEntity.height * 0.5;
             double lz2 = lerp(linkerEntity.lastTickPosZ, linkerEntity.posZ, partialTicks);
 
-            drawChain(buffer, tessellator, lx1, ly1, lz1, lx2, ly2, lz2, cx, cy, cz);
+            AxisAlignedBB bounds = new AxisAlignedBB(
+                    Math.min(lx1, lx2), Math.min(ly1, ly2), Math.min(lz1, lz2),
+                    Math.max(lx1, lx2), Math.max(ly1, ly2), Math.max(lz1, lz2)).grow(CHAIN_WIDTH);
+            if (!frustum.isBoundingBoxInFrustum(bounds)
+                    || distanceToSegmentSq(cx, cy, cz, lx1, ly1, lz1, lx2, ly2, lz2) > MAX_CHAIN_DISTANCE_SQ) {
+                continue;
+            }
+
+            hasGeometry |= appendChain(buffer, lx1, ly1, lz1, lx2, ly2, lz2, cx, cy, cz);
         }
+
+        if (hasGeometry) tessellator.draw();
+        else buffer.finishDrawing();
 
         GlStateManager.disableBlend();
         GlStateManager.enableLighting();
         GlStateManager.popMatrix();
     }
 
-    private void drawChain(BufferBuilder buffer, Tessellator tessellator,
-                           double x1, double y1, double z1,
-                           double x2, double y2, double z2,
-                           double camX, double camY, double camZ) {
+    private boolean appendChain(BufferBuilder buffer,
+                                double x1, double y1, double z1,
+                                double x2, double y2, double z2,
+                                double camX, double camY, double camZ) {
         // Direction vector of the chain.
         double dx = x2 - x1;
         double dy = y2 - y1;
         double dz = z2 - z1;
         double length = Math.sqrt(dx * dx + dy * dy + dz * dz);
-        if (length < 0.01) return;
+        if (length < 0.01) return false;
 
         double ndx = dx / length;
         double ndy = dy / length;
@@ -111,7 +133,7 @@ public class LifeLinkChainRenderer {
         double viewY = camY - (y1 + y2) * 0.5;
         double viewZ = camZ - (z1 + z2) * 0.5;
         double viewLen = Math.sqrt(viewX * viewX + viewY * viewY + viewZ * viewZ);
-        if (viewLen < 0.01) return;
+        if (viewLen < 0.01) return false;
         viewX /= viewLen;
         viewY /= viewLen;
         viewZ /= viewLen;
@@ -121,14 +143,12 @@ public class LifeLinkChainRenderer {
         double sy = ndz * viewX - ndx * viewZ;
         double sz = ndx * viewY - ndy * viewX;
         double sLen = Math.sqrt(sx * sx + sy * sy + sz * sz);
-        if (sLen < 0.001) return;
+        if (sLen < 0.001) return false;
         sx = sx / sLen * CHAIN_WIDTH;
         sy = sy / sLen * CHAIN_WIDTH;
         sz = sz / sLen * CHAIN_WIDTH;
 
         float texV = (float) (length * TEX_REPEAT_PER_BLOCK);
-
-        buffer.begin(GL11.GL_QUADS, DefaultVertexFormats.POSITION_TEX_COLOR);
 
         // Two quads (crossing ribbon for thickness perception)
         renderQuad(buffer, x1, y1, z1, x2, y2, z2, sx, sy, sz, texV);
@@ -145,7 +165,7 @@ public class LifeLinkChainRenderer {
             renderQuad(buffer, x1, y1, z1, x2, y2, z2, s2x, s2y, s2z, texV);
         }
 
-        tessellator.draw();
+        return true;
     }
 
     private void renderQuad(BufferBuilder buffer,
@@ -163,19 +183,43 @@ public class LifeLinkChainRenderer {
         return a + (b - a) * t;
     }
 
+    private static double distanceToSegmentSq(double px, double py, double pz,
+                                              double x1, double y1, double z1,
+                                              double x2, double y2, double z2) {
+        double dx = x2 - x1;
+        double dy = y2 - y1;
+        double dz = z2 - z1;
+        double lengthSq = dx * dx + dy * dy + dz * dz;
+        if (lengthSq < 1.0E-6D) {
+            double ox = px - x1, oy = py - y1, oz = pz - z1;
+            return ox * ox + oy * oy + oz * oz;
+        }
+        double t = ((px - x1) * dx + (py - y1) * dy + (pz - z1) * dz) / lengthSq;
+        t = Math.max(0.0D, Math.min(1.0D, t));
+        double ox = px - (x1 + dx * t);
+        double oy = py - (y1 + dy * t);
+        double oz = pz - (z1 + dz * t);
+        return ox * ox + oy * oy + oz * oz;
+    }
+
     private EntityLivingBase findEntityByUUID(Minecraft mc, UUID uuid) {
         EntityLivingBase cached = entityCache.get(uuid);
         if (cached != null && !cached.isDead && cached.world == mc.world && uuid.equals(cached.getUniqueID())) {
             return cached;
         }
         entityCache.remove(uuid);
+        int tick = mc.player == null ? 0 : mc.player.ticksExisted;
+        Integer retryAt = nextEntityLookupTick.get(uuid);
+        if (retryAt != null && tick < retryAt) return null;
         for (Entity e : mc.world.loadedEntityList) {
             if (e instanceof EntityLivingBase && e.getUniqueID().equals(uuid)) {
                 EntityLivingBase found = (EntityLivingBase) e;
                 entityCache.put(uuid, found);
+                nextEntityLookupTick.remove(uuid);
                 return found;
             }
         }
+        nextEntityLookupTick.put(uuid, tick + 20);
         return null;
     }
 }

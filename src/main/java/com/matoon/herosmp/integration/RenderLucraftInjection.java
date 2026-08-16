@@ -38,6 +38,11 @@ import javax.annotation.Nullable;
 @SideOnly(Side.CLIENT)
 public class RenderLucraftInjection extends Render<EntityLucraftInjection> {
 
+    private static final double NAME_TAG_DISTANCE_SQ =
+            EntityLucraftInjection.NAME_TAG_RANGE * EntityLucraftInjection.NAME_TAG_RANGE;
+    private static final ResourceLocation POWER_LOCK_TEXTURE =
+            new ResourceLocation("herosmp", "textures/gui/power_lock.png");
+
     public RenderLucraftInjection(RenderManager renderManager) {
         super(renderManager);
     }
@@ -49,6 +54,8 @@ public class RenderLucraftInjection extends Render<EntityLucraftInjection> {
         ItemStack stack = entity.getInjectionStack();
         if (stack.isEmpty()) return;
 
+        double viewerDistanceSq = renderManager.renderViewEntity == null
+                ? 0.0D : renderManager.renderViewEntity.getDistanceSq(entity);
         // Continuous idle animation — ticksExisted increments normally on the client
         // and is never reset, so it is safe for the bob/spin loop.
         float age  = entity.ticksExisted + partialTicks;
@@ -90,11 +97,62 @@ public class RenderLucraftInjection extends Render<EntityLucraftInjection> {
         GlStateManager.disableBlend();
         GlStateManager.popMatrix();
 
+        if (entity.isLocked()) {
+            renderLockedDots(x, y + bob, z);
+            renderLockBillboard(x, y, z);
+        }
+
         // Draw the name-tag if this player is within range.
-        if (entity.isNameTagVisible() && !entity.isCollected()) {
+        if (viewerDistanceSq <= NAME_TAG_DISTANCE_SQ && !entity.isCollected()) {
             String label = TextFormatting.LIGHT_PURPLE + "" + TextFormatting.BOLD + entity.getPowerName();
             renderNameTag(entity, label, x, y, z, partialTicks);
         }
+    }
+
+    /** Draws a gray dotted screen-facing veil around the vial. */
+    private void renderLockedDots(double x, double y, double z) {
+        final float[][] dots = {
+                {-0.30F, 0.45F}, {-0.08F, 0.68F}, {0.22F, 0.57F},
+                {0.34F, 0.30F}, {-0.26F, 0.16F}, {0.04F, 0.27F},
+                {0.27F, 0.02F}, {-0.12F, -0.04F}, {-0.32F, -0.18F},
+                {0.13F, -0.25F}, {0.34F, -0.39F}, {-0.09F, -0.47F}
+        };
+        GlStateManager.disableLighting();
+        GlStateManager.enableBlend();
+        GlStateManager.blendFunc(GlStateManager.SourceFactor.SRC_ALPHA,
+                GlStateManager.DestFactor.ONE_MINUS_SRC_ALPHA);
+        for (float[] dot : dots) {
+            GlStateManager.pushMatrix();
+            GlStateManager.translate(x + dot[0], y + 0.75D + dot[1], z - 0.03D);
+            faceCamera();
+            GlStateManager.scale(-0.018F, -0.018F, 0.018F);
+            Gui.drawRect(-2, -2, 2, 2, 0xB0A0A0A0);
+            GlStateManager.popMatrix();
+        }
+        GlStateManager.disableBlend();
+        GlStateManager.enableLighting();
+    }
+
+    /** Draws the supplied padlock sprite as a billboard above the pickup. */
+    private void renderLockBillboard(double x, double y, double z) {
+        GlStateManager.pushMatrix();
+        GlStateManager.translate(x, y + 2.15D, z);
+        faceCamera();
+        GlStateManager.scale(-0.045F, -0.045F, 0.045F);
+        GlStateManager.disableLighting();
+        GlStateManager.enableBlend();
+        GlStateManager.blendFunc(GlStateManager.SourceFactor.SRC_ALPHA,
+                GlStateManager.DestFactor.ONE_MINUS_SRC_ALPHA);
+        Minecraft.getMinecraft().getTextureManager().bindTexture(POWER_LOCK_TEXTURE);
+        Gui.drawModalRectWithCustomSizedTexture(-8, -8, 0, 0, 16, 16, 16, 16);
+        GlStateManager.disableBlend();
+        GlStateManager.enableLighting();
+        GlStateManager.popMatrix();
+    }
+
+    private void faceCamera() {
+        GlStateManager.rotate(-renderManager.playerViewY, 0.0F, 1.0F, 0.0F);
+        GlStateManager.rotate(renderManager.playerViewX, 1.0F, 0.0F, 0.0F);
     }
 
     /**
@@ -105,10 +163,6 @@ public class RenderLucraftInjection extends Render<EntityLucraftInjection> {
                                double x, double y, double z, float partialTicks) {
         FontRenderer fr = Minecraft.getMinecraft().fontRenderer;
         if (fr == null) return;
-
-        double dist = renderManager.renderViewEntity != null
-                ? renderManager.renderViewEntity.getDistanceSq(entity) : 0;
-        if (dist > 64 * 64) return; // don't render beyond 64 blocks
 
         float yOffset = 1.8F; // height above entity origin (item is ~0.5 tall + BASE_SCALE visual)
 

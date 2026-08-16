@@ -1,6 +1,6 @@
 package com.matoon.herosmp.network;
 
-import com.matoon.herosmp.client.SnapSkinOverlay;
+import com.matoon.herosmp.HeroSMP;
 import io.netty.buffer.ByteBuf;
 import net.minecraft.client.Minecraft;
 import net.minecraftforge.fml.common.network.simpleimpl.IMessage;
@@ -23,9 +23,9 @@ import java.util.UUID;
  */
 public class PacketSnapOverlay implements IMessage {
 
-    private UUID playerUuid;
-    private boolean mainHand;
-    private boolean active;
+    UUID playerUuid;
+    boolean mainHand;
+    boolean active;
 
     /** Required no-arg constructor for Forge deserialization. */
     public PacketSnapOverlay() {}
@@ -51,17 +51,10 @@ public class PacketSnapOverlay implements IMessage {
         active     = buf.readBoolean();
     }
 
-    @SideOnly(Side.CLIENT)
     public static class Handler implements IMessageHandler<PacketSnapOverlay, IMessage> {
         @Override
         public IMessage onMessage(PacketSnapOverlay msg, MessageContext ctx) {
-            Minecraft.getMinecraft().addScheduledTask(() -> {
-                if (msg.active) {
-                    SnapSkinOverlay.add(msg.playerUuid, msg.mainHand);
-                } else {
-                    SnapSkinOverlay.remove(msg.playerUuid);
-                }
-            });
+            HeroSMP.proxy.handleClientPacket(msg);
             return null;
         }
     }

@@ -12,6 +12,7 @@ public class ModSounds {
     public static SoundEvent SNAP_1;
     public static SoundEvent SNAP_2;
     public static SoundEvent SNAP_3;
+    public static SoundEvent UNLOCK_POWER;
 
     /**
      * Called during RegistryEvent.Register<SoundEvent> to register all mod sounds.
@@ -24,6 +25,7 @@ public class ModSounds {
         SNAP_1       = register(event, "snap_1");
         SNAP_2       = register(event, "snap_2");
         SNAP_3       = register(event, "snap_3");
+        UNLOCK_POWER = register(event, "unlock_power");
     }
 
     private static SoundEvent register(RegistryEvent.Register<SoundEvent> event, String name) {

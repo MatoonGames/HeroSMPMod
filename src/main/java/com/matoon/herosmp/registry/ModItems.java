@@ -6,6 +6,8 @@ import com.matoon.herosmp.item.ItemHealthCapSplashPotion;
 import com.matoon.herosmp.item.ItemLifeDrainer;
 import com.matoon.herosmp.item.ItemLifeLinkArrow;
 import com.matoon.herosmp.item.ItemPowerSwapperArrow;
+import com.matoon.herosmp.item.ItemPowerKey;
+import com.matoon.herosmp.item.ItemPowerLock;
 import com.matoon.herosmp.item.ItemSupeVirusArrow;
 import com.matoon.herosmp.item.ItemSupeVirusCure;
 import com.matoon.herosmp.item.ItemTotemOfProtection;
@@ -14,12 +16,16 @@ import net.minecraft.client.renderer.block.model.ModelResourceLocation;
 import net.minecraft.item.Item;
 import net.minecraftforge.client.event.ModelRegistryEvent;
 import net.minecraftforge.client.model.ModelLoader;
+import net.minecraft.client.renderer.block.model.ModelBakery;
 import net.minecraftforge.event.RegistryEvent;
 import net.minecraftforge.fml.common.eventhandler.SubscribeEvent;
 import net.minecraftforge.fml.relauncher.Side;
 import net.minecraftforge.fml.relauncher.SideOnly;
 
 public class ModItems {
+
+    private static final net.minecraft.util.ResourceLocation INJECTION_PICKUP_ID =
+            new net.minecraft.util.ResourceLocation("herosmp", "lucraft_injection");
 
     public static final ItemLifeDrainer LIFE_DRAINER = new ItemLifeDrainer();
 
@@ -38,6 +44,24 @@ public class ModItems {
     // --- Totems ---
     public static final ItemTotemOfProtection TOTEM_OF_PROTECTION = new ItemTotemOfProtection();
     public static final ItemTotemOfReversal TOTEM_OF_REVERSAL = new ItemTotemOfReversal();
+    public static final ItemPowerKey POWER_KEY = new ItemPowerKey();
+    public static final ItemPowerLock POWER_LOCK = new ItemPowerLock();
+
+    /** Preserve vanilla egg colors, but never tint the custom injection-pickup icon. */
+    @SideOnly(Side.CLIENT)
+    public static void registerSpawnEggColors() {
+        net.minecraft.client.Minecraft.getMinecraft().getItemColors().registerItemColorHandler(
+                (stack, tintIndex) -> {
+                    net.minecraft.util.ResourceLocation id =
+                            net.minecraft.item.ItemMonsterPlacer.getNamedIdFrom(stack);
+                    if (INJECTION_PICKUP_ID.equals(id)) return 0xFFFFFF;
+                    net.minecraft.entity.EntityList.EntityEggInfo info =
+                            net.minecraft.entity.EntityList.ENTITY_EGGS.get(id);
+                    if (info == null) return 0xFFFFFF;
+                    return tintIndex == 0 ? info.primaryColor
+                            : tintIndex == 1 ? info.secondaryColor : 0xFFFFFF;
+                }, net.minecraft.init.Items.SPAWN_EGG);
+    }
 
     /** Registered on the common event bus (both sides). */
     public static class RegistrationHandler {
@@ -53,14 +77,29 @@ public class ModItems {
             event.getRegistry().register(SUPE_VIRUS_CURE);
             event.getRegistry().register(TOTEM_OF_PROTECTION);
             event.getRegistry().register(TOTEM_OF_REVERSAL);
+            event.getRegistry().register(POWER_KEY);
+            event.getRegistry().register(POWER_LOCK);
         }
     }
 
     /** Registered on the common event bus from the client proxy only. */
-    @SideOnly(Side.CLIENT)
     public static class ClientRegistrationHandler {
         @SubscribeEvent
         public void onRegisterModels(ModelRegistryEvent event) {
+            final ModelResourceLocation vanillaSpawnEgg =
+                    new ModelResourceLocation("minecraft:spawn_egg", "inventory");
+            final ModelResourceLocation injectionPickupEgg =
+                    new ModelResourceLocation("herosmp:injection_pickup_egg", "inventory");
+            ModelBakery.registerItemVariants(net.minecraft.init.Items.SPAWN_EGG,
+                    new net.minecraft.util.ResourceLocation("minecraft", "spawn_egg"),
+                    new net.minecraft.util.ResourceLocation("herosmp", "injection_pickup_egg"));
+            ModelLoader.setCustomMeshDefinition(net.minecraft.init.Items.SPAWN_EGG, stack -> {
+                net.minecraft.util.ResourceLocation id =
+                        net.minecraft.item.ItemMonsterPlacer.getNamedIdFrom(stack);
+                return INJECTION_PICKUP_ID.equals(id)
+                        ? injectionPickupEgg : vanillaSpawnEgg;
+            });
+
             ModelLoader.setCustomModelResourceLocation(
                     LIFE_DRAINER, 0,
                     new ModelResourceLocation("herosmp:life_drainer", "inventory"));
@@ -91,6 +130,12 @@ public class ModItems {
             ModelLoader.setCustomModelResourceLocation(
                     TOTEM_OF_REVERSAL, 0,
                     new ModelResourceLocation("herosmp:totem_of_reversal", "inventory"));
+            ModelLoader.setCustomModelResourceLocation(
+                    POWER_KEY, 0,
+                    new ModelResourceLocation("herosmp:power_key", "inventory"));
+            ModelLoader.setCustomModelResourceLocation(
+                    POWER_LOCK, 0,
+                    new ModelResourceLocation("herosmp:power_lock", "inventory"));
         }
     }
 }

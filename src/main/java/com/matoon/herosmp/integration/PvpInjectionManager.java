@@ -57,6 +57,15 @@ public class PvpInjectionManager {
         return getData(server).getEntries();
     }
 
+    /** True when a PvP round is configured to spawn at least one usable pickup. */
+    public boolean hasSpawnablePool(MinecraftServer server) {
+        for (ItemStack stack : getPool(server)) {
+            if (LucraftInjectionEntry.isValidInjection(stack)
+                    && LucraftInjectionEntry.getWeight(stack) > 0) return true;
+        }
+        return false;
+    }
+
     public void setPool(MinecraftServer server, List<ItemStack> stacks) {
         SavedData data = getData(server);
         data.entries.clear();
@@ -164,15 +173,22 @@ public class PvpInjectionManager {
     public void spawnInjectionsInArena(WorldServer world, BlockPos center, int halfRange, int playerCount) {
         MinecraftServer server = world.getMinecraftServer();
         List<ItemStack> pool = getPool(server);
-        if (pool.isEmpty()) return;
+        if (pool.isEmpty()) {
+            System.err.println("[HeroSMP] PvP injection spawn skipped: configured pool is empty.");
+            return;
+        }
 
         // Build weighted candidate list.
         List<ItemStack> weighted = new ArrayList<>();
         for (ItemStack entry : pool) {
+            if (!LucraftInjectionEntry.isValidInjection(entry)) continue;
             int w = LucraftInjectionEntry.getWeight(entry);
             for (int i = 0; i < w; i++) weighted.add(entry);
         }
-        if (weighted.isEmpty()) return;
+        if (weighted.isEmpty()) {
+            System.err.println("[HeroSMP] PvP injection spawn skipped: no configured entries resolve in LucraftCore.");
+            return;
+        }
 
         // Determine spawn count.
         int gMin = getGlobalMin(server);
@@ -209,6 +225,7 @@ public class PvpInjectionManager {
 
         // Track per-type spawn counts for maxOnMap enforcement.
         Map<String, Integer> spawnedByType = new HashMap<>();
+        int spawned = 0;
 
         for (int i = 0; i < spawnCount; i++) {
             int[] cell = cells.get(i % cells.size());
@@ -221,11 +238,10 @@ public class PvpInjectionManager {
 
             // Enforce maxOnMap per injection type.
             int maxOnMap = LucraftInjectionEntry.getMaxOnMap(chosen);
+            String chosenId = LucraftInjectionEntry.getLucraftId(chosen);
             if (maxOnMap > 0) {
-                String id = LucraftInjectionEntry.getLucraftId(chosen);
-                int alreadySpawned = spawnedByType.getOrDefault(id, 0);
+                int alreadySpawned = spawnedByType.getOrDefault(chosenId, 0);
                 if (alreadySpawned >= maxOnMap) continue;
-                spawnedByType.put(id, alreadySpawned + 1);
             }
 
             // Try random positions within this cell until a valid surface is found.
@@ -233,22 +249,54 @@ public class PvpInjectionManager {
                 int tx = cellMinX + (cellMaxX > cellMinX ? rand.nextInt(cellMaxX - cellMinX) : 0);
                 int tz = cellMinZ + (cellMaxZ > cellMinZ ? rand.nextInt(cellMaxZ - cellMinZ) : 0);
 
-                int surfaceY = world.getHeight(tx, tz);
-                int blockY = surfaceY - 1;
-                if (blockY < 1) continue;
-
-                BlockPos surfacePos = new BlockPos(tx, blockY, tz);
-                net.minecraft.block.state.IBlockState surfaceState = world.getBlockState(surfacePos);
-
-                if (surfaceState.getMaterial().isLiquid()) continue;
-                if (world.isAirBlock(surfacePos)) continue;
-                if (!surfaceState.isFullBlock() && !surfaceState.getMaterial().isSolid()) continue;
+                BlockPos spawnPos = EntityLucraftInjection.findSurfaceSpawn(world, tx, tz);
+                if (spawnPos == null) continue;
 
                 EntityLucraftInjection injection = new EntityLucraftInjection(
-                        world, tx + 0.5, surfaceY + 0.5, tz + 0.5, chosen.copy());
-                world.spawnEntity(injection);
-                break;
+                        world, tx + 0.5, spawnPos.getY() + 0.5, tz + 0.5,
+                        chosen.copy(), rand.nextFloat() < 0.08F);
+                if (world.spawnEntity(injection)) {
+                    spawnedByType.put(chosenId, spawnedByType.getOrDefault(chosenId, 0) + 1);
+                    spawned++;
+                    break;
+                }
             }
+        }
+
+        // Terrain can leave an entire random cell unusable (deep water, dense trees,
+        // or a steep cliff). Make a second, deterministic pass around the arena centre
+        // so a match never silently starts with zero pickups.
+        for (int radius = 0; spawned < spawnCount && radius <= halfRange; radius += 4) {
+            for (int dx = -radius; spawned < spawnCount && dx <= radius; dx += 4) {
+                for (int dz = -radius; spawned < spawnCount && dz <= radius; dz += 4) {
+                    if (radius > 0 && Math.abs(dx) != radius && Math.abs(dz) != radius) continue;
+                    ItemStack chosen = weighted.get(rand.nextInt(weighted.size()));
+                    String chosenId = LucraftInjectionEntry.getLucraftId(chosen);
+                    int maxOnMap = LucraftInjectionEntry.getMaxOnMap(chosen);
+                    if (maxOnMap > 0 && spawnedByType.getOrDefault(chosenId, 0) >= maxOnMap) continue;
+
+                    int tx = center.getX() + dx;
+                    int tz = center.getZ() + dz;
+                    BlockPos spawnPos = EntityLucraftInjection.findSurfaceSpawn(world, tx, tz);
+                    if (spawnPos == null) continue;
+
+                    EntityLucraftInjection injection = new EntityLucraftInjection(
+                            world, tx + 0.5, spawnPos.getY() + 0.5, tz + 0.5,
+                            chosen.copy(), rand.nextFloat() < 0.08F);
+                    if (world.spawnEntity(injection)) {
+                        spawnedByType.put(chosenId, spawnedByType.getOrDefault(chosenId, 0) + 1);
+                        spawned++;
+                    }
+                }
+            }
+        }
+
+        if (spawned == 0) {
+            System.err.println("[HeroSMP] PvP injection spawn failed: no valid surface or entity spawn in arena dimension "
+                    + world.provider.getDimension() + ".");
+        } else {
+            System.out.println("[HeroSMP] PvP injections spawned: " + spawned + "/" + spawnCount
+                    + " in arena dimension " + world.provider.getDimension() + ".");
         }
     }
 

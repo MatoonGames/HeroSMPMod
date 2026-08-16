@@ -1,6 +1,6 @@
 package com.matoon.herosmp.network;
 
-import com.matoon.herosmp.client.InfPowerUpOverlay;
+import com.matoon.herosmp.HeroSMP;
 import io.netty.buffer.ByteBuf;
 import net.minecraft.client.Minecraft;
 import net.minecraftforge.fml.common.network.simpleimpl.IMessage;
@@ -31,8 +31,8 @@ public class PacketInfPowerUp implements IMessage {
      */
     public static final int POWER_UP_DURATION_TICKS = 400;
 
-    private boolean start;
-    private UUID holderUuid;
+    boolean start;
+    UUID holderUuid;
 
     /** Required no-arg constructor for Forge deserialization. */
     public PacketInfPowerUp() {}
@@ -55,17 +55,10 @@ public class PacketInfPowerUp implements IMessage {
         this.holderUuid = new UUID(buf.readLong(), buf.readLong());
     }
 
-    @SideOnly(Side.CLIENT)
     public static class Handler implements IMessageHandler<PacketInfPowerUp, IMessage> {
         @Override
         public IMessage onMessage(PacketInfPowerUp msg, MessageContext ctx) {
-            Minecraft.getMinecraft().addScheduledTask(() -> {
-                if (msg.start) {
-                    InfPowerUpOverlay.start(msg.holderUuid);
-                } else {
-                    InfPowerUpOverlay.stop(msg.holderUuid);
-                }
-            });
+            HeroSMP.proxy.handleClientPacket(msg);
             return null;
         }
     }

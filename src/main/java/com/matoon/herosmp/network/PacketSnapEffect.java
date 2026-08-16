@@ -1,6 +1,6 @@
 package com.matoon.herosmp.network;
 
-import com.matoon.herosmp.client.SnapEffectOverlay;
+import com.matoon.herosmp.HeroSMP;
 import io.netty.buffer.ByteBuf;
 import net.minecraft.client.Minecraft;
 import net.minecraftforge.fml.common.network.simpleimpl.IMessage;
@@ -18,7 +18,7 @@ import net.minecraftforge.fml.relauncher.SideOnly;
  */
 public class PacketSnapEffect implements IMessage {
 
-    private int soundIndex;
+    int soundIndex;
 
     /** Required no-arg constructor for Forge deserialization. */
     public PacketSnapEffect() {}
@@ -37,12 +37,10 @@ public class PacketSnapEffect implements IMessage {
         soundIndex = buf.readByte();
     }
 
-    @SideOnly(Side.CLIENT)
     public static class Handler implements IMessageHandler<PacketSnapEffect, IMessage> {
         @Override
         public IMessage onMessage(PacketSnapEffect msg, MessageContext ctx) {
-            Minecraft.getMinecraft().addScheduledTask(() ->
-                SnapEffectOverlay.trigger(msg.soundIndex));
+            HeroSMP.proxy.handleClientPacket(msg);
             return null;
         }
     }

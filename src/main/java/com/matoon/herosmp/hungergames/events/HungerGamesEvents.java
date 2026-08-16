@@ -39,6 +39,9 @@ import net.minecraftforge.fml.common.gameevent.TickEvent;
  */
 public class HungerGamesEvents {
 
+    private static final net.minecraft.util.ResourceLocation INJECTION_PICKUP_ID =
+            new net.minecraft.util.ResourceLocation("herosmp", "lucraft_injection");
+
     @SubscribeEvent
     public void onWorldTick(TickEvent.WorldTickEvent event) {
         if (event.phase == TickEvent.Phase.END && event.side.isServer()
@@ -117,6 +120,30 @@ public class HungerGamesEvents {
     /**
      * Handle right-clicking a block with a configure tool.
      */
+    @SubscribeEvent(priority = EventPriority.HIGH)
+    public void onInjectionPickupEggUse(PlayerInteractEvent.RightClickBlock event) {
+        ItemStack stack = event.getItemStack();
+        if (stack.isEmpty() || stack.getItem() != net.minecraft.init.Items.SPAWN_EGG) return;
+        net.minecraft.util.ResourceLocation entityId =
+                net.minecraft.item.ItemMonsterPlacer.getNamedIdFrom(stack);
+        if (!INJECTION_PICKUP_ID.equals(entityId)) return;
+
+        // Vanilla 1.12's ItemMonsterPlacer only creates EntityLiving instances. The
+        // pickup is a plain Entity, so spawn this particular registered egg manually.
+        event.setCanceled(true);
+        event.setCancellationResult(net.minecraft.util.EnumActionResult.SUCCESS);
+        if (event.getWorld().isRemote) return;
+
+        BlockPos spawnPos = event.getPos().offset(event.getFace());
+        EntityLucraftInjection pickup = new EntityLucraftInjection(event.getWorld());
+        pickup.initializeRandomInjection();
+        pickup.setPosition(spawnPos.getX() + 0.5D, spawnPos.getY(), spawnPos.getZ() + 0.5D);
+        if (event.getWorld().spawnEntity(pickup)
+                && !event.getEntityPlayer().capabilities.isCreativeMode) {
+            stack.shrink(1);
+        }
+    }
+
     @SubscribeEvent
     public void onRightClickBlock(PlayerInteractEvent.RightClickBlock event) {
         if (!(event.getEntityPlayer() instanceof EntityPlayerMP)) return;

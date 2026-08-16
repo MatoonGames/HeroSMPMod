@@ -1,12 +1,7 @@
 package com.matoon.herosmp.network;
 
-import com.matoon.herosmp.hungergames.music.HungerGamesMusicManager;
+import com.matoon.herosmp.HeroSMP;
 import io.netty.buffer.ByteBuf;
-import net.minecraft.client.Minecraft;
-import net.minecraft.client.audio.ISound;
-import net.minecraft.client.audio.PositionedSoundRecord;
-import net.minecraft.util.ResourceLocation;
-import net.minecraft.util.SoundCategory;
 import net.minecraftforge.fml.common.network.ByteBufUtils;
 import net.minecraftforge.fml.common.network.simpleimpl.IMessage;
 import net.minecraftforge.fml.common.network.simpleimpl.IMessageHandler;
@@ -56,29 +51,9 @@ public class PacketHGMusicControl implements IMessage {
     // -------------------------------------------------------------------------
 
     public static class Handler implements IMessageHandler<PacketHGMusicControl, IMessage> {
-
-        /** Tracks the currently playing HG music sound so we can stop it precisely. */
-        private static volatile ISound currentSound = null;
-
         @Override
         public IMessage onMessage(PacketHGMusicControl msg, MessageContext ctx) {
-            Minecraft mc = Minecraft.getMinecraft();
-            mc.addScheduledTask(() -> {
-                // Stop whatever is currently playing first
-                if (currentSound != null) {
-                    mc.getSoundHandler().stopSound(currentSound);
-                    currentSound = null;
-                }
-                if (!msg.stop && !msg.phase.isEmpty() && !msg.track.isEmpty()) {
-                    ResourceLocation loc = HungerGamesMusicManager.soundLocation(msg.phase, msg.track);
-                    // NONE attenuation = full volume everywhere, unaffected by position
-                    ISound sound = new PositionedSoundRecord(
-                        loc, SoundCategory.MUSIC, 1.0f, 1.0f,
-                        false, 0, ISound.AttenuationType.NONE, 0f, 0f, 0f);
-                    mc.getSoundHandler().playSound(sound);
-                    currentSound = sound;
-                }
-            });
+            HeroSMP.proxy.handleHungerGamesMusic(msg.stop, msg.phase, msg.track);
             return null;
         }
     }

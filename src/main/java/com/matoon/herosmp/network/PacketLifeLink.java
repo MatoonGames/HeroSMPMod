@@ -1,6 +1,6 @@
 package com.matoon.herosmp.network;
 
-import com.matoon.herosmp.client.LifeLinkClientMap;
+import com.matoon.herosmp.HeroSMP;
 import io.netty.buffer.ByteBuf;
 import net.minecraftforge.fml.common.network.simpleimpl.IMessage;
 import net.minecraftforge.fml.common.network.simpleimpl.IMessageHandler;
@@ -20,9 +20,9 @@ import java.util.UUID;
  */
 public class PacketLifeLink implements IMessage {
 
-    private boolean add;
-    private UUID linked;
-    private UUID linker;
+    boolean add;
+    UUID linked;
+    UUID linker;
 
     /** Required no-arg constructor for deserialization. */
     public PacketLifeLink() {
@@ -60,18 +60,10 @@ public class PacketLifeLink implements IMessage {
         linker = new UUID(buf.readLong(), buf.readLong());
     }
 
-    @SideOnly(Side.CLIENT)
     public static class Handler implements IMessageHandler<PacketLifeLink, IMessage> {
         @Override
         public IMessage onMessage(PacketLifeLink msg, MessageContext ctx) {
-            // Schedule on the client main thread.
-            net.minecraft.client.Minecraft.getMinecraft().addScheduledTask(() -> {
-                if (msg.add) {
-                    LifeLinkClientMap.addLink(msg.linked, msg.linker);
-                } else {
-                    LifeLinkClientMap.removeLink(msg.linked);
-                }
-            });
+            HeroSMP.proxy.handleClientPacket(msg);
             return null;
         }
     }

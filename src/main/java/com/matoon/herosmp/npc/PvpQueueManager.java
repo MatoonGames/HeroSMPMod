@@ -83,7 +83,9 @@ public class PvpQueueManager {
     private static final int ARENA_DIMENSION_TYPE_BASE_ID = 17770;
     private static final String ARENA_DIMENSION_TYPE_PREFIX = "herosmp_pvp_";
     private static final String ARENA_DIMENSION_TYPE_SUFFIX = "_herosmp_pvp";
-    private static final int ARENA_GENERATION_ATTEMPTS = 8;
+    /** Global generation budget: at most two expensive chunks are created per server tick. */
+    private static final int ARENA_CHUNKS_PER_TICK = 2;
+    private static final int MAX_ARENA_DIMENSION_ATTEMPTS = 3;
     private static final int MAX_MATCH_CHESTS = 7;
     private static final int MIN_MATCH_CHESTS = 4;
     private static final int CHEST_PLACEMENT_ATTEMPTS = 180;
@@ -106,6 +108,8 @@ public class PvpQueueManager {
     private final Map<UUID, ActiveMatch> playerToMatch = new HashMap<UUID, ActiveMatch>();
     private final Map<UUID, FfaMatch> playerToFfaMatch = new HashMap<UUID, FfaMatch>();
     private final Map<UUID, SoloMatch> soloMatches = new HashMap<UUID, SoloMatch>();
+    private final Deque<PendingArenaPreparation> pendingArenaPreparations = new ArrayDeque<PendingArenaPreparation>();
+    private final Set<UUID> playersPreparingArena = new HashSet<UUID>();
     // Reused server-thread snapshots avoid several sets/lists of garbage every tick.
     private final Set<ActiveMatch> activeMatchTickView = new HashSet<ActiveMatch>();
     private final Set<FfaMatch> ffaMatchTickView = new HashSet<FfaMatch>();
@@ -138,7 +142,8 @@ public class PvpQueueManager {
 
     public synchronized void queueQuick(EntityPlayerMP player) {
         UUID playerId = player.getUniqueID();
-        if (playerToMatch.containsKey(playerId) || playerToFfaMatch.containsKey(playerId) || soloMatches.containsKey(playerId) || spectators.containsKey(playerId)) {
+        if (playerToMatch.containsKey(playerId) || playerToFfaMatch.containsKey(playerId) || soloMatches.containsKey(playerId)
+                || spectators.containsKey(playerId) || playersPreparingArena.contains(playerId)) {
             send(player, TextFormatting.RED + "You are already in an active PvP session.");
             return;
         }
@@ -175,7 +180,8 @@ public class PvpQueueManager {
 
     private void queueFfa(EntityPlayerMP player) {
         UUID playerId = player.getUniqueID();
-        if (playerToMatch.containsKey(playerId) || playerToFfaMatch.containsKey(playerId) || soloMatches.containsKey(playerId) || spectators.containsKey(playerId)) {
+        if (playerToMatch.containsKey(playerId) || playerToFfaMatch.containsKey(playerId) || soloMatches.containsKey(playerId)
+                || spectators.containsKey(playerId) || playersPreparingArena.contains(playerId)) {
             send(player, TextFormatting.RED + "You are already in an active PvP session.");
             return;
         }
@@ -432,7 +438,9 @@ public class PvpQueueManager {
 
     public synchronized void startDebugSoloMatch(EntityPlayerMP player) {
         UUID playerId = player.getUniqueID();
-        if (playerToMatch.containsKey(playerId) || soloMatches.containsKey(playerId)) {
+        if (playerToMatch.containsKey(playerId) || playerToFfaMatch.containsKey(playerId)
+                || soloMatches.containsKey(playerId) || spectators.containsKey(playerId)
+                || playersPreparingArena.contains(playerId)) {
             send(player, TextFormatting.RED + "You are already in an active PvP session.");
             return;
         }
@@ -446,12 +454,12 @@ public class PvpQueueManager {
             ffaQueue.remove(playerId);
         }
 
-        ArenaPreparedArena preparedArena = prepareArena(player.getServer(), "debugsolo", false);
-        if (preparedArena == null) {
-            send(player, TextFormatting.RED + "Failed to create debug arena.");
-            return;
-        }
+        requestArenaPreparation(player.getServer(), PendingArenaKind.SOLO,
+                Collections.singletonList(playerId), false);
+    }
 
+    private void finishDebugSoloMatch(EntityPlayerMP player, ArenaPreparedArena preparedArena) {
+        UUID playerId = player.getUniqueID();
         ReturnState returnState = ReturnState.capture(player);
         PlayerInventorySnapshot inventorySnapshot = PlayerInventorySnapshot.capture(player);
         PvpPlayerStateSavedData.get(player.getServer()).saveState(player);
@@ -534,7 +542,9 @@ public class PvpQueueManager {
             }
 
             EntityPlayerMP possible = requester.getServer().getPlayerList().getPlayerByUUID(queued);
-            if (possible != null && !playerToMatch.containsKey(queued) && !soloMatches.containsKey(queued) && !possible.isDead) {
+            if (possible != null && !playerToMatch.containsKey(queued) && !playerToFfaMatch.containsKey(queued)
+                    && !soloMatches.containsKey(queued) && !playersPreparingArena.contains(queued)
+                    && !spectators.containsKey(queued) && !possible.isDead) {
                 queuedPlayers.remove(queued);
                 return possible;
             }
@@ -545,13 +555,11 @@ public class PvpQueueManager {
     }
 
     private void startMatch(EntityPlayerMP first, EntityPlayerMP second) {
-        ArenaPreparedArena preparedArena = prepareArena(first.getServer(), "match", true);
-        if (preparedArena == null) {
-            send(first, TextFormatting.RED + "Failed to create PvP arena.");
-            send(second, TextFormatting.RED + "Failed to create PvP arena.");
-            return;
-        }
+        requestArenaPreparation(first.getServer(), PendingArenaKind.DUEL,
+                java.util.Arrays.asList(first.getUniqueID(), second.getUniqueID()), false);
+    }
 
+    private void finishMatch(EntityPlayerMP first, EntityPlayerMP second, ArenaPreparedArena preparedArena) {
         ReturnState firstReturn = ReturnState.capture(first);
         ReturnState secondReturn = ReturnState.capture(second);
         PlayerInventorySnapshot firstInventory = PlayerInventorySnapshot.capture(first);
@@ -609,7 +617,9 @@ public class PvpQueueManager {
             if (next == null || next.isDead) {
                 continue;
             }
-            if (playerToMatch.containsKey(nextId) || playerToFfaMatch.containsKey(nextId) || soloMatches.containsKey(nextId) || spectators.containsKey(nextId)) {
+            if (playerToMatch.containsKey(nextId) || playerToFfaMatch.containsKey(nextId)
+                    || soloMatches.containsKey(nextId) || spectators.containsKey(nextId)
+                    || playersPreparingArena.contains(nextId)) {
                 continue;
             }
             players.add(next);
@@ -632,14 +642,12 @@ public class PvpQueueManager {
             return;
         }
 
-        ArenaPreparedArena preparedArena = prepareArena(players.get(0).getServer(), "ffa", false);
-        if (preparedArena == null) {
-            for (EntityPlayerMP player : players) {
-                send(player, TextFormatting.RED + "Failed to create FFA arena.");
-            }
-            return;
-        }
+        List<UUID> playerIds = new ArrayList<UUID>(players.size());
+        for (EntityPlayerMP player : players) playerIds.add(player.getUniqueID());
+        requestArenaPreparation(players.get(0).getServer(), PendingArenaKind.FFA, playerIds, immediate);
+    }
 
+    private void finishFfaMatch(List<EntityPlayerMP> players, boolean immediate, ArenaPreparedArena preparedArena) {
         List<BlockPos> spawnPoints = createFfaSpawnPoints(preparedArena.world, preparedArena.slot, players.size());
         if (spawnPoints.size() < players.size()) {
             teardownArenaDimension(players.get(0).getServer(), preparedArena.dimensionId);
@@ -1046,12 +1054,19 @@ public class PvpQueueManager {
                 return null;
             }
         }
+        // Arena generation is intentionally spread across multiple ticks. With no
+        // player in the new dimension yet, Forge would otherwise unload it after the
+        // first preparation tick. The remaining generation, chest placement, and
+        // entity spawning would then run against a detached WorldServer while the
+        // player's teleport loads a fresh instance of the same dimension.
+        DimensionManager.keepDimensionLoaded(dimensionId, true);
         try {
             DimensionManager.initDimension(dimensionId);
         } catch (RuntimeException ignored) {
         }
         WorldServer arenaWorld = server.getWorld(dimensionId);
         if (arenaWorld == null) {
+            DimensionManager.keepDimensionLoaded(dimensionId, false);
             ArenaWorldProvider.clearArenaDimension(dimensionId);
             return null;
         }
@@ -1094,42 +1109,119 @@ public class PvpQueueManager {
         }
     }
 
-    private ArenaPreparedArena prepareArena(MinecraftServer server, String suffix, boolean needsOppositeSpawns) {
-        // Try up to 3 different dimensions; discard any that are all-ocean or have no valid spawns.
-        for (int dimAttempt = 0; dimAttempt < 3; dimAttempt++) {
-            ArenaAllocation arena = createArena(server, suffix);
-            if (arena == null) {
-                return null;
-            }
-
-            preGenerateEntireArena(arena.world, arena.slot);
-
-            // Reject arena if it is predominantly ocean — retry with a new seed/dimension.
-            if (isArenaAllOcean(arena.world, arena.slot)) {
-                teardownArenaDimension(server, arena.dimensionId);
-                continue;
-            }
-
-            for (int attempt = 0; attempt < ARENA_GENERATION_ATTEMPTS; attempt++) {
-                BlockPos firstSpawn = findNaturalSpawn(arena.world, arena.slot, arena.slot.toWorldX(ARENA_FIRST_SPAWN_X), arena.slot.toWorldZ(ARENA_SPAWN_Z));
-                if (firstSpawn == null) {
-                    continue;
-                }
-
-                if (!needsOppositeSpawns) {
-                    return new ArenaPreparedArena(arena.dimensionId, arena.world, arena.slot, firstSpawn, null);
-                }
-
-                BlockPos secondSpawn = findNaturalSpawn(arena.world, arena.slot, arena.slot.toWorldX(ARENA_SECOND_SPAWN_X), arena.slot.toWorldZ(ARENA_SPAWN_Z));
-                if (secondSpawn != null && firstSpawn.distanceSq(secondSpawn) >= 70.0D * 70.0D) {
-                    return new ArenaPreparedArena(arena.dimensionId, arena.world, arena.slot, firstSpawn, secondSpawn);
-                }
-            }
-
-            // No valid spawn configuration found — abandon this dimension and try again.
-            teardownArenaDimension(server, arena.dimensionId);
+    private void requestArenaPreparation(MinecraftServer server, PendingArenaKind kind,
+                                         List<UUID> playerIds, boolean immediate) {
+        ArenaAllocation allocation = createArena(server, kind.suffix);
+        if (allocation == null) {
+            notifyArenaFailure(server, kind, playerIds);
+            return;
         }
-        return null;
+
+        PendingArenaPreparation pending = new PendingArenaPreparation(kind, playerIds, immediate, allocation);
+        pendingArenaPreparations.addLast(pending);
+        playersPreparingArena.addAll(playerIds);
+        for (UUID playerId : playerIds) {
+            EntityPlayerMP player = server.getPlayerList().getPlayerByUUID(playerId);
+            if (player != null) send(player, TextFormatting.GRAY + "Generating arena...");
+        }
+    }
+
+    /** Advances arena generation on the server thread with a shared per-tick chunk budget. */
+    private void tickArenaPreparations(MinecraftServer server) {
+        PendingArenaPreparation pending = pendingArenaPreparations.peekFirst();
+        if (pending == null) return;
+
+        List<EntityPlayerMP> online = getPendingPlayers(server, pending.playerIds);
+        int required = pending.kind == PendingArenaKind.FFA ? FFA_MIN_PLAYERS : pending.playerIds.size();
+        if (online.size() < required) {
+            failArenaPreparation(server, pending, true);
+            return;
+        }
+
+        ArenaSlot slot = pending.allocation.slot;
+        int chunksAcross = slot.maxChunkZ - slot.minChunkZ + 1;
+        int totalChunks = (slot.maxChunkX - slot.minChunkX + 1) * chunksAcross;
+        for (int budget = 0; budget < ARENA_CHUNKS_PER_TICK && pending.nextChunk < totalChunks; budget++) {
+            int index = pending.nextChunk++;
+            int chunkX = slot.minChunkX + index / chunksAcross;
+            int chunkZ = slot.minChunkZ + index % chunksAcross;
+            pending.allocation.world.getChunk(chunkX, chunkZ);
+        }
+        if (pending.nextChunk < totalChunks) return;
+
+        ArenaPreparedArena prepared = finalizeGeneratedArena(pending);
+        if (prepared == null) {
+            teardownArenaDimension(server, pending.allocation.dimensionId);
+            pending.allocation = null;
+            if (pending.dimensionAttempt >= MAX_ARENA_DIMENSION_ATTEMPTS) {
+                failArenaPreparation(server, pending, true);
+                return;
+            }
+            pending.dimensionAttempt++;
+            pending.nextChunk = 0;
+            pending.allocation = createArena(server, pending.kind.suffix);
+            if (pending.allocation == null) failArenaPreparation(server, pending, true);
+            return;
+        }
+
+        pendingArenaPreparations.removeFirst();
+        playersPreparingArena.removeAll(pending.playerIds);
+        online = getPendingPlayers(server, pending.playerIds);
+        if (pending.kind == PendingArenaKind.SOLO) {
+            if (online.size() == 1) finishDebugSoloMatch(online.get(0), prepared);
+            else teardownArenaDimension(server, prepared.dimensionId);
+        } else if (pending.kind == PendingArenaKind.DUEL) {
+            if (online.size() == 2) finishMatch(online.get(0), online.get(1), prepared);
+            else teardownArenaDimension(server, prepared.dimensionId);
+        } else if (online.size() >= FFA_MIN_PLAYERS) {
+            finishFfaMatch(online, pending.immediate, prepared);
+        } else {
+            teardownArenaDimension(server, prepared.dimensionId);
+        }
+    }
+
+    @Nullable
+    private ArenaPreparedArena finalizeGeneratedArena(PendingArenaPreparation pending) {
+        ArenaAllocation arena = pending.allocation;
+        if (isArenaAllOcean(arena.world, arena.slot)) return null;
+
+        BlockPos firstSpawn = findNaturalSpawn(arena.world, arena.slot,
+                arena.slot.toWorldX(ARENA_FIRST_SPAWN_X), arena.slot.toWorldZ(ARENA_SPAWN_Z));
+        if (firstSpawn == null) return null;
+        if (pending.kind != PendingArenaKind.DUEL) {
+            return new ArenaPreparedArena(arena.dimensionId, arena.world, arena.slot, firstSpawn, null);
+        }
+
+        BlockPos secondSpawn = findNaturalSpawn(arena.world, arena.slot,
+                arena.slot.toWorldX(ARENA_SECOND_SPAWN_X), arena.slot.toWorldZ(ARENA_SPAWN_Z));
+        if (secondSpawn == null || firstSpawn.distanceSq(secondSpawn) < 70.0D * 70.0D) return null;
+        return new ArenaPreparedArena(arena.dimensionId, arena.world, arena.slot, firstSpawn, secondSpawn);
+    }
+
+    private List<EntityPlayerMP> getPendingPlayers(MinecraftServer server, List<UUID> playerIds) {
+        List<EntityPlayerMP> players = new ArrayList<EntityPlayerMP>(playerIds.size());
+        for (UUID playerId : playerIds) {
+            EntityPlayerMP player = server.getPlayerList().getPlayerByUUID(playerId);
+            if (player != null && !player.isDead) players.add(player);
+        }
+        return players;
+    }
+
+    private void failArenaPreparation(MinecraftServer server, PendingArenaPreparation pending, boolean notify) {
+        pendingArenaPreparations.remove(pending);
+        playersPreparingArena.removeAll(pending.playerIds);
+        if (pending.allocation != null) teardownArenaDimension(server, pending.allocation.dimensionId);
+        if (notify) notifyArenaFailure(server, pending.kind, pending.playerIds);
+    }
+
+    private void notifyArenaFailure(MinecraftServer server, PendingArenaKind kind, List<UUID> playerIds) {
+        String message = kind == PendingArenaKind.FFA ? "Failed to create FFA arena."
+                : kind == PendingArenaKind.SOLO ? "Failed to create debug arena."
+                : "Failed to create PvP arena.";
+        for (UUID playerId : playerIds) {
+            EntityPlayerMP player = server.getPlayerList().getPlayerByUUID(playerId);
+            if (player != null) send(player, TextFormatting.RED + message);
+        }
     }
 
     private BlockPos findNaturalSpawn(WorldServer world, ArenaSlot slot, int x, int z) {
@@ -1248,14 +1340,6 @@ public class PvpQueueManager {
         }
     }
 
-    private void preGenerateEntireArena(WorldServer world, ArenaSlot slot) {
-        for (int chunkX = slot.minChunkX; chunkX <= slot.maxChunkX; chunkX++) {
-            for (int chunkZ = slot.minChunkZ; chunkZ <= slot.maxChunkZ; chunkZ++) {
-                world.getChunk(chunkX, chunkZ);
-            }
-        }
-    }
-
     /**
      * Returns true if more than 60% of sampled biome columns in the playable arena
      * are ocean-type biomes. Used to reject all-ocean arenas and retry generation.
@@ -1284,7 +1368,14 @@ public class PvpQueueManager {
     }
 
     private List<BlockPos> spawnMatchLootChests(WorldServer world, ArenaSlot slot) {
-        List<ItemStack> lootPool = HeroSMP.PVP_CHEST_LOOT_MANAGER.getLootPool(world.getMinecraftServer());
+        List<ItemStack> lootPool = new ArrayList<ItemStack>(
+                HeroSMP.PVP_CHEST_LOOT_MANAGER.getLootPool(world.getMinecraftServer()));
+        // Keys are runtime loot, not part of the administrator's persisted loot pool.
+        // Two single keys are distributed across separate chests when possible.
+        if (HeroSMP.PVP_INJECTION_MANAGER.hasSpawnablePool(world.getMinecraftServer())) {
+            ItemStack keys = new ItemStack(com.matoon.herosmp.registry.ModItems.POWER_KEY, 2);
+            lootPool.add(keys);
+        }
         List<BlockPos> spawnedPositions = new ArrayList<BlockPos>();
         if (lootPool.isEmpty()) {
             return spawnedPositions;
@@ -1444,6 +1535,8 @@ public class PvpQueueManager {
     }
 
     private void teardownArenaDimension(MinecraftServer server, int dimensionId) {
+        // Release the preparation/match retention flag now that this arena is done.
+        DimensionManager.keepDimensionLoaded(dimensionId, false);
         ArenaWorldProvider.clearArenaDimension(dimensionId);
         // Defer actual dimension unregistration and folder deletion until no players remain.
         pendingArenaDimensionCleanup.put(dimensionId, 0);
@@ -1486,6 +1579,7 @@ public class PvpQueueManager {
     }
 
     private void destroyArenaDimension(MinecraftServer server, int dimensionId) {
+        DimensionManager.keepDimensionLoaded(dimensionId, false);
         try {
             WorldServer world = server.getWorld(dimensionId);
             if (world != null) {
@@ -1550,6 +1644,7 @@ public class PvpQueueManager {
     }
 
     public synchronized void tickMatchProgress(MinecraftServer server) {
+        tickArenaPreparations(server);
         tickFfaQueue(server);
         for (ActiveMatch match : activeMatchesForTick()) {
             tickMatch(server, match);
@@ -1625,14 +1720,21 @@ public class PvpQueueManager {
 
     private void syncSpectatorBatVisibility(MinecraftServer server, EntityPlayerMP owner, SpectatorSession session, EntityBat bat) {
         SPacketDestroyEntities destroyPacket = new SPacketDestroyEntities(bat.getEntityId());
+        Set<UUID> presentViewers = new HashSet<UUID>();
         for (EntityPlayerMP player : server.getPlayerList().getPlayers()) {
             if (player == null || player.dimension != owner.dimension) {
                 continue;
             }
-            if (!shouldPlayerSeeSpectatorBat(player, owner, session)) {
+            UUID viewerId = player.getUniqueID();
+            presentViewers.add(viewerId);
+            if (!shouldPlayerSeeSpectatorBat(player, owner, session)
+                    && session.hiddenBatViewers.add(viewerId)) {
                 player.connection.sendPacket(destroyPacket);
+            } else if (shouldPlayerSeeSpectatorBat(player, owner, session)) {
+                session.hiddenBatViewers.remove(viewerId);
             }
         }
+        session.hiddenBatViewers.retainAll(presentViewers);
     }
 
     private boolean shouldPlayerSeeSpectatorBat(EntityPlayerMP viewer, EntityPlayerMP owner, SpectatorSession session) {
@@ -2526,6 +2628,7 @@ public class PvpQueueManager {
         bat.motionZ = 0.0D;
         world.spawnEntity(bat);
         session.proxyBatId = bat.getUniqueID();
+        session.hiddenBatViewers.clear();
         syncSpectatorBatVisibility(spectator.getServer(), spectator, session, bat);
     }
 
@@ -2748,6 +2851,7 @@ public class PvpQueueManager {
                 || soloMatches.containsKey(playerId)
                 || queuedPlayers.contains(playerId)
                 || ffaQueuedPlayers.contains(playerId)
+                || playersPreparingArena.contains(playerId)
                 || spectators.containsKey(playerId);
     }
 
@@ -2807,6 +2911,30 @@ public class PvpQueueManager {
         return matchCounter.incrementAndGet();
     }
 
+    private enum PendingArenaKind {
+        SOLO("debugsolo"), DUEL("match"), FFA("ffa");
+
+        private final String suffix;
+        PendingArenaKind(String suffix) { this.suffix = suffix; }
+    }
+
+    private static class PendingArenaPreparation {
+        private final PendingArenaKind kind;
+        private final List<UUID> playerIds;
+        private final boolean immediate;
+        private ArenaAllocation allocation;
+        private int nextChunk;
+        private int dimensionAttempt = 1;
+
+        private PendingArenaPreparation(PendingArenaKind kind, List<UUID> playerIds,
+                                        boolean immediate, ArenaAllocation allocation) {
+            this.kind = kind;
+            this.playerIds = new ArrayList<UUID>(playerIds);
+            this.immediate = immediate;
+            this.allocation = allocation;
+        }
+    }
+
     private static class ArenaAllocation {
         private final int dimensionId;
         private final WorldServer world;
@@ -2863,6 +2991,8 @@ public class PvpQueueManager {
         private final SpectateTarget target;
         private final int targetId;
         private UUID proxyBatId;
+        /** Viewers already sent a destroy packet for the current proxy bat. */
+        private final Set<UUID> hiddenBatViewers = new HashSet<UUID>();
 
         private SpectatorSession(ReturnState returnState, SpectateTarget target, int targetId) {
             this.returnState = returnState;

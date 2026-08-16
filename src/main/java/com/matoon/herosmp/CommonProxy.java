@@ -13,6 +13,7 @@ import com.matoon.herosmp.registry.ModEntities;
 import com.matoon.herosmp.registry.ModItems;
 import com.matoon.herosmp.registry.ModPotions;
 import com.matoon.herosmp.registry.ModSounds;
+import net.minecraftforge.fml.common.network.simpleimpl.IMessage;
 import net.minecraftforge.common.MinecraftForge;
 import net.minecraftforge.fml.common.event.FMLInitializationEvent;
 import net.minecraftforge.fml.common.event.FMLPreInitializationEvent;
@@ -33,6 +34,18 @@ public class CommonProxy {
     }
 
     public void init(FMLInitializationEvent event) {
+    }
+
+    /**
+     * Handles a Hunger Games music control packet on the physical client.
+     * The common/server implementation is intentionally a no-op so dedicated servers
+     * never have to load Minecraft's client-only audio classes.
+     */
+    public void handleHungerGamesMusic(boolean stop, String phase, String track) {
+    }
+
+    /** Dispatches packets whose effects use physical-client-only classes. */
+    public void handleClientPacket(IMessage message) {
     }
 
     public void serverStarting(FMLServerStartingEvent event) {

@@ -38,5 +38,13 @@
         "stream": false
       }
     ]
+  },
+  "unlock_power": {
+    "sounds": [
+      {
+        "name": "herosmp:unlock_power",
+        "stream": false
+      }
+    ]
   }
 }
