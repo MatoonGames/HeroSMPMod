@@ -9,6 +9,7 @@ import java.util.List;
 import java.util.UUID;
 import net.minecraftforge.event.entity.living.LivingAttackEvent;
 import net.minecraftforge.event.entity.living.LivingDeathEvent;
+import net.minecraftforge.event.entity.living.LivingDamageEvent;
 import net.minecraftforge.event.entity.living.LivingHurtEvent;
 import net.minecraftforge.event.entity.player.PlayerContainerEvent;
 import net.minecraftforge.event.entity.player.PlayerInteractEvent;
@@ -20,13 +21,18 @@ import net.minecraftforge.fml.common.gameevent.TickEvent;
 
 public class PvpQueueEvents {
 
-    @SubscribeEvent(priority = EventPriority.HIGH)
+    @SubscribeEvent(priority = EventPriority.HIGHEST)
     public void onDeath(LivingDeathEvent event) {
         if (!(event.getEntityLiving() instanceof EntityPlayerMP)) {
             return;
         }
         try {
-            HeroSMP.PVP_QUEUE_MANAGER.handlePlayerDeath((EntityPlayerMP) event.getEntityLiving());
+            EntityPlayerMP player = (EntityPlayerMP) event.getEntityLiving();
+            if (HeroSMP.PVP_QUEUE_MANAGER.handleCrownfallDeath(player)) {
+                event.setCanceled(true);
+                return;
+            }
+            HeroSMP.PVP_QUEUE_MANAGER.handlePlayerDeath(player);
         } catch (Exception e) {
             System.err.println("[HeroSMP] Exception in PVP death handler: " + e.getMessage());
         }
@@ -105,7 +111,8 @@ public class PvpQueueEvents {
                 + " target=" + event.getTarget().getClass().getSimpleName()
                 + " hand=" + event.getHand()
                 + " cancelled=" + event.isCanceled());
-        if (HeroSMP.PVP_QUEUE_MANAGER.handleChestHighlightInteract((EntityPlayerMP) event.getEntityPlayer(), event.getTarget())) {
+        EntityPlayerMP player = (EntityPlayerMP) event.getEntityPlayer();
+        if (HeroSMP.PVP_QUEUE_MANAGER.handleChestHighlightInteract(player, event.getTarget())) {
             event.setCanceled(true);
         }
     }
@@ -115,7 +122,19 @@ public class PvpQueueEvents {
         if (!(event.getEntityPlayer() instanceof EntityPlayerMP)) {
             return;
         }
-        if (HeroSMP.PVP_QUEUE_MANAGER.handleChestHighlightInteract((EntityPlayerMP) event.getEntityPlayer(), event.getTarget())) {
+        EntityPlayerMP player = (EntityPlayerMP) event.getEntityPlayer();
+        if (HeroSMP.PVP_QUEUE_MANAGER.handleChestHighlightInteract(player, event.getTarget())) {
+            event.setCanceled(true);
+        }
+    }
+
+    @SubscribeEvent
+    public void onBlockInteract(PlayerInteractEvent.RightClickBlock event) {
+        if (!(event.getEntityPlayer() instanceof EntityPlayerMP)) {
+            return;
+        }
+        EntityPlayerMP player = (EntityPlayerMP) event.getEntityPlayer();
+        if (HeroSMP.PVP_QUEUE_MANAGER.handleCrownfallPodiumInteract(player, event.getPos())) {
             event.setCanceled(true);
         }
     }
@@ -154,6 +173,13 @@ public class PvpQueueEvents {
     public void onLivingHurt(LivingHurtEvent event) {
         if (HeroSMP.PVP_QUEUE_MANAGER.isSpectatorBat(event.getEntity())) {
             event.setCanceled(true);
+        }
+    }
+
+    @SubscribeEvent(priority = EventPriority.LOWEST)
+    public void onLivingDamage(LivingDamageEvent event) {
+        if (event.getEntityLiving() instanceof EntityPlayerMP && !event.isCanceled()) {
+            HeroSMP.PVP_QUEUE_MANAGER.handleCrownfallDamage((EntityPlayerMP) event.getEntityLiving(), event.getAmount());
         }
     }
 

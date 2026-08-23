@@ -71,15 +71,23 @@ public class ArenaWorldProvider extends WorldProvider {
     // is sampled from, guaranteeing a different biome region every match.
     private static final Map<Integer, Long> DIM_SEEDS   = new HashMap<Integer, Long>();
     private static final Map<Integer, int[]> DIM_OFFSETS = new HashMap<Integer, int[]>();
+    private static final Map<Integer, Integer> DIM_PLAYABLE_CHUNKS = new HashMap<Integer, Integer>();
 
     public static synchronized void setArenaDimension(int dimensionId, long seed, int chunkOffsetX, int chunkOffsetZ) {
+        setArenaDimension(dimensionId, seed, chunkOffsetX, chunkOffsetZ, ARENA_CHUNKS_ACROSS);
+    }
+
+    public static synchronized void setArenaDimension(int dimensionId, long seed, int chunkOffsetX, int chunkOffsetZ,
+                                                      int playableChunksAcross) {
         DIM_SEEDS.put(dimensionId, seed);
         DIM_OFFSETS.put(dimensionId, new int[]{chunkOffsetX, chunkOffsetZ});
+        DIM_PLAYABLE_CHUNKS.put(dimensionId, Math.max(ARENA_CHUNKS_ACROSS, playableChunksAcross));
     }
 
     public static synchronized void clearArenaDimension(int dimensionId) {
         DIM_SEEDS.remove(dimensionId);
         DIM_OFFSETS.remove(dimensionId);
+        DIM_PLAYABLE_CHUNKS.remove(dimensionId);
     }
 
     public static synchronized Long getArenaDimensionSeed(int dimensionId) {
@@ -90,6 +98,19 @@ public class ArenaWorldProvider extends WorldProvider {
     public static synchronized int[] getArenaDimensionOffset(int dimensionId) {
         int[] off = DIM_OFFSETS.get(dimensionId);
         return off != null ? off : new int[]{0, 0};
+    }
+
+    public static synchronized int getPlayableChunksAcross(int dimensionId) {
+        Integer value = DIM_PLAYABLE_CHUNKS.get(dimensionId);
+        return value == null ? ARENA_CHUNKS_ACROSS : value;
+    }
+
+    public static int getLastPlayableChunk(int dimensionId) {
+        return ARENA_FIRST_CHUNK + getPlayableChunksAcross(dimensionId) - 1;
+    }
+
+    public static int getLastGeneratedChunk(int dimensionId) {
+        return getLastPlayableChunk(dimensionId) + 1;
     }
 
     @Override

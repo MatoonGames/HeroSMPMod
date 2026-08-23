@@ -9,8 +9,13 @@ import com.matoon.herosmp.network.PacketOpenPvpMenu;
 import com.matoon.herosmp.npc.kit.KitDefinition;
 import com.matoon.herosmp.npc.pvp.ArenaWorldProvider;
 import com.matoon.herosmp.npc.pvp.FixedTeleporter;
+import com.matoon.herosmp.registry.ModBlocks;
+import com.matoon.herosmp.tileentity.TileEntityCrownfallPodium;
 import net.minecraft.entity.passive.EntityBat;
+import net.minecraft.entity.item.EntityItem;
+import net.minecraft.entity.projectile.EntityFishHook;
 import net.minecraft.entity.Entity;
+import net.minecraft.entity.SharedMonsterAttributes;
 import net.minecraft.entity.monster.EntityShulker;
 import net.minecraft.entity.player.EntityPlayerMP;
 import net.minecraft.entity.item.EntityFireworkRocket;
@@ -33,6 +38,7 @@ import net.minecraft.tileentity.TileEntityChest;
 import net.minecraft.util.EnumParticleTypes;
 import net.minecraft.util.NonNullList;
 import net.minecraft.util.SoundCategory;
+import net.minecraft.util.EnumHand;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.util.text.ITextComponent;
 import net.minecraft.util.text.TextComponentString;
@@ -45,6 +51,13 @@ import net.minecraft.world.WorldServer;
 import net.minecraft.world.biome.Biome;
 import net.minecraft.potion.PotionEffect;
 import net.minecraftforge.common.DimensionManager;
+import lucraft.mods.lucraftcore.infinity.EnumInfinityStone;
+import lucraft.mods.lucraftcore.infinity.items.InventoryInfinityGauntlet;
+import lucraft.mods.lucraftcore.infinity.items.ItemInfinityGauntlet;
+import lucraft.mods.lucraftcore.infinity.items.ItemInfinityStone;
+import anvil.infinity.helpers.GauntelHelper;
+import anvil.infinity.capabilities.GauntletUserInformation;
+import anvil.infinity.snap.SnapResult;
 
 import java.io.File;
 import java.util.ArrayDeque;
@@ -99,24 +112,37 @@ public class PvpQueueManager {
     private static final int FFA_MAX_PLAYERS = 4;
     private static final int FFA_MIN_PLAYERS = 2;
     private static final int FFA_QUEUE_WAIT_TICKS = 20 * 20;
+    private static final int CROWNFALL_MIN_PLAYERS = 2;
+    private static final int CROWNFALL_MAX_PLAYERS = 6;
+    private static final int CROWNFALL_QUEUE_WAIT_TICKS = 20 * 20;
+    private static final int CROWNFALL_ARENA_CHUNKS_ACROSS = 12;
+    private static final float CROWNFALL_GAUNTLET_DROP_DAMAGE = 8.0F;
+    private static final int CROWNFALL_DAMAGE_WINDOW_TICKS = 100;
+    private static final String CROWNFALL_ITEM_TAG = "HeroSmpCrownfall";
+    private static final String CROWNFALL_ROD_TAG = "HeroSmpCrownfallRod";
     private static final String CHAT_PREFIX = TextFormatting.DARK_AQUA + "[HeroPvP] " + TextFormatting.GRAY;
 
     private final Deque<UUID> queue = new ArrayDeque<UUID>();
     private final Deque<UUID> ffaQueue = new ArrayDeque<UUID>();
+    private final Deque<UUID> crownfallQueue = new ArrayDeque<UUID>();
     private final Set<UUID> queuedPlayers = new HashSet<UUID>();
     private final Set<UUID> ffaQueuedPlayers = new HashSet<UUID>();
+    private final Set<UUID> crownfallQueuedPlayers = new HashSet<UUID>();
     private final Map<UUID, ActiveMatch> playerToMatch = new HashMap<UUID, ActiveMatch>();
     private final Map<UUID, FfaMatch> playerToFfaMatch = new HashMap<UUID, FfaMatch>();
+    private final Map<UUID, CrownfallMatch> playerToCrownfallMatch = new HashMap<UUID, CrownfallMatch>();
     private final Map<UUID, SoloMatch> soloMatches = new HashMap<UUID, SoloMatch>();
     private final Deque<PendingArenaPreparation> pendingArenaPreparations = new ArrayDeque<PendingArenaPreparation>();
     private final Set<UUID> playersPreparingArena = new HashSet<UUID>();
     // Reused server-thread snapshots avoid several sets/lists of garbage every tick.
     private final Set<ActiveMatch> activeMatchTickView = new HashSet<ActiveMatch>();
     private final Set<FfaMatch> ffaMatchTickView = new HashSet<FfaMatch>();
+    private final Set<CrownfallMatch> crownfallMatchTickView = new HashSet<CrownfallMatch>();
     private final List<SoloMatch> soloMatchTickView = new ArrayList<SoloMatch>();
 
     private Set<ActiveMatch> activeMatchesForTick() { activeMatchTickView.clear(); activeMatchTickView.addAll(playerToMatch.values()); return activeMatchTickView; }
     private Set<FfaMatch> ffaMatchesForTick() { ffaMatchTickView.clear(); ffaMatchTickView.addAll(playerToFfaMatch.values()); return ffaMatchTickView; }
+    private Set<CrownfallMatch> crownfallMatchesForTick() { crownfallMatchTickView.clear(); crownfallMatchTickView.addAll(playerToCrownfallMatch.values()); return crownfallMatchTickView; }
     private List<SoloMatch> soloMatchesForTick() { soloMatchTickView.clear(); soloMatchTickView.addAll(soloMatches.values()); return soloMatchTickView; }
     private final Map<UUID, ReturnState> pendingReturns = new HashMap<UUID, ReturnState>();
     private final Map<UUID, PlayerInventorySnapshot> pendingInventoryReturns = new HashMap<UUID, PlayerInventorySnapshot>();
@@ -135,6 +161,7 @@ public class PvpQueueManager {
     private final AtomicInteger arenaDimensionIdCounter = new AtomicInteger(1);
     private final AtomicLong arenaSeedSequence = new AtomicLong(System.nanoTime());
     private int ffaQueueCountdownTicks = -1;
+    private int crownfallQueueCountdownTicks = -1;
 
     public synchronized void joinQueue(EntityPlayerMP player, EntityStaticNpc npc) {
         queueQuick(player);
@@ -142,13 +169,14 @@ public class PvpQueueManager {
 
     public synchronized void queueQuick(EntityPlayerMP player) {
         UUID playerId = player.getUniqueID();
-        if (playerToMatch.containsKey(playerId) || playerToFfaMatch.containsKey(playerId) || soloMatches.containsKey(playerId)
+        if (playerToMatch.containsKey(playerId) || playerToFfaMatch.containsKey(playerId)
+                || playerToCrownfallMatch.containsKey(playerId) || soloMatches.containsKey(playerId)
                 || spectators.containsKey(playerId) || playersPreparingArena.contains(playerId)) {
             send(player, TextFormatting.RED + "You are already in an active PvP session.");
             return;
         }
 
-        if (queuedPlayers.contains(playerId) || ffaQueuedPlayers.contains(playerId)) {
+        if (queuedPlayers.contains(playerId) || ffaQueuedPlayers.contains(playerId) || crownfallQueuedPlayers.contains(playerId)) {
             send(player, TextFormatting.YELLOW + "You are already queued. " + TextFormatting.GRAY + "Position: " + getQueuePosition(playerId));
             return;
         }
@@ -171,6 +199,10 @@ public class PvpQueueManager {
     }
 
     public synchronized void queueMode(EntityPlayerMP player, String modeKey) {
+        if ("crownfall".equalsIgnoreCase(modeKey)) {
+            queueCrownfall(player);
+            return;
+        }
         if ("ffa".equalsIgnoreCase(modeKey) || "freeforall".equalsIgnoreCase(modeKey)) {
             queueFfa(player);
             return;
@@ -178,14 +210,41 @@ public class PvpQueueManager {
         queueQuick(player);
     }
 
+    private void queueCrownfall(EntityPlayerMP player) {
+        UUID playerId = player.getUniqueID();
+        if (isPlayerInPvpSession(playerId) || playersPreparingArena.contains(playerId)) {
+            send(player, TextFormatting.RED + "You are already in an active PvP session.");
+            return;
+        }
+        if (queuedPlayers.contains(playerId) || ffaQueuedPlayers.contains(playerId) || crownfallQueuedPlayers.contains(playerId)) {
+            send(player, TextFormatting.YELLOW + "You are already queued.");
+            return;
+        }
+        if (HeroSMP.HUNGER_GAMES_MANAGER.isPlayerInMatchOrQueue(playerId)) {
+            send(player, TextFormatting.RED + "You cannot queue for PvP while in a Hunger Games match!");
+            return;
+        }
+        crownfallQueue.addLast(playerId);
+        crownfallQueuedPlayers.add(playerId);
+        send(player, TextFormatting.LIGHT_PURPLE + "Queued for Crownfall" + TextFormatting.GRAY
+                + " (" + crownfallQueuedPlayers.size() + "/" + CROWNFALL_MAX_PLAYERS + ")");
+        if (crownfallQueuedPlayers.size() >= CROWNFALL_MAX_PLAYERS) {
+            startCrownfallFromQueue(player.getServer(), true);
+        } else if (crownfallQueuedPlayers.size() >= CROWNFALL_MIN_PLAYERS && crownfallQueueCountdownTicks < 0) {
+            crownfallQueueCountdownTicks = CROWNFALL_QUEUE_WAIT_TICKS;
+            sendQueuedCrownfallPlayers(player.getServer(), TextFormatting.AQUA + "Crownfall starts in 20s. Waiting for more players...");
+        }
+    }
+
     private void queueFfa(EntityPlayerMP player) {
         UUID playerId = player.getUniqueID();
-        if (playerToMatch.containsKey(playerId) || playerToFfaMatch.containsKey(playerId) || soloMatches.containsKey(playerId)
+        if (playerToMatch.containsKey(playerId) || playerToFfaMatch.containsKey(playerId)
+                || playerToCrownfallMatch.containsKey(playerId) || soloMatches.containsKey(playerId)
                 || spectators.containsKey(playerId) || playersPreparingArena.contains(playerId)) {
             send(player, TextFormatting.RED + "You are already in an active PvP session.");
             return;
         }
-        if (queuedPlayers.contains(playerId) || ffaQueuedPlayers.contains(playerId)) {
+        if (queuedPlayers.contains(playerId) || ffaQueuedPlayers.contains(playerId) || crownfallQueuedPlayers.contains(playerId)) {
             send(player, TextFormatting.YELLOW + "You are already queued.");
             return;
         }
@@ -220,6 +279,10 @@ public class PvpQueueManager {
             ffaQueue.remove(playerId);
             removed = true;
         }
+        if (crownfallQueuedPlayers.remove(playerId)) {
+            crownfallQueue.remove(playerId);
+            removed = true;
+        }
         if (!removed) {
             send(player, TextFormatting.YELLOW + "You are not currently queued.");
             return;
@@ -228,26 +291,32 @@ public class PvpQueueManager {
     }
 
     public synchronized void openPvpMenu(EntityPlayerMP player) {
-        boolean queued = queuedPlayers.contains(player.getUniqueID()) || ffaQueuedPlayers.contains(player.getUniqueID());
+        boolean queued = queuedPlayers.contains(player.getUniqueID()) || ffaQueuedPlayers.contains(player.getUniqueID())
+                || crownfallQueuedPlayers.contains(player.getUniqueID());
         ModNetwork.CHANNEL.sendTo(new PacketOpenPvpMenu(buildMenuSnapshot(player.getServer()), queued), player);
     }
 
     public synchronized void trySpectateMatch(EntityPlayerMP spectator, int matchId) {
         UUID spectatorId = spectator.getUniqueID();
-        if (spectators.containsKey(spectatorId) || playerToMatch.containsKey(spectatorId) || playerToFfaMatch.containsKey(spectatorId) || soloMatches.containsKey(spectatorId) || queuedPlayers.contains(spectatorId) || ffaQueuedPlayers.contains(spectatorId)) {
+        if (spectators.containsKey(spectatorId) || playerToMatch.containsKey(spectatorId)
+                || playerToFfaMatch.containsKey(spectatorId) || playerToCrownfallMatch.containsKey(spectatorId)
+                || soloMatches.containsKey(spectatorId) || queuedPlayers.contains(spectatorId)
+                || ffaQueuedPlayers.contains(spectatorId) || crownfallQueuedPlayers.contains(spectatorId)) {
             send(spectator, TextFormatting.RED + "You cannot spectate while queued or in a PvP session.");
             return;
         }
 
         ActiveMatch match = findMatchById(matchId);
         FfaMatch ffa = match == null ? findFfaMatchById(matchId) : null;
-        SoloMatch solo = match == null && ffa == null ? findSoloMatchById(matchId) : null;
-        if (match == null && solo == null && ffa == null) {
+        CrownfallMatch crownfall = match == null && ffa == null ? findCrownfallMatchById(matchId) : null;
+        SoloMatch solo = match == null && ffa == null && crownfall == null ? findSoloMatchById(matchId) : null;
+        if (match == null && solo == null && ffa == null && crownfall == null) {
             send(spectator, TextFormatting.RED + "That match is no longer active.");
             return;
         }
 
-        int dimensionId = match != null ? match.dimensionId : (ffa != null ? ffa.dimensionId : solo.dimensionId);
+        int dimensionId = match != null ? match.dimensionId
+                : (ffa != null ? ffa.dimensionId : (crownfall != null ? crownfall.dimensionId : solo.dimensionId));
         WorldServer world = spectator.getServer().getWorld(dimensionId);
         if (world == null) {
             send(spectator, TextFormatting.RED + "Arena world unavailable.");
@@ -272,6 +341,13 @@ public class PvpQueueManager {
             sy = 90.0D;
             sz = ffa.slot.centerZ + 0.5D;
             send(spectator, TextFormatting.AQUA + "Now spectating FFA #" + ffa.matchId + TextFormatting.GRAY + ". Use /return to leave.");
+        } else if (crownfall != null) {
+            spectators.put(spectatorId, new SpectatorSession(returnState, SpectateTarget.CROWNFALL_MATCH, crownfall.matchId));
+            crownfall.spectators.add(spectatorId);
+            sx = crownfall.slot.centerX + 0.5D;
+            sy = 100.0D;
+            sz = crownfall.slot.centerZ + 0.5D;
+            send(spectator, TextFormatting.AQUA + "Now spectating Crownfall #" + crownfall.matchId + TextFormatting.GRAY + ". Use /return to leave.");
         } else {
             int soloId = solo.matchId;
             spectators.put(spectatorId, new SpectatorSession(returnState, SpectateTarget.DEBUG_SOLO, soloId));
@@ -296,6 +372,8 @@ public class PvpQueueManager {
             match.bossBar.addPlayer(spectator);
         } else if (ffa != null && ffa.bossBar != null) {
             ffa.bossBar.addPlayer(spectator);
+        } else if (crownfall != null && crownfall.bossBar != null) {
+            crownfall.bossBar.addPlayer(spectator);
         } else if (solo != null && solo.bossBar != null) {
             solo.bossBar.addPlayer(spectator);
         }
@@ -325,6 +403,12 @@ public class PvpQueueManager {
                 if (ffa.bossBar != null) {
                     ffa.bossBar.removePlayer(player);
                 }
+            }
+        } else if (session.target == SpectateTarget.CROWNFALL_MATCH) {
+            CrownfallMatch crownfall = findCrownfallMatchById(session.targetId);
+            if (crownfall != null) {
+                crownfall.spectators.remove(player.getUniqueID());
+                if (crownfall.bossBar != null) crownfall.bossBar.removePlayer(player);
             }
         } else {
             SoloMatch solo = findSoloMatchById(session.targetId);
@@ -364,6 +448,12 @@ public class PvpQueueManager {
             forfeitFfaMatch(player.getServer(), player, ffa);
             return;
         }
+        CrownfallMatch crownfall = playerToCrownfallMatch.get(player.getUniqueID());
+        if (crownfall != null) {
+            sendCrownfallChat(player.getServer(), crownfall, TextFormatting.YELLOW + player.getName() + " left Crownfall.");
+            endCrownfallMatch(player.getServer(), crownfall, null);
+            return;
+        }
 
         send(player, TextFormatting.YELLOW + "You are not in PvP or spectating.");
     }
@@ -398,6 +488,18 @@ public class PvpQueueManager {
             String second = names.size() > 1 ? names.get(1) + (names.size() > 2 ? " +" + (names.size() - 2) : "") : "Free For All";
             String status = ffa.phase == MatchPhase.ACTIVE ? "FFA - In Progress" : "FFA - Preparing";
             entries.add(new PacketOpenPvpMenu.ActiveMatchEntry(ffa.matchId, first, second, status));
+        }
+        for (CrownfallMatch crownfall : playerToCrownfallMatch.values()) {
+            if (!seen.add(crownfall.matchId)) continue;
+            List<String> names = new ArrayList<String>();
+            for (UUID id : crownfall.playerOrder) {
+                EntityPlayerMP player = server.getPlayerList().getPlayerByUUID(id);
+                if (player != null) names.add(player.getName());
+            }
+            String first = names.isEmpty() ? "Crownfall" : names.get(0);
+            String second = names.size() > 1 ? names.get(1) + (names.size() > 2 ? " +" + (names.size() - 2) : "") : "Infinity Hunt";
+            String status = crownfall.phase == MatchPhase.ACTIVE ? "Crownfall - In Progress" : "Crownfall - Preparing";
+            entries.add(new PacketOpenPvpMenu.ActiveMatchEntry(crownfall.matchId, first, second, status));
         }
 
         for (SoloMatch solo : soloMatches.values()) {
@@ -436,9 +538,15 @@ public class PvpQueueManager {
         return null;
     }
 
+    private CrownfallMatch findCrownfallMatchById(int matchId) {
+        for (CrownfallMatch match : playerToCrownfallMatch.values()) if (match.matchId == matchId) return match;
+        return null;
+    }
+
     public synchronized void startDebugSoloMatch(EntityPlayerMP player) {
         UUID playerId = player.getUniqueID();
         if (playerToMatch.containsKey(playerId) || playerToFfaMatch.containsKey(playerId)
+                || playerToCrownfallMatch.containsKey(playerId)
                 || soloMatches.containsKey(playerId) || spectators.containsKey(playerId)
                 || playersPreparingArena.contains(playerId)) {
             send(player, TextFormatting.RED + "You are already in an active PvP session.");
@@ -465,7 +573,7 @@ public class PvpQueueManager {
         PvpPlayerStateSavedData.get(player.getServer()).saveState(player);
         HeroSMP.KIT_MANAGER.clearPlayerInventory(player);
         player.setGameType(GameType.SURVIVAL);
-        List<BlockPos> chestPositions = spawnMatchLootChests(preparedArena.world, preparedArena.slot);
+        List<BlockPos> chestPositions = spawnMatchLootChests(preparedArena.world, preparedArena.slot, false);
         soloMatches.put(playerId, new SoloMatch(nextMatchId(), playerId, returnState, inventorySnapshot, preparedArena.dimensionId, preparedArena.slot, preparedArena.firstSpawn, chestPositions));
 
         pendingArenaArrivals.add(playerId);
@@ -513,6 +621,9 @@ public class PvpQueueManager {
         }
 
         HeroSMP.KIT_MANAGER.applyKitToPlayer(player, kit);
+        if (playerToCrownfallMatch.containsKey(player.getUniqueID())) {
+            giveCrownfallRod(player);
+        }
         awaitingKitSelection.remove(player.getUniqueID());
         send(player, TextFormatting.GREEN + "Selected kit " + TextFormatting.WHITE + kit.getDisplayName());
     }
@@ -543,6 +654,7 @@ public class PvpQueueManager {
 
             EntityPlayerMP possible = requester.getServer().getPlayerList().getPlayerByUUID(queued);
             if (possible != null && !playerToMatch.containsKey(queued) && !playerToFfaMatch.containsKey(queued)
+                    && !playerToCrownfallMatch.containsKey(queued)
                     && !soloMatches.containsKey(queued) && !playersPreparingArena.contains(queued)
                     && !spectators.containsKey(queued) && !possible.isDead) {
                 queuedPlayers.remove(queued);
@@ -573,7 +685,7 @@ public class PvpQueueManager {
         first.setGameType(GameType.SURVIVAL);
         second.setGameType(GameType.SURVIVAL);
 
-        List<BlockPos> chestPositions = spawnMatchLootChests(preparedArena.world, preparedArena.slot);
+        List<BlockPos> chestPositions = spawnMatchLootChests(preparedArena.world, preparedArena.slot, false);
         ActiveMatch match = new ActiveMatch(
                 nextMatchId(),
                 first.getUniqueID(),
@@ -618,6 +730,7 @@ public class PvpQueueManager {
                 continue;
             }
             if (playerToMatch.containsKey(nextId) || playerToFfaMatch.containsKey(nextId)
+                    || playerToCrownfallMatch.containsKey(nextId)
                     || soloMatches.containsKey(nextId) || spectators.containsKey(nextId)
                     || playersPreparingArena.contains(nextId)) {
                 continue;
@@ -657,7 +770,7 @@ public class PvpQueueManager {
             return;
         }
 
-        List<BlockPos> chestPositions = spawnMatchLootChests(preparedArena.world, preparedArena.slot);
+        List<BlockPos> chestPositions = spawnMatchLootChests(preparedArena.world, preparedArena.slot, false);
         FfaMatch match = new FfaMatch(nextMatchId(), preparedArena.dimensionId, preparedArena.slot, chestPositions);
         PvpPlayerStateSavedData ffaStateData = PvpPlayerStateSavedData.get(players.get(0).getServer());
         for (int i = 0; i < players.size(); i++) {
@@ -794,6 +907,9 @@ public class PvpQueueManager {
                 if (spectatedFfa != null) {
                     spectatedFfa.spectators.remove(playerId);
                 }
+            } else if (spectatorSession.target == SpectateTarget.CROWNFALL_MATCH) {
+                CrownfallMatch spectated = findCrownfallMatchById(spectatorSession.targetId);
+                if (spectated != null) spectated.spectators.remove(playerId);
             } else {
                 SoloMatch spectatedSolo = findSoloMatchById(spectatorSession.targetId);
                 if (spectatedSolo != null) {
@@ -807,6 +923,8 @@ public class PvpQueueManager {
         if (queuedPlayers.remove(playerId)) {
             queue.remove(playerId);
         }
+        if (ffaQueuedPlayers.remove(playerId)) ffaQueue.remove(playerId);
+        if (crownfallQueuedPlayers.remove(playerId)) crownfallQueue.remove(playerId);
 
         VictorySequence victorySequence = pendingVictorySequences.remove(playerId);
         if (victorySequence != null) {
@@ -832,6 +950,28 @@ public class PvpQueueManager {
 
         ActiveMatch match = playerToMatch.get(playerId);
         if (match == null) {
+            CrownfallMatch crownfall = playerToCrownfallMatch.remove(playerId);
+            if (crownfall != null) {
+                crownfall.playerOrder.remove(playerId);
+                pendingReturns.put(playerId, crownfall.returnStates.get(playerId));
+                pendingInventoryReturns.put(playerId, crownfall.inventorySnapshots.get(playerId));
+                Double original = crownfall.baseMaxHealth.get(playerId);
+                if (original != null) player.getEntityAttribute(SharedMonsterAttributes.MAX_HEALTH).setBaseValue(original);
+                SnapResult originalSnap = crownfall.originalSnapResults.get(playerId);
+                if (originalSnap != null) {
+                    try {
+                        anvil.infinity.capabilities.ICapabilityPlayerData data = GauntletUserInformation.getDataByEntity(player);
+                        if (data != null) data.setSnapResult(originalSnap);
+                    } catch (Exception ignored) {
+                    }
+                }
+                sendCrownfallChat(player.getServer(), crownfall, TextFormatting.YELLOW + player.getName() + " left Crownfall.");
+                if (crownfall.playerOrder.size() <= 1) {
+                    UUID winner = crownfall.playerOrder.isEmpty() ? null : crownfall.playerOrder.get(0);
+                    endCrownfallMatch(player.getServer(), crownfall, winner);
+                }
+                return;
+            }
             FfaMatch ffa = playerToFfaMatch.get(playerId);
             if (ffa != null) {
                 eliminateFfaPlayer(player.getServer(), ffa, playerId, false, TextFormatting.YELLOW + player.getName() + " left the FFA.");
@@ -1029,7 +1169,7 @@ public class PvpQueueManager {
     }
 
     /** Allocate a fresh dimension ID for a new PvP match and create its world. */
-    private ArenaAllocation createArena(MinecraftServer server, String suffix) {
+    private ArenaAllocation createArena(MinecraftServer server, PendingArenaKind kind) {
         // IDs run -7001, -7002, ..., cycling back to -7001 after 998 to avoid
         // overlapping HG dimensions which start at -8001.
         int index = (arenaDimensionIdCounter.getAndIncrement() % 998) + 1;
@@ -1044,7 +1184,9 @@ public class PvpQueueManager {
         java.util.Random offsetRand = new java.util.Random(seed);
         int chunkOffsetX = offsetRand.nextInt(1_000_000) - 500_000;
         int chunkOffsetZ = offsetRand.nextInt(1_000_000) - 500_000;
-        ArenaWorldProvider.setArenaDimension(dimensionId, seed, chunkOffsetX, chunkOffsetZ);
+        int playableChunks = kind == PendingArenaKind.CROWNFALL
+                ? CROWNFALL_ARENA_CHUNKS_ACROSS : ARENA_CHUNKS_ACROSS;
+        ArenaWorldProvider.setArenaDimension(dimensionId, seed, chunkOffsetX, chunkOffsetZ, playableChunks);
 
         if (!DimensionManager.isDimensionRegistered(dimensionId)) {
             try {
@@ -1070,15 +1212,15 @@ public class PvpQueueManager {
             ArenaWorldProvider.clearArenaDimension(dimensionId);
             return null;
         }
-        ArenaSlot slot = new ArenaSlot();
+        ArenaSlot slot = new ArenaSlot(playableChunks);
 
         // Set a world border aligned exactly to the chunk boundaries of the generated region.
         // setTransition() controls the actual visible/physical border; setSize() only sets
         // the chunk-loading limit and does NOT affect the border wall the player sees.
         // Center = 96.0, diameter = 160 → wall sits at 16.0 and 176.0 exactly.
         net.minecraft.world.border.WorldBorder border = arenaWorld.getWorldBorder();
-        border.setCenter(ARENA_BORDER_CENTER, ARENA_BORDER_CENTER);
-        border.setTransition((int) ARENA_BORDER_DIAMETER); // 160 — sets visible/physical border
+        border.setCenter(slot.borderCenter, slot.borderCenter);
+        border.setTransition((int) slot.borderDiameter);
         border.setDamageAmount(0.5);
         border.setDamageBuffer(2.0);
         border.setWarningDistance(5);
@@ -1111,13 +1253,18 @@ public class PvpQueueManager {
 
     private void requestArenaPreparation(MinecraftServer server, PendingArenaKind kind,
                                          List<UUID> playerIds, boolean immediate) {
-        ArenaAllocation allocation = createArena(server, kind.suffix);
+        requestArenaPreparation(server, kind, playerIds, immediate, false);
+    }
+
+    private void requestArenaPreparation(MinecraftServer server, PendingArenaKind kind,
+                                         List<UUID> playerIds, boolean immediate, boolean forceSolo) {
+        ArenaAllocation allocation = createArena(server, kind);
         if (allocation == null) {
             notifyArenaFailure(server, kind, playerIds);
             return;
         }
 
-        PendingArenaPreparation pending = new PendingArenaPreparation(kind, playerIds, immediate, allocation);
+        PendingArenaPreparation pending = new PendingArenaPreparation(kind, playerIds, immediate, forceSolo, allocation);
         pendingArenaPreparations.addLast(pending);
         playersPreparingArena.addAll(playerIds);
         for (UUID playerId : playerIds) {
@@ -1126,13 +1273,438 @@ public class PvpQueueManager {
         }
     }
 
+    public synchronized boolean handleCrownfallDeath(EntityPlayerMP player) {
+        CrownfallMatch match = playerToCrownfallMatch.get(player.getUniqueID());
+        if (match == null || match.phase != MatchPhase.ACTIVE) return false;
+        dropCrownfallGauntlet(player, match, "was defeated");
+        UUID id = player.getUniqueID();
+        int deaths = match.deaths.containsKey(id) ? match.deaths.get(id) + 1 : 1;
+        match.deaths.put(id, deaths);
+        double originalBase = match.baseMaxHealth.get(id) == null ? 20.0D : match.baseMaxHealth.get(id);
+        double boostedBase = originalBase + deaths * 2.0D;
+        player.getEntityAttribute(SharedMonsterAttributes.MAX_HEALTH).setBaseValue(boostedBase);
+        player.setHealth((float) Math.min(player.getMaxHealth(), boostedBase));
+        player.world.setEntityState(player, (byte) 35);
+        player.extinguish();
+        player.fallDistance = 0.0F;
+        player.motionX = player.motionY = player.motionZ = 0.0D;
+        BlockPos spawn = match.spawns.get(id);
+        if (spawn != null) player.setPositionAndUpdate(spawn.getX() + 0.5D, spawn.getY(), spawn.getZ() + 0.5D);
+        player.addPotionEffect(new PotionEffect(MobEffects.RESISTANCE, 60, 4, false, true));
+        sendCrownfallChat(player.getServer(), match, TextFormatting.YELLOW + player.getName()
+                + " fell and returned stronger (" + deaths + " boost" + (deaths == 1 ? "" : "s") + ").");
+        return true;
+    }
+
+    public synchronized void handleCrownfallDamage(EntityPlayerMP player, float amount) {
+        CrownfallMatch match = playerToCrownfallMatch.get(player.getUniqueID());
+        if (match == null || match.phase != MatchPhase.ACTIVE || findCrownfallGauntlet(player).isEmpty()) return;
+        DamageWindow window = match.damageWindows.get(player.getUniqueID());
+        if (window == null || window.ticksRemaining <= 0) {
+            window = new DamageWindow();
+            match.damageWindows.put(player.getUniqueID(), window);
+        }
+        window.damage += Math.max(0.0F, amount);
+        window.ticksRemaining = CROWNFALL_DAMAGE_WINDOW_TICKS;
+        if (window.damage >= CROWNFALL_GAUNTLET_DROP_DAMAGE) {
+            window.damage = 0.0F;
+            window.ticksRemaining = 0;
+            dropCrownfallGauntlet(player, match, "took heavy damage");
+        }
+    }
+
+    private void dropCrownfallGauntlet(EntityPlayerMP player, CrownfallMatch match, String reason) {
+        ItemStack gauntlet = ItemStack.EMPTY;
+        for (int i = 0; i < player.inventory.mainInventory.size(); i++) {
+            ItemStack stack = player.inventory.mainInventory.get(i);
+            if (isCrownfallGauntlet(stack)) {
+                gauntlet = stack;
+                player.inventory.mainInventory.set(i, ItemStack.EMPTY);
+                break;
+            }
+        }
+        if (gauntlet.isEmpty() && isCrownfallGauntlet(player.getHeldItemOffhand())) {
+            gauntlet = player.getHeldItemOffhand();
+            player.setHeldItem(EnumHand.OFF_HAND, ItemStack.EMPTY);
+        }
+        if (gauntlet.isEmpty()) return;
+        if (gauntlet.hasTagCompound()) gauntlet.getTagCompound().setBoolean("Fist", false);
+        EntityItem dropped = player.dropItem(gauntlet, false);
+        if (dropped != null) {
+            dropped.setNoPickupDelay();
+            dropped.motionX = dropped.motionY = dropped.motionZ = 0.0D;
+            dropped.setGlowing(true);
+            dropped.setCustomNameTag(TextFormatting.LIGHT_PURPLE + "Infinity Gauntlet");
+            dropped.setAlwaysRenderNameTag(true);
+        }
+        player.removePotionEffect(MobEffects.GLOWING);
+        player.inventory.markDirty();
+        player.inventoryContainer.detectAndSendChanges();
+        sendCrownfallChat(player.getServer(), match, TextFormatting.GOLD + player.getName() + " dropped the Gauntlet (" + reason + ")!");
+    }
+
+    public synchronized boolean handleCrownfallSnap(EntityPlayerMP player) {
+        CrownfallMatch match = playerToCrownfallMatch.get(player.getUniqueID());
+        if (match == null || match.phase != MatchPhase.ACTIVE) return false;
+        ItemStack gauntlet = findCrownfallGauntlet(player);
+        if (gauntlet.isEmpty() || countGauntletStones(gauntlet) < 6 || !GauntelHelper.hasFullGauntlet(player)) return false;
+        match.snapWinner = player.getUniqueID();
+        sendCrownfallChat(player.getServer(), match, TextFormatting.GOLD + "The six Stones answer "
+                + player.getName() + ". Crownfall is over!");
+        return true;
+    }
+
+    private void startCrownfallFromQueue(MinecraftServer server, boolean immediate) {
+        List<EntityPlayerMP> players = new ArrayList<EntityPlayerMP>();
+        while (!crownfallQueue.isEmpty() && players.size() < CROWNFALL_MAX_PLAYERS) {
+            UUID id = crownfallQueue.removeFirst();
+            crownfallQueuedPlayers.remove(id);
+            EntityPlayerMP player = server.getPlayerList().getPlayerByUUID(id);
+            if (player != null && !player.isDead && !isPlayerInPvpSession(id) && !playersPreparingArena.contains(id)) {
+                players.add(player);
+            }
+        }
+        crownfallQueueCountdownTicks = -1;
+        if (players.size() < CROWNFALL_MIN_PLAYERS) {
+            for (EntityPlayerMP player : players) {
+                crownfallQueue.addLast(player.getUniqueID());
+                crownfallQueuedPlayers.add(player.getUniqueID());
+            }
+            return;
+        }
+        List<UUID> ids = new ArrayList<UUID>();
+        for (EntityPlayerMP player : players) ids.add(player.getUniqueID());
+        requestArenaPreparation(server, PendingArenaKind.CROWNFALL, ids, immediate);
+    }
+
+    public synchronized boolean forceStartQueued(EntityPlayerMP caller) {
+        UUID id = caller.getUniqueID();
+        MinecraftServer server = caller.getServer();
+        if (crownfallQueuedPlayers.contains(id)) {
+            List<EntityPlayerMP> players = new ArrayList<EntityPlayerMP>();
+            while (!crownfallQueue.isEmpty() && players.size() < CROWNFALL_MAX_PLAYERS) {
+                UUID queuedId = crownfallQueue.removeFirst();
+                crownfallQueuedPlayers.remove(queuedId);
+                EntityPlayerMP player = server.getPlayerList().getPlayerByUUID(queuedId);
+                if (player != null && !player.isDead) players.add(player);
+            }
+            if (players.isEmpty()) return false;
+            List<UUID> ids = new ArrayList<UUID>();
+            for (EntityPlayerMP player : players) ids.add(player.getUniqueID());
+            crownfallQueueCountdownTicks = -1;
+            requestArenaPreparation(server, PendingArenaKind.CROWNFALL, ids, true, players.size() == 1);
+            for (EntityPlayerMP player : players) send(player, TextFormatting.GOLD + "Crownfall was force-started by an operator.");
+            return true;
+        }
+        if (ffaQueuedPlayers.contains(id)) {
+            if (ffaQueuedPlayers.size() >= FFA_MIN_PLAYERS) {
+                startFfaFromQueue(server, true);
+            } else {
+                ffaQueuedPlayers.remove(id);
+                ffaQueue.remove(id);
+                ffaQueueCountdownTicks = -1;
+                startDebugSoloMatch(caller);
+            }
+            return true;
+        }
+        if (queuedPlayers.contains(id)) {
+            queue.remove(id);
+            queuedPlayers.remove(id);
+            EntityPlayerMP opponent = pollNextAvailableOpponent(caller);
+            if (opponent == null) startDebugSoloMatch(caller);
+            else startMatch(caller, opponent);
+            return true;
+        }
+        send(caller, TextFormatting.RED + "You must be queued for a PvP mode before using forcestart.");
+        return false;
+    }
+
+    private void finishCrownfallMatch(List<EntityPlayerMP> players, ArenaPreparedArena preparedArena) {
+        List<BlockPos> spawnPoints = createCrownfallSpawnPoints(preparedArena.world, preparedArena.slot, players.size());
+        if (spawnPoints.size() < players.size()) {
+            teardownArenaDimension(players.get(0).getServer(), preparedArena.dimensionId);
+            for (EntityPlayerMP player : players) send(player, TextFormatting.RED + "Failed to find Crownfall spawn points.");
+            return;
+        }
+
+        List<BlockPos> chests = spawnMatchLootChests(preparedArena.world, preparedArena.slot, true);
+        CrownfallMatch match = new CrownfallMatch(nextMatchId(), preparedArena.dimensionId, preparedArena.slot, chests);
+        createCrownfallTemples(preparedArena.world, match);
+        PvpPlayerStateSavedData stateData = PvpPlayerStateSavedData.get(players.get(0).getServer());
+        for (int i = 0; i < players.size(); i++) {
+            EntityPlayerMP player = players.get(i);
+            UUID id = player.getUniqueID();
+            BlockPos spawn = spawnPoints.get(i);
+            match.playerOrder.add(id);
+            match.returnStates.put(id, ReturnState.capture(player));
+            match.inventorySnapshots.put(id, PlayerInventorySnapshot.capture(player));
+            match.spawns.put(id, spawn);
+            match.baseMaxHealth.put(id, player.getEntityAttribute(SharedMonsterAttributes.MAX_HEALTH).getBaseValue());
+            playerToCrownfallMatch.put(id, match);
+            stateData.saveState(player);
+            HeroSMP.KIT_MANAGER.clearPlayerInventory(player);
+            player.setGameType(GameType.SURVIVAL);
+            pendingArenaArrivals.add(id);
+            teleportToArena(player, preparedArena.world, spawn.getX() + 0.5D, spawn.getY(), spawn.getZ() + 0.5D, 0.0F);
+            openKitSelection(player);
+            send(player, TextFormatting.LIGHT_PURPLE + "Crownfall! " + TextFormatting.GRAY
+                    + "Claim the Gauntlet, gather all six Stones, and Snap to win.");
+        }
+        // Crownfall is the large objective mode, so give it twice the normal player-based pickup budget.
+        spawnInjectionsForArena(preparedArena.world, preparedArena.slot, players.size() * 2);
+    }
+
+    private List<BlockPos> createCrownfallSpawnPoints(WorldServer world, ArenaSlot slot, int count) {
+        List<BlockPos> points = new ArrayList<BlockPos>();
+        double radius = Math.max(35.0D, (slot.maxBlockX - slot.minBlockX) * 0.40D);
+        for (int i = 0; i < count; i++) {
+            double angle = Math.PI * 2.0D * i / count;
+            int x = (int) Math.round(slot.centerX + Math.cos(angle) * radius);
+            int z = (int) Math.round(slot.centerZ + Math.sin(angle) * radius);
+            BlockPos point = findNaturalSpawn(world, slot, x, z);
+            if (point != null) points.add(point);
+        }
+        return points;
+    }
+
+    private void giveCrownfallRod(EntityPlayerMP player) {
+        for (ItemStack stack : player.inventory.mainInventory) if (isCrownfallRod(stack)) return;
+        ItemStack rod = new ItemStack(Items.FISHING_ROD);
+        NBTTagCompound tag = new NBTTagCompound();
+        tag.setBoolean(CROWNFALL_ROD_TAG, true);
+        tag.setBoolean("Unbreakable", true);
+        rod.setTagCompound(tag);
+        rod.setStackDisplayName(TextFormatting.LIGHT_PURPLE + "Rod of Crownfall");
+        if (!player.inventory.addItemStackToInventory(rod)) player.dropItem(rod, false);
+        player.inventoryContainer.detectAndSendChanges();
+    }
+
+    private boolean isCrownfallRod(ItemStack stack) {
+        return !stack.isEmpty() && stack.getItem() == Items.FISHING_ROD && stack.hasTagCompound()
+                && stack.getTagCompound().getBoolean(CROWNFALL_ROD_TAG);
+    }
+
+    private void createCrownfallTemples(WorldServer world, CrownfallMatch match) {
+        ArenaSlot slot = match.slot;
+        int inset = 22;
+        int[][] locations = new int[][]{
+                {slot.centerX, slot.centerZ},
+                {slot.minBlockX + inset, slot.minBlockZ + inset},
+                {slot.maxBlockX - inset, slot.minBlockZ + inset},
+                {slot.minBlockX + inset, slot.maxBlockZ - inset},
+                {slot.maxBlockX - inset, slot.maxBlockZ - inset},
+                {slot.centerX, slot.minBlockZ + inset},
+                {slot.centerX, slot.maxBlockZ - inset}
+        };
+        ItemStack gauntlet = createCrownfallGauntlet();
+        ItemStack[] objectives = new ItemStack[locations.length];
+        objectives[0] = gauntlet;
+        net.minecraft.item.Item[] stones = new net.minecraft.item.Item[]{
+                anvil.infinity.items.Items.MIND_STONE,
+                anvil.infinity.items.Items.REALITY_STONE,
+                anvil.infinity.items.Items.SOUL_STONE,
+                anvil.infinity.items.Items.TIME_STONE,
+                anvil.infinity.items.Items.SPACE_STONE,
+                anvil.infinity.items.Items.POWER_STONE
+        };
+        for (int i = 0; i < stones.length; i++) {
+            objectives[i + 1] = new ItemStack(stones[i]);
+        }
+        for (int i = 0; i < locations.length; i++) {
+            boolean created = spawnCrownfallTemple(world, match, locations[i][0], locations[i][1],
+                    objectives[i], i == 0);
+            if (!created) {
+                // A block update from terrain population can very rarely race the first placement.
+                // Rebuilding synchronously gives every objective one deterministic retry.
+                created = spawnCrownfallTemple(world, match, locations[i][0], locations[i][1],
+                        objectives[i], i == 0);
+            }
+            if (!created) {
+                System.err.println("[HeroSMP][Crownfall] Failed to create temple " + i
+                        + " near " + locations[i][0] + ", " + locations[i][1]
+                        + " in dimension " + world.provider.getDimension());
+            }
+        }
+        System.out.println("[HeroSMP][Crownfall] Created " + match.podiums.size()
+                + "/" + locations.length + " objective temples in dimension "
+                + world.provider.getDimension());
+        if (match.podiums.size() != locations.length) {
+            throw new IllegalStateException("Crownfall arena is missing one or more objective temples");
+        }
+    }
+
+    private ItemStack createCrownfallGauntlet() {
+        ItemStack gauntlet = new ItemStack(lucraft.mods.lucraftcore.infinity.ModuleInfinity.INFINITY_GAUNTLET);
+        NBTTagCompound tag = new NBTTagCompound();
+        tag.setBoolean("Fist", true);
+        tag.setBoolean(CROWNFALL_ITEM_TAG, true);
+        gauntlet.setTagCompound(tag);
+        InventoryInfinityGauntlet inventory = new InventoryInfinityGauntlet(gauntlet);
+        for (int slot = 0; slot < InventoryInfinityGauntlet.SLOTS.length; slot++) {
+            if (InventoryInfinityGauntlet.SLOTS[slot] == EnumInfinityStone.POWER) {
+                inventory.setInventorySlotContents(slot, new ItemStack(anvil.infinity.items.Items.POWER_STONE));
+                break;
+            }
+        }
+        gauntlet.setStackDisplayName(TextFormatting.GOLD + "Crownfall Infinity Gauntlet");
+        return gauntlet;
+    }
+
+    private boolean spawnCrownfallTemple(WorldServer world, CrownfallMatch match, int x, int z,
+                                         ItemStack display, boolean gauntlet) {
+        // Load the complete footprint before sampling or changing terrain. This matters for
+        // corner temples whose 11x11 clearing can cross as many as four chunk boundaries.
+        for (int chunkX = (x - 5) >> 4; chunkX <= (x + 5) >> 4; chunkX++) {
+            for (int chunkZ = (z - 5) >> 4; chunkZ <= (z + 5) >> 4; chunkZ++) {
+                world.getChunkProvider().provideChunk(chunkX, chunkZ);
+            }
+        }
+
+        int y = 2;
+        for (int dx = -5; dx <= 5; dx++) {
+            for (int dz = -5; dz <= 5; dz++) {
+                y = Math.max(y, getCrownfallTerrainSurfaceY(world, x + dx, z + dz));
+            }
+        }
+        y = Math.min(245, y);
+
+        // Excavate around the entire temple, then carry the raised platform down to the
+        // natural ground in each column. Amplified slopes can no longer bury or hide it.
+        for (int dx = -5; dx <= 5; dx++) {
+            for (int dz = -5; dz <= 5; dz++) {
+                for (int dy = 0; dy <= 8; dy++) {
+                    world.setBlockToAir(new BlockPos(x + dx, y + dy, z + dz));
+                }
+            }
+        }
+        for (int dx = -4; dx <= 4; dx++) {
+            for (int dz = -4; dz <= 4; dz++) {
+                net.minecraft.block.state.IBlockState foundation =
+                        (Math.abs(dx) == 4 || Math.abs(dz) == 4
+                                ? Blocks.MOSSY_COBBLESTONE : Blocks.STONEBRICK).getDefaultState();
+                int naturalY = Math.min(y, getCrownfallTerrainSurfaceY(world, x + dx, z + dz));
+                for (int fillY = y - 1; fillY >= Math.max(1, naturalY - 1); fillY--) {
+                    world.setBlockState(new BlockPos(x + dx, fillY, z + dz), foundation, 2);
+                }
+            }
+        }
+        int[][] pillars = {{-3,-3},{3,-3},{-3,3},{3,3}};
+        for (int[] pillar : pillars) {
+            for (int dy = 0; dy < 5; dy++) {
+                world.setBlockState(new BlockPos(x + pillar[0], y + dy, z + pillar[1]), Blocks.STONEBRICK.getDefaultState(), 2);
+            }
+        }
+        for (int dx = -3; dx <= 3; dx++) for (int dz = -3; dz <= 3; dz++) {
+            if (Math.abs(dx) == 3 || Math.abs(dz) == 3) {
+                world.setBlockState(new BlockPos(x + dx, y + 4, z + dz), Blocks.STONE_SLAB.getDefaultState(), 2);
+            }
+        }
+        BlockPos podium = new BlockPos(x, y, z);
+        world.setBlockState(podium, ModBlocks.CROWNFALL_PODIUM.getDefaultState(), 3);
+        TileEntity tile = world.getTileEntity(podium);
+        if (!(tile instanceof TileEntityCrownfallPodium)) return false;
+        ((TileEntityCrownfallPodium) tile).setObjective(display, gauntlet);
+        match.podiums.put(podium.toImmutable(), new CrownfallPodium(display.copy(), gauntlet));
+        System.out.println("[HeroSMP][Crownfall] " + (gauntlet ? "Gauntlet" : display.getDisplayName())
+                + " temple at " + podium + " in dimension " + world.provider.getDimension());
+        return world.getBlockState(podium).getBlock() == ModBlocks.CROWNFALL_PODIUM;
+    }
+
+    private int getCrownfallTerrainSurfaceY(WorldServer world, int x, int z) {
+        int top = Math.min(254, world.getHeight(new BlockPos(x, 0, z)).getY() - 1);
+        for (int y = top; y > 1; y--) {
+            net.minecraft.block.state.IBlockState state = world.getBlockState(new BlockPos(x, y, z));
+            Block block = state.getBlock();
+            if (block == Blocks.LEAVES || block == Blocks.LEAVES2
+                    || block == Blocks.LOG || block == Blocks.LOG2) continue;
+            if (state.getMaterial().isSolid()) return y + 1;
+        }
+        return 2;
+    }
+
+    public synchronized boolean handleCrownfallPodiumInteract(EntityPlayerMP player, BlockPos position) {
+        CrownfallMatch match = playerToCrownfallMatch.get(player.getUniqueID());
+        if (match == null || match.phase != MatchPhase.ACTIVE || position == null
+                || player.dimension != match.dimensionId) return false;
+        CrownfallPodium podium = match.podiums.get(position);
+        if (podium == null || podium.claimed) return false;
+        TileEntity tile = player.world.getTileEntity(position);
+        if (!(tile instanceof TileEntityCrownfallPodium)) return false;
+        if (podium.gauntlet) {
+            equipCrownfallGauntlet(player, podium.stack.copy());
+            podium.claimed = true;
+            ((TileEntityCrownfallPodium) tile).clearObjective();
+            sendCrownfallChat(player.getServer(), match, TextFormatting.GOLD + player.getName() + " claimed the Infinity Gauntlet!");
+            return true;
+        }
+        ItemStack gauntlet = findCrownfallGauntlet(player);
+        if (gauntlet.isEmpty()) {
+            send(player, TextFormatting.RED + "Only the Gauntlet bearer can claim an Infinity Stone.");
+            return true;
+        }
+        ItemInfinityStone stone = podium.stack.getItem() instanceof ItemInfinityStone
+                ? (ItemInfinityStone) podium.stack.getItem() : null;
+        if (stone == null || !slotStone(gauntlet, podium.stack.copy(), stone.getType())) {
+            send(player, TextFormatting.YELLOW + "That Stone is already slotted in the Gauntlet.");
+            return true;
+        }
+        podium.claimed = true;
+        ((TileEntityCrownfallPodium) tile).clearObjective();
+        try {
+            anvil.infinity.capabilities.ICapabilityPlayerData data = GauntletUserInformation.getDataByEntity(player);
+            if (data != null) {
+                if (!match.originalSnapResults.containsKey(player.getUniqueID())) {
+                    match.originalSnapResults.put(player.getUniqueID(), data.getSnapResult());
+                }
+                data.setSnapResult(SnapResult.KILLHALF);
+            }
+        } catch (Exception ignored) {
+        }
+        player.inventory.markDirty();
+        player.inventoryContainer.detectAndSendChanges();
+        sendCrownfallChat(player.getServer(), match, stone.getType().getTextColor() + player.getName()
+                + " claimed the " + podium.stack.getDisplayName() + "!");
+        return true;
+    }
+
+    private boolean slotStone(ItemStack gauntlet, ItemStack stone, EnumInfinityStone type) {
+        InventoryInfinityGauntlet inventory = new InventoryInfinityGauntlet(gauntlet);
+        for (int slot = 0; slot < InventoryInfinityGauntlet.SLOTS.length; slot++) {
+            if (InventoryInfinityGauntlet.SLOTS[slot] != type) continue;
+            if (!inventory.getStackInSlot(slot).isEmpty()) return false;
+            inventory.setInventorySlotContents(slot, stone);
+            return true;
+        }
+        return false;
+    }
+
+    private void equipCrownfallGauntlet(EntityPlayerMP player, ItemStack gauntlet) {
+        ItemStack held = player.getHeldItemMainhand();
+        if (!held.isEmpty() && !player.inventory.addItemStackToInventory(held.copy())) player.dropItem(held.copy(), false);
+        player.setHeldItem(EnumHand.MAIN_HAND, gauntlet);
+        player.inventory.markDirty();
+        player.inventoryContainer.detectAndSendChanges();
+    }
+
+    private ItemStack findCrownfallGauntlet(EntityPlayerMP player) {
+        for (ItemStack stack : player.inventory.mainInventory) if (isCrownfallGauntlet(stack)) return stack;
+        for (ItemStack stack : player.inventory.offHandInventory) if (isCrownfallGauntlet(stack)) return stack;
+        return ItemStack.EMPTY;
+    }
+
+    private boolean isCrownfallGauntlet(ItemStack stack) {
+        return !stack.isEmpty() && stack.getItem() instanceof ItemInfinityGauntlet && stack.hasTagCompound()
+                && stack.getTagCompound().getBoolean(CROWNFALL_ITEM_TAG);
+    }
+
     /** Advances arena generation on the server thread with a shared per-tick chunk budget. */
     private void tickArenaPreparations(MinecraftServer server) {
         PendingArenaPreparation pending = pendingArenaPreparations.peekFirst();
         if (pending == null) return;
 
         List<EntityPlayerMP> online = getPendingPlayers(server, pending.playerIds);
-        int required = pending.kind == PendingArenaKind.FFA ? FFA_MIN_PLAYERS : pending.playerIds.size();
+        int required = pending.forceSolo ? 1 : pending.kind == PendingArenaKind.FFA ? FFA_MIN_PLAYERS
+                : pending.kind == PendingArenaKind.CROWNFALL ? CROWNFALL_MIN_PLAYERS : pending.playerIds.size();
         if (online.size() < required) {
             failArenaPreparation(server, pending, true);
             return;
@@ -1159,7 +1731,7 @@ public class PvpQueueManager {
             }
             pending.dimensionAttempt++;
             pending.nextChunk = 0;
-            pending.allocation = createArena(server, pending.kind.suffix);
+            pending.allocation = createArena(server, pending.kind);
             if (pending.allocation == null) failArenaPreparation(server, pending, true);
             return;
         }
@@ -1173,6 +1745,9 @@ public class PvpQueueManager {
         } else if (pending.kind == PendingArenaKind.DUEL) {
             if (online.size() == 2) finishMatch(online.get(0), online.get(1), prepared);
             else teardownArenaDimension(server, prepared.dimensionId);
+        } else if (pending.kind == PendingArenaKind.CROWNFALL
+                && online.size() >= (pending.forceSolo ? 1 : CROWNFALL_MIN_PLAYERS)) {
+            finishCrownfallMatch(online, prepared);
         } else if (online.size() >= FFA_MIN_PLAYERS) {
             finishFfaMatch(online, pending.immediate, prepared);
         } else {
@@ -1216,6 +1791,7 @@ public class PvpQueueManager {
 
     private void notifyArenaFailure(MinecraftServer server, PendingArenaKind kind, List<UUID> playerIds) {
         String message = kind == PendingArenaKind.FFA ? "Failed to create FFA arena."
+                : kind == PendingArenaKind.CROWNFALL ? "Failed to create Crownfall arena."
                 : kind == PendingArenaKind.SOLO ? "Failed to create debug arena."
                 : "Failed to create PvP arena.";
         for (UUID playerId : playerIds) {
@@ -1367,9 +1943,15 @@ public class PvpQueueManager {
         return z ^ (z >>> 31);
     }
 
-    private List<BlockPos> spawnMatchLootChests(WorldServer world, ArenaSlot slot) {
+    private List<BlockPos> spawnMatchLootChests(WorldServer world, ArenaSlot slot, boolean crownfall) {
         List<ItemStack> lootPool = new ArrayList<ItemStack>(
                 HeroSMP.PVP_CHEST_LOOT_MANAGER.getLootPool(world.getMinecraftServer()));
+        // Crownfall owns these items as podium objectives. Other PVP modes retain configured copies.
+        if (crownfall) {
+            lootPool.removeIf(stack -> !stack.isEmpty()
+                    && (stack.getItem() instanceof ItemInfinityStone
+                    || stack.getItem() instanceof ItemInfinityGauntlet));
+        }
         // Keys are runtime loot, not part of the administrator's persisted loot pool.
         // Two single keys are distributed across separate chests when possible.
         if (HeroSMP.PVP_INJECTION_MANAGER.hasSpawnablePool(world.getMinecraftServer())) {
@@ -1646,11 +2228,15 @@ public class PvpQueueManager {
     public synchronized void tickMatchProgress(MinecraftServer server) {
         tickArenaPreparations(server);
         tickFfaQueue(server);
+        tickCrownfallQueue(server);
         for (ActiveMatch match : activeMatchesForTick()) {
             tickMatch(server, match);
         }
         for (FfaMatch match : ffaMatchesForTick()) {
             tickFfaMatch(server, match);
+        }
+        for (CrownfallMatch match : crownfallMatchesForTick()) {
+            tickCrownfallMatch(server, match);
         }
         for (SoloMatch solo : soloMatchesForTick()) {
             tickSoloMatch(server, solo);
@@ -1749,6 +2335,10 @@ public class PvpQueueManager {
         }
         if (session.target == SpectateTarget.FFA_MATCH) {
             FfaMatch match = findFfaMatchById(session.targetId);
+            return match != null && (match.playerOrder.contains(viewerId) || match.spectators.contains(viewerId));
+        }
+        if (session.target == SpectateTarget.CROWNFALL_MATCH) {
+            CrownfallMatch match = findCrownfallMatchById(session.targetId);
             return match != null && (match.playerOrder.contains(viewerId) || match.spectators.contains(viewerId));
         }
         SoloMatch solo = findSoloMatchById(session.targetId);
@@ -1961,6 +2551,156 @@ public class PvpQueueManager {
         if (match.phaseTicksRemaining <= 0) {
             resolveFfaByTimeout(server, match);
         }
+    }
+
+    private void tickCrownfallMatch(MinecraftServer server, CrownfallMatch match) {
+        WorldServer world = server.getWorld(match.dimensionId);
+        if (world == null) return;
+        if (match.snapWinner != null) {
+            endCrownfallMatch(server, match, match.snapWinner);
+            return;
+        }
+        if (match.phase == MatchPhase.PREPARE) {
+            freezeCrownfallPlayers(server, match);
+            boolean ready = true;
+            for (UUID id : match.playerOrder) if (awaitingKitSelection.contains(id)) { ready = false; break; }
+            if (ready || --match.phaseTicksRemaining <= 0) {
+                match.phase = MatchPhase.START_COUNTDOWN;
+                match.phaseTicksRemaining = PREP_COUNTDOWN_TICKS;
+            }
+            return;
+        }
+        if (match.phase == MatchPhase.START_COUNTDOWN) {
+            freezeCrownfallPlayers(server, match);
+            if (match.phaseTicksRemaining % 20 == 0) {
+                int seconds = Math.max(1, match.phaseTicksRemaining / 20);
+                sendCrownfallTitle(server, match, String.valueOf(seconds), TextFormatting.GOLD + "The temples awaken");
+            }
+            if (--match.phaseTicksRemaining <= 0) startActiveCrownfallRound(server, match, world);
+            return;
+        }
+        if (match.phase != MatchPhase.ACTIVE) return;
+
+        UUID carrier = null;
+        int stones = 0;
+        for (UUID id : match.playerOrder) {
+            EntityPlayerMP player = server.getPlayerList().getPlayerByUUID(id);
+            if (player == null) continue;
+            ItemStack gauntlet = findCrownfallGauntlet(player);
+            if (!gauntlet.isEmpty()) {
+                carrier = id;
+                stones = countGauntletStones(gauntlet);
+                try {
+                    anvil.infinity.capabilities.ICapabilityPlayerData data = GauntletUserInformation.getDataByEntity(player);
+                    if (data != null) {
+                        if (!match.originalSnapResults.containsKey(id)) match.originalSnapResults.put(id, data.getSnapResult());
+                        data.setSnapResult(SnapResult.KILLHALF);
+                    }
+                } catch (Exception ignored) {
+                }
+                player.addPotionEffect(new PotionEffect(MobEffects.GLOWING, 30, 0, false, false));
+            } else {
+                player.removePotionEffect(MobEffects.GLOWING);
+            }
+            handleCrownfallFishingHook(player, match);
+        }
+        match.gauntletCarrier = carrier;
+        updateCrownfallBossBar(server, match, carrier, stones);
+        for (DamageWindow window : match.damageWindows.values()) if (window.ticksRemaining > 0) window.ticksRemaining--;
+    }
+
+    private void freezeCrownfallPlayers(MinecraftServer server, CrownfallMatch match) {
+        for (UUID id : match.playerOrder) {
+            EntityPlayerMP player = server.getPlayerList().getPlayerByUUID(id);
+            BlockPos spawn = match.spawns.get(id);
+            if (player == null || spawn == null) continue;
+            player.motionX = player.motionY = player.motionZ = 0.0D;
+            player.setPositionAndUpdate(spawn.getX() + 0.5D, spawn.getY(), spawn.getZ() + 0.5D);
+            player.addPotionEffect(new PotionEffect(MobEffects.SLOWNESS, 10, 10, false, false));
+            player.addPotionEffect(new PotionEffect(MobEffects.JUMP_BOOST, 10, 200, false, false));
+        }
+    }
+
+    private void startActiveCrownfallRound(MinecraftServer server, CrownfallMatch match, WorldServer world) {
+        match.phase = MatchPhase.ACTIVE;
+        match.bossBar = new BossInfoServer(new TextComponentString("Crownfall: Gauntlet unclaimed"),
+                BossInfo.Color.PURPLE, BossInfo.Overlay.PROGRESS);
+        match.bossBar.setPercent(0.0F);
+        for (UUID id : match.playerOrder) {
+            EntityPlayerMP player = server.getPlayerList().getPlayerByUUID(id);
+            if (player == null) continue;
+            player.removePotionEffect(MobEffects.SLOWNESS);
+            player.removePotionEffect(MobEffects.JUMP_BOOST);
+            giveCrownfallRod(player);
+            match.bossBar.addPlayer(player);
+        }
+        sendCrownfallTitle(server, match, TextFormatting.LIGHT_PURPLE + "CROWNFALL", TextFormatting.GRAY + "Snap with all six Stones to win");
+        playMatchSound(world, match.slot.centerX, match.slot.centerZ, SoundEvents.ENTITY_ENDERDRAGON_GROWL,
+                SoundCategory.PLAYERS, 1.2F, 1.0F);
+    }
+
+    private int countGauntletStones(ItemStack gauntlet) {
+        int count = 0;
+        InventoryInfinityGauntlet inventory = new InventoryInfinityGauntlet(gauntlet);
+        for (int i = 0; i < inventory.getSizeInventory(); i++) if (!inventory.getStackInSlot(i).isEmpty()) count++;
+        return count;
+    }
+
+    private void updateCrownfallBossBar(MinecraftServer server, CrownfallMatch match, UUID carrier, int stones) {
+        if (match.bossBar == null) return;
+        String name = "unclaimed";
+        if (carrier != null) {
+            EntityPlayerMP player = server.getPlayerList().getPlayerByUUID(carrier);
+            name = player == null ? "Unknown" : player.getName();
+        }
+        match.bossBar.setName(new TextComponentString(TextFormatting.LIGHT_PURPLE + "Crownfall: "
+                + TextFormatting.WHITE + name + TextFormatting.GRAY + " [" + stones + "/6 Stones]"));
+        match.bossBar.setPercent(Math.min(1.0F, stones / 6.0F));
+    }
+
+    private void handleCrownfallFishingHook(EntityPlayerMP fisher, CrownfallMatch match) {
+        EntityFishHook hook = fisher.fishEntity;
+        if (hook == null || hook.isDead || !(hook.caughtEntity instanceof EntityPlayerMP)) return;
+        if (!isCrownfallRod(fisher.getHeldItemMainhand()) && !isCrownfallRod(fisher.getHeldItemOffhand())) return;
+        EntityPlayerMP target = (EntityPlayerMP) hook.caughtEntity;
+        if (target == fisher || playerToCrownfallMatch.get(target.getUniqueID()) != match) return;
+        ItemStack stolen = removeCrownfallStealItem(target);
+        hook.setDead();
+        fisher.fishEntity = null;
+        target.motionX = target.motionY = target.motionZ = 0.0D;
+        if (stolen.isEmpty()) {
+            send(fisher, TextFormatting.GRAY + "The hook found nothing to steal.");
+            return;
+        }
+        if (isCrownfallGauntlet(stolen)) {
+            equipCrownfallGauntlet(fisher, stolen);
+            sendCrownfallChat(fisher.getServer(), match, TextFormatting.GOLD + fisher.getName()
+                    + " ripped the Gauntlet from " + target.getName() + "!");
+        } else {
+            if (!fisher.inventory.addItemStackToInventory(stolen)) fisher.dropItem(stolen, false);
+            send(fisher, TextFormatting.GREEN + "Stole " + TextFormatting.WHITE + stolen.getDisplayName()
+                    + TextFormatting.GREEN + " from " + target.getName() + ".");
+            send(target, TextFormatting.RED + fisher.getName() + " stole your " + stolen.getDisplayName() + "!");
+        }
+        target.inventory.markDirty();
+        target.inventoryContainer.detectAndSendChanges();
+        fisher.inventoryContainer.detectAndSendChanges();
+    }
+
+    private ItemStack removeCrownfallStealItem(EntityPlayerMP target) {
+        for (int i = 0; i < target.inventory.mainInventory.size(); i++) {
+            ItemStack stack = target.inventory.mainInventory.get(i);
+            if (isCrownfallGauntlet(stack)) {
+                target.inventory.mainInventory.set(i, ItemStack.EMPTY);
+                return stack;
+            }
+        }
+        ItemStack offhand = target.getHeldItemOffhand();
+        if (isCrownfallGauntlet(offhand)) {
+            target.setHeldItem(EnumHand.OFF_HAND, ItemStack.EMPTY);
+            return offhand;
+        }
+        return ItemStack.EMPTY;
     }
 
     private void tickSoloMatch(MinecraftServer server, SoloMatch solo) {
@@ -2453,6 +3193,56 @@ public class PvpQueueManager {
         }
     }
 
+    private void endCrownfallMatch(MinecraftServer server, CrownfallMatch match, @Nullable UUID winnerId) {
+        WorldServer world = server.getWorld(match.dimensionId);
+        if (world != null) {
+            removeChestHighlights(world, match.chestHighlightIds);
+            removeArenaInjections(world);
+            for (BlockPos podiumPos : match.podiums.keySet()) {
+                if (world.getBlockState(podiumPos).getBlock() == ModBlocks.CROWNFALL_PODIUM) {
+                    world.setBlockToAir(podiumPos);
+                }
+            }
+        }
+        if (match.bossBar != null) {
+            for (EntityPlayerMP player : new ArrayList<EntityPlayerMP>(match.bossBar.getPlayers())) match.bossBar.removePlayer(player);
+            match.bossBar.setVisible(false);
+        }
+        returnSpectatorsForCrownfall(server, match);
+        EntityPlayerMP winner = winnerId == null ? null : server.getPlayerList().getPlayerByUUID(winnerId);
+        boolean celebrate = winner != null && !winner.isDead;
+        for (UUID id : new ArrayList<UUID>(match.playerOrder)) {
+            playerToCrownfallMatch.remove(id);
+            awaitingKitSelection.remove(id);
+            EntityPlayerMP player = server.getPlayerList().getPlayerByUUID(id);
+            if (player == null) continue;
+            SnapResult originalSnap = match.originalSnapResults.get(id);
+            if (originalSnap != null) {
+                try {
+                    anvil.infinity.capabilities.ICapabilityPlayerData data = GauntletUserInformation.getDataByEntity(player);
+                    if (data != null) data.setSnapResult(originalSnap);
+                } catch (Exception ignored) {
+                }
+            }
+            Double originalBase = match.baseMaxHealth.get(id);
+            if (originalBase != null) player.getEntityAttribute(SharedMonsterAttributes.MAX_HEALTH).setBaseValue(originalBase);
+            player.removePotionEffect(MobEffects.GLOWING);
+            player.removePotionEffect(MobEffects.RESISTANCE);
+            ReturnState returnState = match.returnStates.get(id);
+            PlayerInventorySnapshot snapshot = match.inventorySnapshots.get(id);
+            if (celebrate && id.equals(winnerId)) {
+                beginVictorySequence(player, returnState, snapshot, match.dimensionId);
+            } else {
+                restorePlayer(player, returnState);
+                snapshot.restore(player);
+                clearPersistedState(player);
+                send(player, winnerId == null ? TextFormatting.YELLOW + "Crownfall ended."
+                        : TextFormatting.GRAY + "Crownfall won by " + TextFormatting.GOLD + winner.getName() + TextFormatting.GRAY + ".");
+            }
+        }
+        if (!celebrate) teardownArenaDimension(server, match.dimensionId);
+    }
+
     private void beginVictorySequence(EntityPlayerMP winner, ReturnState returnState, PlayerInventorySnapshot inventorySnapshot, int dimensionId) {
         pendingVictorySequences.put(winner.getUniqueID(), new VictorySequence(
                 winner.getUniqueID(),
@@ -2462,7 +3252,7 @@ public class PvpQueueManager {
                 dimensionId,
                 VICTORY_SEQUENCE_TICKS
         ));
-        sendTitle(winner, TextFormatting.GOLD + "VICTORY!", TextFormatting.YELLOW + "You won the duel", 30);
+        sendTitle(winner, TextFormatting.GOLD + "VICTORY!", TextFormatting.YELLOW + "You won the match", 30);
         winner.addPotionEffect(new PotionEffect(MobEffects.GLOWING, VICTORY_SEQUENCE_TICKS + 40, 0, false, false));
         MinecraftServer server = winner.getServer();
         if (server == null) return;
@@ -2529,6 +3319,17 @@ public class PvpQueueManager {
         }
     }
 
+    private void sendCrownfallChat(MinecraftServer server, CrownfallMatch match, String message) {
+        for (UUID id : match.playerOrder) {
+            EntityPlayerMP player = server.getPlayerList().getPlayerByUUID(id);
+            if (player != null) send(player, message);
+        }
+        for (UUID id : match.spectators) {
+            EntityPlayerMP player = server.getPlayerList().getPlayerByUUID(id);
+            if (player != null) send(player, message);
+        }
+    }
+
     private void sendSoloChat(MinecraftServer server, SoloMatch solo, String message) {
         EntityPlayerMP soloPlayer = server.getPlayerList().getPlayerByUUID(solo.playerId);
         if (soloPlayer != null) {
@@ -2559,6 +3360,13 @@ public class PvpQueueManager {
             if (player != null) {
                 sendTitle(player, title, subtitle, 12);
             }
+        }
+    }
+
+    private void sendCrownfallTitle(MinecraftServer server, CrownfallMatch match, String title, String subtitle) {
+        for (UUID id : match.playerOrder) {
+            EntityPlayerMP player = server.getPlayerList().getPlayerByUUID(id);
+            if (player != null) sendTitle(player, title, subtitle, 20);
         }
     }
 
@@ -2701,6 +3509,19 @@ public class PvpQueueManager {
         match.spectators.clear();
     }
 
+    private void returnSpectatorsForCrownfall(MinecraftServer server, CrownfallMatch match) {
+        for (UUID id : new ArrayList<UUID>(match.spectators)) {
+            SpectatorSession session = spectators.remove(id);
+            EntityPlayerMP spectator = server.getPlayerList().getPlayerByUUID(id);
+            if (session == null || spectator == null) continue;
+            removeSpectatorBat(server, session);
+            pendingArenaArrivals.add(id);
+            restorePlayer(spectator, session.returnState);
+            send(spectator, TextFormatting.YELLOW + "Crownfall ended. You were returned.");
+        }
+        match.spectators.clear();
+    }
+
     private void returnSpectatorsForSolo(MinecraftServer server, SoloMatch solo) {
         for (UUID spectatorId : new ArrayList<UUID>(solo.spectators)) {
             SpectatorSession session = spectators.remove(spectatorId);
@@ -2750,6 +3571,9 @@ public class PvpQueueManager {
                 enforcePlayerInsideArena(server, playerId, match.dimensionId, match.slot);
             }
         }
+        for (CrownfallMatch match : crownfallMatchesForTick()) {
+            for (UUID id : match.playerOrder) enforcePlayerInsideArena(server, id, match.dimensionId, match.slot);
+        }
 
         for (SoloMatch solo : soloMatchesForTick()) {
             enforcePlayerInsideArena(server, solo.playerId, solo.dimensionId, solo.slot);
@@ -2772,6 +3596,9 @@ public class PvpQueueManager {
             for (UUID playerId : new ArrayList<UUID>(match.playerOrder)) {
                 confirmArrival(server, playerId, match.dimensionId);
             }
+        }
+        for (CrownfallMatch match : crownfallMatchesForTick()) {
+            for (UUID id : new ArrayList<UUID>(match.playerOrder)) confirmArrival(server, id, match.dimensionId);
         }
         for (SoloMatch solo : soloMatchesForTick()) {
             confirmArrival(server, solo.playerId, solo.dimensionId);
@@ -2805,10 +3632,10 @@ public class PvpQueueManager {
         if (world == null) {
             return;
         }
-        if (player.posX >= ArenaWorldProvider.ARENA_BORDER_START
-                && player.posX <= ArenaWorldProvider.ARENA_BORDER_END
-                && player.posZ >= ArenaWorldProvider.ARENA_BORDER_START
-                && player.posZ <= ArenaWorldProvider.ARENA_BORDER_END) {
+        double borderStart = slot.borderCenter - slot.borderDiameter / 2.0D;
+        double borderEnd = slot.borderCenter + slot.borderDiameter / 2.0D;
+        if (player.posX >= borderStart && player.posX <= borderEnd
+                && player.posZ >= borderStart && player.posZ <= borderEnd) {
             return;
         }
 
@@ -2848,11 +3675,21 @@ public class PvpQueueManager {
     public synchronized boolean isPlayerInPvpSession(UUID playerId) {
         return playerToMatch.containsKey(playerId)
                 || playerToFfaMatch.containsKey(playerId)
+                || playerToCrownfallMatch.containsKey(playerId)
                 || soloMatches.containsKey(playerId)
                 || queuedPlayers.contains(playerId)
                 || ffaQueuedPlayers.contains(playerId)
+                || crownfallQueuedPlayers.contains(playerId)
                 || playersPreparingArena.contains(playerId)
                 || spectators.containsKey(playerId);
+    }
+
+    /** Returns true only for a participant assigned to a Hero PVP match, not queues or spectators. */
+    public synchronized boolean isPlayerInActivePvpMatch(UUID playerId) {
+        return playerToMatch.containsKey(playerId)
+                || playerToFfaMatch.containsKey(playerId)
+                || playerToCrownfallMatch.containsKey(playerId)
+                || soloMatches.containsKey(playerId);
     }
 
     /**
@@ -2873,6 +3710,8 @@ public class PvpQueueManager {
         if (ffa != null) {
             return new HashSet<>(ffa.playerOrder);
         }
+        CrownfallMatch crownfall = playerToCrownfallMatch.get(playerId);
+        if (crownfall != null) return new HashSet<UUID>(crownfall.playerOrder);
         SoloMatch solo = soloMatches.get(playerId);
         if (solo != null) {
             Set<UUID> players = new HashSet<>();
@@ -2895,6 +3734,13 @@ public class PvpQueueManager {
         }
     }
 
+    private void sendQueuedCrownfallPlayers(MinecraftServer server, String message) {
+        for (UUID id : new ArrayList<UUID>(crownfallQueue)) {
+            EntityPlayerMP player = server.getPlayerList().getPlayerByUUID(id);
+            if (player != null) send(player, message);
+        }
+    }
+
     public synchronized int getRoundDurationSeconds(MinecraftServer server) {
         return PvpSettingsSavedData.get(server).getRoundDurationSeconds();
     }
@@ -2911,8 +3757,30 @@ public class PvpQueueManager {
         return matchCounter.incrementAndGet();
     }
 
+    private void tickCrownfallQueue(MinecraftServer server) {
+        if (crownfallQueuedPlayers.size() >= CROWNFALL_MAX_PLAYERS) {
+            startCrownfallFromQueue(server, true);
+            return;
+        }
+        if (crownfallQueueCountdownTicks < 0) {
+            if (crownfallQueuedPlayers.size() >= CROWNFALL_MIN_PLAYERS) crownfallQueueCountdownTicks = CROWNFALL_QUEUE_WAIT_TICKS;
+            return;
+        }
+        if (crownfallQueuedPlayers.size() < CROWNFALL_MIN_PLAYERS) {
+            crownfallQueueCountdownTicks = -1;
+            return;
+        }
+        if (crownfallQueueCountdownTicks % 20 == 0) {
+            int seconds = Math.max(1, crownfallQueueCountdownTicks / 20);
+            if (seconds == 20 || seconds == 10 || seconds <= 5) {
+                sendQueuedCrownfallPlayers(server, TextFormatting.AQUA + "Crownfall starts in " + seconds + "s...");
+            }
+        }
+        if (--crownfallQueueCountdownTicks <= 0) startCrownfallFromQueue(server, false);
+    }
+
     private enum PendingArenaKind {
-        SOLO("debugsolo"), DUEL("match"), FFA("ffa");
+        SOLO("debugsolo"), DUEL("match"), FFA("ffa"), CROWNFALL("crownfall");
 
         private final String suffix;
         PendingArenaKind(String suffix) { this.suffix = suffix; }
@@ -2922,15 +3790,17 @@ public class PvpQueueManager {
         private final PendingArenaKind kind;
         private final List<UUID> playerIds;
         private final boolean immediate;
+        private final boolean forceSolo;
         private ArenaAllocation allocation;
         private int nextChunk;
         private int dimensionAttempt = 1;
 
         private PendingArenaPreparation(PendingArenaKind kind, List<UUID> playerIds,
-                                        boolean immediate, ArenaAllocation allocation) {
+                                        boolean immediate, boolean forceSolo, ArenaAllocation allocation) {
             this.kind = kind;
             this.playerIds = new ArrayList<UUID>(playerIds);
             this.immediate = immediate;
+            this.forceSolo = forceSolo;
             this.allocation = allocation;
         }
     }
@@ -2970,15 +3840,30 @@ public class PvpQueueManager {
      */
     private static class ArenaSlot {
         private final int minChunkX = ARENA_MIN_CHUNK;
-        private final int maxChunkX = ARENA_MAX_CHUNK;
+        private final int maxChunkX;
         private final int minChunkZ = ARENA_MIN_CHUNK;
-        private final int maxChunkZ = ARENA_MAX_CHUNK;
+        private final int maxChunkZ;
         private final int minBlockX = ARENA_MIN_BLOCK;
-        private final int maxBlockX = ARENA_MAX_BLOCK;
+        private final int maxBlockX;
         private final int minBlockZ = ARENA_MIN_BLOCK;
-        private final int maxBlockZ = ARENA_MAX_BLOCK;
-        private final int centerX   = (ARENA_MIN_BLOCK + ARENA_MAX_BLOCK) / 2;
-        private final int centerZ   = (ARENA_MIN_BLOCK + ARENA_MAX_BLOCK) / 2;
+        private final int maxBlockZ;
+        private final int centerX;
+        private final int centerZ;
+        private final double borderCenter;
+        private final double borderDiameter;
+
+        private ArenaSlot(int playableChunksAcross) {
+            this.maxChunkX = ArenaWorldProvider.ARENA_FIRST_GEN + playableChunksAcross + 1;
+            this.maxChunkZ = this.maxChunkX;
+            this.maxBlockX = (ArenaWorldProvider.ARENA_FIRST_CHUNK + playableChunksAcross) * 16 - 1;
+            this.maxBlockZ = this.maxBlockX;
+            this.centerX = (minBlockX + maxBlockX) / 2;
+            this.centerZ = (minBlockZ + maxBlockZ) / 2;
+            double borderStart = ArenaWorldProvider.ARENA_FIRST_GEN * 16.0D;
+            double borderEnd = (maxChunkX + 1) * 16.0D;
+            this.borderCenter = (borderStart + borderEnd) / 2.0D;
+            this.borderDiameter = borderEnd - borderStart;
+        }
 
         // toWorldX/Z: with the arena at the origin these are identity functions,
         // kept for call-site compatibility without needing further edits.
@@ -3004,6 +3889,7 @@ public class PvpQueueManager {
     private enum SpectateTarget {
         ACTIVE_MATCH,
         FFA_MATCH,
+        CROWNFALL_MATCH,
         DEBUG_SOLO
     }
 
@@ -3131,6 +4017,52 @@ public class PvpQueueManager {
             this.slot = slot;
             this.chestPositions = new ArrayList<BlockPos>(chestPositions);
         }
+    }
+
+    private static class CrownfallMatch {
+        private final int matchId;
+        private final int dimensionId;
+        private final ArenaSlot slot;
+        private final List<UUID> playerOrder = new ArrayList<UUID>();
+        private final Map<UUID, ReturnState> returnStates = new HashMap<UUID, ReturnState>();
+        private final Map<UUID, PlayerInventorySnapshot> inventorySnapshots = new HashMap<UUID, PlayerInventorySnapshot>();
+        private final Map<UUID, BlockPos> spawns = new HashMap<UUID, BlockPos>();
+        private final Map<UUID, Double> baseMaxHealth = new HashMap<UUID, Double>();
+        private final Map<UUID, Integer> deaths = new HashMap<UUID, Integer>();
+        private final Map<UUID, DamageWindow> damageWindows = new HashMap<UUID, DamageWindow>();
+        private final Map<UUID, SnapResult> originalSnapResults = new HashMap<UUID, SnapResult>();
+        private final Map<BlockPos, CrownfallPodium> podiums = new HashMap<BlockPos, CrownfallPodium>();
+        private final List<BlockPos> chestPositions;
+        private final List<UUID> chestHighlightIds = new ArrayList<UUID>();
+        private final Set<UUID> spectators = new HashSet<UUID>();
+        private MatchPhase phase = MatchPhase.PREPARE;
+        private int phaseTicksRemaining = PREP_FREEZE_TICKS;
+        private UUID gauntletCarrier;
+        private UUID snapWinner;
+        private BossInfoServer bossBar;
+
+        private CrownfallMatch(int matchId, int dimensionId, ArenaSlot slot, List<BlockPos> chestPositions) {
+            this.matchId = matchId;
+            this.dimensionId = dimensionId;
+            this.slot = slot;
+            this.chestPositions = new ArrayList<BlockPos>(chestPositions);
+        }
+    }
+
+    private static class CrownfallPodium {
+        private final ItemStack stack;
+        private final boolean gauntlet;
+        private boolean claimed;
+
+        private CrownfallPodium(ItemStack stack, boolean gauntlet) {
+            this.stack = stack;
+            this.gauntlet = gauntlet;
+        }
+    }
+
+    private static class DamageWindow {
+        private float damage;
+        private int ticksRemaining;
     }
 
     private static class SoloMatch {

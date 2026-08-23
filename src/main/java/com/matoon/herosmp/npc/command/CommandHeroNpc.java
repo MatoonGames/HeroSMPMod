@@ -40,7 +40,7 @@ public class CommandHeroNpc extends CommandBase {
 
     @Override
     public String getUsage(ICommandSender sender) {
-        return "/heropvp spawn <x> <y> <z> <skinOwner> <name...> | mode <npcKey> <command|pvp_queue> | setcommand <npcKey> <command...> | info <npcKey> | kit <create|remove|list> ... | lootmenu | debugsolo | debugexit | roundtime <seconds> | hg debug <configuremap <map>|endconfigure|solo>";
+        return "/heropvp spawn <x> <y> <z> <skinOwner> <name...> | mode <npcKey> <command|pvp_queue> | setcommand <npcKey> <command...> | info <npcKey> | kit <create|remove|list> ... | lootmenu | forcestart | debugsolo | debugexit | roundtime <seconds> | hg debug <configuremap <map>|endconfigure|solo>";
     }
 
     @Override
@@ -73,6 +73,9 @@ public class CommandHeroNpc extends CommandBase {
                 return;
             case "lootmenu":
                 handleLootMenu(sender);
+                return;
+            case "forcestart":
+                handleForceStart(sender);
                 return;
             case "debugsolo":
                 handleDebugSolo(sender);
@@ -229,6 +232,11 @@ public class CommandHeroNpc extends CommandBase {
         HeroSMP.PVP_QUEUE_MANAGER.startDebugSoloMatch(player);
     }
 
+    private void handleForceStart(ICommandSender sender) throws CommandException {
+        EntityPlayerMP player = getPlayerSender(sender);
+        HeroSMP.PVP_QUEUE_MANAGER.forceStartQueued(player);
+    }
+
     private void handleLootMenu(ICommandSender sender) throws CommandException {
         EntityPlayerMP player = getPlayerSender(sender);
         HeroSMP.PVP_CHEST_LOOT_MANAGER.openLootMenu(player);
@@ -362,7 +370,7 @@ public class CommandHeroNpc extends CommandBase {
     @Override
     public List<String> getTabCompletions(MinecraftServer server, ICommandSender sender, String[] args, @Nullable BlockPos targetPos) {
         if (args.length == 1) {
-            return getListOfStringsMatchingLastWord(args, Arrays.asList("spawn", "mode", "setcommand", "info", "kit", "lootmenu", "debugsolo", "debugexit", "roundtime", "hg", "injections", "injectionproperties"));
+            return getListOfStringsMatchingLastWord(args, Arrays.asList("spawn", "mode", "setcommand", "info", "kit", "lootmenu", "forcestart", "debugsolo", "debugexit", "roundtime", "hg", "injections", "injectionproperties"));
         }
 
         if (args.length == 2 && "hg".equalsIgnoreCase(args[0])) {

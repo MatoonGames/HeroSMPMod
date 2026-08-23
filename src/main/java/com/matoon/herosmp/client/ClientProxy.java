@@ -7,7 +7,11 @@ import com.matoon.herosmp.mindstone.MindControlAuraRenderer;
 import com.matoon.herosmp.mindstone.MindControlPlayerLock;
 import com.matoon.herosmp.hungergames.music.HungerGamesMusicResourcePack;
 import com.matoon.herosmp.registry.ModEntities;
+import com.matoon.herosmp.registry.ModBlocks;
 import com.matoon.herosmp.registry.ModItems;
+import com.matoon.herosmp.client.render.RenderCrownfallPodium;
+import com.matoon.herosmp.client.render.CrownfallGauntletIndicatorRenderer;
+import com.matoon.herosmp.tileentity.TileEntityCrownfallPodium;
 import com.matoon.herosmp.network.ClientPacketDispatcher;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.audio.ISound;
@@ -17,6 +21,7 @@ import net.minecraft.util.ResourceLocation;
 import net.minecraft.util.SoundCategory;
 import net.minecraftforge.common.MinecraftForge;
 import net.minecraftforge.fml.client.FMLClientHandler;
+import net.minecraftforge.fml.client.registry.ClientRegistry;
 import net.minecraftforge.fml.common.event.FMLInitializationEvent;
 import net.minecraftforge.fml.common.event.FMLPreInitializationEvent;
 import net.minecraftforge.fml.common.network.simpleimpl.IMessage;
@@ -35,6 +40,10 @@ public class ClientProxy extends CommonProxy {
         MinecraftForge.EVENT_BUS.register(new EventHandler());
         // Register model event handler (client-only)
         MinecraftForge.EVENT_BUS.register(new ModItems.ClientRegistrationHandler());
+        MinecraftForge.EVENT_BUS.register(new ModBlocks.ClientRegistrationHandler());
+        ClientRegistry.bindTileEntitySpecialRenderer(TileEntityCrownfallPodium.class,
+                new RenderCrownfallPodium());
+        MinecraftForge.EVENT_BUS.register(new CrownfallGauntletIndicatorRenderer());
         // Life Link chain renderer (client-only world renderer)
         MinecraftForge.EVENT_BUS.register(new LifeLinkChainRenderer());
         // Infinity Gauntlet power-up overlay and sound

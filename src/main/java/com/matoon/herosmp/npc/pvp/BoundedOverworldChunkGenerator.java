@@ -29,9 +29,6 @@ import java.util.List;
  */
 public class BoundedOverworldChunkGenerator implements IChunkGenerator {
 
-    private static final int FIRST_GEN = ArenaWorldProvider.ARENA_FIRST_GEN;
-    private static final int LAST_GEN  = ArenaWorldProvider.ARENA_LAST_GEN;
-
     private final World world;
     private final int   dimId;
 
@@ -45,12 +42,11 @@ public class BoundedOverworldChunkGenerator implements IChunkGenerator {
         this.dimId = world.provider.getDimension();
     }
 
-    private static final int FIRST_PLAY = ArenaWorldProvider.ARENA_FIRST_CHUNK;
-    private static final int LAST_PLAY  = ArenaWorldProvider.ARENA_LAST_CHUNK;
-
     /** True if this chunk should have terrain generated (includes 1-chunk buffer). */
-    private static boolean inGenBounds(int cx, int cz) {
-        return cx >= FIRST_GEN && cx <= LAST_GEN && cz >= FIRST_GEN && cz <= LAST_GEN;
+    private boolean inGenBounds(int cx, int cz) {
+        int last = ArenaWorldProvider.getLastGeneratedChunk(dimId);
+        return cx >= ArenaWorldProvider.ARENA_FIRST_GEN && cx <= last
+                && cz >= ArenaWorldProvider.ARENA_FIRST_GEN && cz <= last;
     }
 
     /**
@@ -58,8 +54,10 @@ public class BoundedOverworldChunkGenerator implements IChunkGenerator {
      * The buffer chunks (FIRST_GEN and LAST_GEN) are generated but never decorated,
      * so populate()'s 8-neighbour requests always land on generated chunks.
      */
-    private static boolean canDecorate(int cx, int cz) {
-        return cx >= FIRST_PLAY && cx <= LAST_PLAY && cz >= FIRST_PLAY && cz <= LAST_PLAY;
+    private boolean canDecorate(int cx, int cz) {
+        int last = ArenaWorldProvider.getLastPlayableChunk(dimId);
+        return cx >= ArenaWorldProvider.ARENA_FIRST_CHUNK && cx <= last
+                && cz >= ArenaWorldProvider.ARENA_FIRST_CHUNK && cz <= last;
     }
 
     private boolean ensureInit() {

@@ -200,6 +200,16 @@ public class GuiPvpMenu extends GuiScreen {
             actions.clear();
             slotItems.clear();
 
+            slotItems.put(11, createNamedItem(new ItemStack(Items.NETHER_STAR), TextFormatting.LIGHT_PURPLE + "Crownfall (2-6)",
+                    "Claim the Gauntlet, gather six Stones, and Snap to win"));
+            actions.put(11, new SlotAction() {
+                @Override
+                public void run() {
+                    ModNetwork.CHANNEL.sendToServer(PacketPvpMenuAction.modeQueue("crownfall"));
+                    mc.displayGuiScreen(null);
+                }
+            });
+
             slotItems.put(13, createNamedItem(new ItemStack(Items.IRON_SWORD), TextFormatting.RED + "1v1 Duel", "Current available PvP mode"));
             actions.put(13, new SlotAction() {
                 @Override

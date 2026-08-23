@@ -10,6 +10,7 @@ import com.matoon.herosmp.npc.command.CommandPvpMenu;
 import com.matoon.herosmp.npc.command.CommandReturn;
 import com.matoon.herosmp.network.ModNetwork;
 import com.matoon.herosmp.registry.ModEntities;
+import com.matoon.herosmp.registry.ModBlocks;
 import com.matoon.herosmp.registry.ModItems;
 import com.matoon.herosmp.registry.ModPotions;
 import com.matoon.herosmp.registry.ModSounds;
@@ -18,13 +19,19 @@ import net.minecraftforge.common.MinecraftForge;
 import net.minecraftforge.fml.common.event.FMLInitializationEvent;
 import net.minecraftforge.fml.common.event.FMLPreInitializationEvent;
 import net.minecraftforge.fml.common.event.FMLServerStartingEvent;
+import net.minecraftforge.fml.common.registry.GameRegistry;
+import net.minecraft.util.ResourceLocation;
+import com.matoon.herosmp.tileentity.TileEntityCrownfallPodium;
 
 public class CommonProxy {
     public void preInit(FMLPreInitializationEvent event) {
         ModEntities.registerEntities();
         ModNetwork.init();
         MinecraftForge.EVENT_BUS.register(new ModSounds());
+        MinecraftForge.EVENT_BUS.register(new ModBlocks.RegistrationHandler());
         MinecraftForge.EVENT_BUS.register(new ModItems.RegistrationHandler());
+        GameRegistry.registerTileEntity(TileEntityCrownfallPodium.class,
+                new ResourceLocation("herosmp", "crownfall_podium"));
         MinecraftForge.EVENT_BUS.register(new ModPotions());
         MinecraftForge.EVENT_BUS.register(new PvpQueueEvents());
         MinecraftForge.EVENT_BUS.register(new HungerGamesEvents());

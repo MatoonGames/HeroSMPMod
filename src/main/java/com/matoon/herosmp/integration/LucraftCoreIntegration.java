@@ -21,6 +21,8 @@ import com.matoon.herosmp.timestone.TimeStoneChargeManager;
 import com.matoon.herosmp.timestone.TimeStoneAbilityAdder;
 import com.matoon.herosmp.mindstone.AbilityMindControl;
 import com.matoon.herosmp.mindstone.MindStoneAbilityAdder;
+import com.matoon.herosmp.infinity.AbilityCrownfallSnap;
+import com.matoon.herosmp.infinity.CrownfallSnapAbilityAdder;
 import lucraft.mods.lucraftcore.superpowers.abilities.Ability;
 import lucraft.mods.lucraftcore.superpowers.abilities.AbilityEntry;
 import lucraft.mods.lucraftcore.superpowers.abilities.supplier.AbilityContainer;
@@ -100,6 +102,9 @@ public class LucraftCoreIntegration {
      */
     private static final Map<UUID, Integer> SNAP_PREV_COOLDOWN = new HashMap<>();
 
+    /** Prevents the legacy cooldown fallback from replaying effects after the exact action hook. */
+    private static final Map<UUID, Integer> DIRECT_CROWNFALL_SNAP_TICK = new HashMap<>();
+
     private static final Random SNAP_RANDOM = new Random();
 
     /**
@@ -175,6 +180,7 @@ public class LucraftCoreIntegration {
     public static void init(FMLInitializationEvent event) {
         AbilityAdderHandler.register(new TimeStoneAbilityAdder());
         AbilityAdderHandler.register(new MindStoneAbilityAdder());
+        AbilityAdderHandler.register(new CrownfallSnapAbilityAdder());
     }
 
     /**
@@ -191,7 +197,8 @@ public class LucraftCoreIntegration {
             new AbilityEntry(AbilitySpeedTime.class,    new ResourceLocation("herosmp", "speed_time")),
             new AbilityEntry(AbilityResetTime.class,    new ResourceLocation("herosmp", "reset_time")),
             new AbilityEntry(AbilityTimeUnlocker.class, new ResourceLocation("herosmp", "time_unlocker")),
-            new AbilityEntry(AbilityMindControl.class, new ResourceLocation("herosmp", "mind_control"))
+            new AbilityEntry(AbilityMindControl.class, new ResourceLocation("herosmp", "mind_control")),
+            new AbilityEntry(AbilityCrownfallSnap.class, new ResourceLocation("herosmp", "crownfall_snap"))
         );
     }
 
@@ -245,6 +252,7 @@ public class LucraftCoreIntegration {
             TimeStoneDimensionManager.onUserLeftDimension(player, player.dimension);
         }
         TimeStoneChargeManager.onPlayerLeft(player.getUniqueID());
+        PvpMobilityChargeManager.onPlayerLeft(player.getUniqueID());
         // Always re-sync this player's client to normal on disconnect so their
         // next session doesn't start at a wrong tickrate.
         TickrateAPI.changeClientTickrate(player, 20.0f);
@@ -257,6 +265,7 @@ public class LucraftCoreIntegration {
         STRAIN_HITS.remove(player.getUniqueID());
         MAIN_HAND_GAUNTLET_STATE.remove(player.getUniqueID());
         OFF_HAND_GAUNTLET_STATE.remove(player.getUniqueID());
+        DIRECT_CROWNFALL_SNAP_TICK.remove(player.getUniqueID());
         if (player.getUniqueID().equals(lastSnapper)) {
             lastSnapper = null;
             lastSnapperMatchPlayers = null;
@@ -281,7 +290,7 @@ public class LucraftCoreIntegration {
 
         AbilitySnap snap;
         try {
-            snap = Ability.getAbilityFromClass(Ability.getAbilities(player), AbilitySnap.class);
+            snap = findSnapAbility(player);
         } catch (Exception e) {
             // LucraftCore capability may not be ready yet (e.g. mid-login or dimension change).
             return;
@@ -369,13 +378,55 @@ public class LucraftCoreIntegration {
         // Exclude the power-up lock: powerUpLock is true when cooldown >= POWER_UP_DURATION_TICKS,
         // which is the specific value lockSnapAbility injects. A real snap sets a smaller cooldown,
         // so !powerUpLock lets the snap edge through while blocking the lock edge.
-        if (prev == 0 && curr > 0 && !powerUpLock) {
+        Integer directTick = DIRECT_CROWNFALL_SNAP_TICK.remove(uuid);
+        boolean handledDirectly = directTick != null && player.ticksExisted - directTick <= 2;
+        if (prev == 0 && curr > 0 && !powerUpLock && !handledDirectly) {
             MinecraftServer server = FMLCommonHandler.instance().getMinecraftServerInstance();
             if (server == null) return;
 
-            // Determine which hand holds the gauntlet for the skin overlay texture.
-            boolean mainHand = player.getHeldItemMainhand().getItem() instanceof ItemInfinityGauntlet;
+            // Crownfall replaces InfinityCraft's dusting result with an immediate
+            // objective victory. Keep HeroSMP's sound, flash, overlay, and snapper
+            // debuffs below, but strip InfinityCraft's delayed snap potion globally.
+            if (HeroSMP.PVP_QUEUE_MANAGER.handleCrownfallSnap(player)) {
+                for (EntityPlayerMP target : server.getPlayerList().getPlayers()) {
+                    target.removePotionEffect(Effects.snapEffect);
+                }
+                lastSnapper = null;
+                lastSnapperMatchPlayers = null;
+                lastSnapperDimension = Integer.MIN_VALUE;
+            }
 
+            applyHeroSnapEffects(player, server);
+        }
+    }
+
+    /**
+     * Called synchronously from {@link AbilityCrownfallSnap#action()} after Crownfall
+     * accepts a six-Stone snap. InfinityCraft's SnapHelper has not run, so no entities
+     * are selected or dusted; HeroSMP's sound, flash, skin and debuffs still run.
+     */
+    public static void handleDirectCrownfallSnapEffects(EntityPlayerMP player) {
+        MinecraftServer server = player.getServer();
+        if (server == null) return;
+
+        // Clear any stale delayed dust effects left by an earlier snap. The direct
+        // Crownfall path never creates new ones.
+        for (EntityPlayerMP target : server.getPlayerList().getPlayers()) {
+            target.removePotionEffect(Effects.snapEffect);
+        }
+        lastSnapper = null;
+        lastSnapperMatchPlayers = null;
+        lastSnapperDimension = Integer.MIN_VALUE;
+        DIRECT_CROWNFALL_SNAP_TICK.put(player.getUniqueID(), player.ticksExisted);
+        applyHeroSnapEffects(player, server);
+    }
+
+    /** Shared HeroSMP presentation and match-scoping behavior for every successful snap. */
+    private static void applyHeroSnapEffects(EntityPlayerMP player, MinecraftServer server) {
+        UUID uuid = player.getUniqueID();
+        boolean mainHand = player.getHeldItemMainhand().getItem() instanceof ItemInfinityGauntlet;
+
+            // Determine which hand holds the gauntlet for the skin overlay texture.
             // Sound + flash: only players within 80 blocks in the same dimension.
             int soundIndex = SNAP_RANDOM.nextInt(3);
             PacketSnapEffect effectPkt = new PacketSnapEffect(soundIndex);
@@ -422,7 +473,6 @@ public class LucraftCoreIntegration {
                     // Not in a match — SnapHelper's global message is the only one needed.
                 }
             }
-        }
     }
 
     /**
@@ -643,7 +693,7 @@ public class LucraftCoreIntegration {
      */
     private static void lockSnapAbility(EntityPlayerMP player) {
         try {
-            AbilitySnap snap = Ability.getAbilityFromClass(Ability.getAbilities(player), AbilitySnap.class);
+            AbilitySnap snap = findSnapAbility(player);
             if (snap != null) {
                 snap.setMaxCooldown(PacketInfPowerUp.POWER_UP_DURATION_TICKS);
                 snap.setCooldown(PacketInfPowerUp.POWER_UP_DURATION_TICKS);
@@ -659,13 +709,20 @@ public class LucraftCoreIntegration {
      */
     private static void unlockSnapAbility(EntityPlayerMP player) {
         try {
-            AbilitySnap snap = Ability.getAbilityFromClass(Ability.getAbilities(player), AbilitySnap.class);
+            AbilitySnap snap = findSnapAbility(player);
             if (snap != null) {
                 snap.setCooldown(0);
             }
         } catch (Exception e) {
             System.err.println("[HeroSMP] unlockSnapAbility: " + e.getMessage());
         }
+    }
+
+    /** LucraftCore's lookup is exact-class-only, so explicitly support our Snap subclass. */
+    private static AbilitySnap findSnapAbility(EntityPlayerMP player) {
+        List<Ability> abilities = Ability.getAbilities(player);
+        AbilityCrownfallSnap hooked = Ability.getAbilityFromClass(abilities, AbilityCrownfallSnap.class);
+        return hooked != null ? hooked : Ability.getAbilityFromClass(abilities, AbilitySnap.class);
     }
 
     /**
@@ -737,6 +794,7 @@ public class LucraftCoreIntegration {
         MinecraftServer server = FMLCommonHandler.instance().getMinecraftServerInstance();
         if (server == null) return;
         for (EntityPlayerMP p : server.getPlayerList().getPlayers()) {
+            PvpMobilityChargeManager.tickPlayer(p);
             if (hasTimeAbility(p)) {
                 TimeStoneChargeManager.tickPlayer(p);
             }

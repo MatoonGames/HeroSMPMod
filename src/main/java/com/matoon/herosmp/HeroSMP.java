@@ -47,6 +47,11 @@ public class HeroSMP {
     public static float   timeStonePvpDrainMultiplier    = 1.0f;
     public static int     mindControlDurationSeconds     = 120;
 
+    // PVP-only flight/invisibility charge settings
+    public static boolean enablePvpMobilityCharges       = true;
+    public static int     pvpMobilityChargeSeconds       = 15;
+    public static int     pvpMobilityRechargeSeconds     = 30;
+
     @SidedProxy(clientSide = "com.matoon.herosmp.client.ClientProxy", serverSide = "com.matoon.herosmp.server.ServerProxy")
     public static CommonProxy proxy;
 
@@ -110,6 +115,14 @@ public class HeroSMP {
                     "Additional drain multiplier applied on top of slow/speed multipliers inside PVP and Hunger Games matches.");
             mindControlDurationSeconds = config.getInt("durationSeconds", "mindStone", 120, 1, 3600,
                     "Mind Stone control duration in seconds. Targets also break free at one heart.");
+
+            final String CAT_PVP_ABILITIES = "pvpAbilities";
+            enablePvpMobilityCharges = config.getBoolean("enableFlightAndInvisibilityCharges", CAT_PVP_ABILITIES, true,
+                    "Limit flight and invisibility abilities to a rechargeable charge while participating in any Hero PVP mode. Outside PVP these abilities remain unlimited.");
+            pvpMobilityChargeSeconds = config.getInt("chargeSeconds", CAT_PVP_ABILITIES, 15, 1, 3600,
+                    "Seconds of continuous flight or invisibility available from a full PVP charge. Each ability type has its own charge.");
+            pvpMobilityRechargeSeconds = config.getInt("rechargeSeconds", CAT_PVP_ABILITIES, 30, 1, 3600,
+                    "Seconds required for an empty PVP flight or invisibility charge to refill while that ability is off.");
         } catch (Exception e) {
             System.err.println("Error loading config for " + MODID);
         } finally {
