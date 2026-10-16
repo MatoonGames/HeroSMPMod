@@ -125,6 +125,9 @@ public class HungerGamesMatch {
     private String                  currentMusicPhase = null;
     private String                  currentMusicTrack = null;
     private int                     musicLoopTicker   = 0;
+    // Target loop length for the CURRENT track, derived from its real duration.
+    private int                     musicLoopTargetTicks = MUSIC_LOOP_TICKS;
+    // Fallback loop length when a track's real duration can't be determined.
     private static final int MUSIC_LOOP_TICKS = 3600; // 3 minutes
 
     // Scoreboard — uses a match-local Scoreboard so packets are never sent to the
@@ -280,12 +283,17 @@ public class HungerGamesMatch {
         }
 
         if (musicManager != null && currentMusicPhase != null && currentMusicTrack != null) {
-            if (++musicLoopTicker >= MUSIC_LOOP_TICKS) {
+            // Loop when the current track has actually finished (its real duration), not
+            // on a fixed 3-minute timer. A different track is chosen each loop when possible.
+            if (++musicLoopTicker >= musicLoopTargetTicks) {
                 musicLoopTicker = 0;
-                currentMusicTrack = musicManager.pickTrack(currentMusicPhase);
-                if (currentMusicTrack != null)
+                String next = musicManager.pickTrackExcluding(currentMusicPhase, currentMusicTrack);
+                if (next != null) {
+                    currentMusicTrack = next;
+                    musicLoopTargetTicks = resolveLoopTicks(currentMusicPhase, next);
                     for (EntityPlayerMP p : getAllPresentPlayers(server))
-                        musicManager.sendSpecificTrack(currentMusicPhase, currentMusicTrack, p);
+                        musicManager.sendSpecificTrack(currentMusicPhase, next, p);
+                }
             }
         }
 
@@ -322,6 +330,7 @@ public class HungerGamesMatch {
                 if (hgWorld != null) placeGlassBarrier(hgWorld, spawn);
             }
         }
+        playStinger(server, HungerGamesMusicManager.STING_COUNTDOWN);
         broadcastMessage(server, TextFormatting.YELLOW + "Get ready! Game starts in " + (COUNTDOWN_TICKS / 20) + "...");
     }
 
@@ -518,6 +527,13 @@ public class HungerGamesMatch {
             UUID winnerId = alivePlayers.iterator().next();
             EntityPlayerMP winner = server.getPlayerList().getPlayerByUUID(winnerId);
             String name = winner != null ? winner.getName() : cachedNames.getOrDefault(winnerId, "Unknown");
+            // Silence the looping phase music so the victory fanfare plays clean.
+            if (musicManager != null) {
+                musicManager.stopMusicForAll(getAllPresentPlayers(server));
+                currentMusicPhase = null;
+                currentMusicTrack = null;
+            }
+            playStinger(server, HungerGamesMusicManager.STING_VICTORY);
             broadcastMessage(server, TextFormatting.GOLD + "" + TextFormatting.BOLD + name + " wins the Hunger Games!");
         } else {
             broadcastMessage(server, TextFormatting.YELLOW + "Match ended in a draw!");
@@ -1126,9 +1142,26 @@ public class HungerGamesMatch {
         currentMusicPhase = phase;
         currentMusicTrack = musicManager.pickTrack(phase);
         musicLoopTicker = 0;
+        musicLoopTargetTicks = resolveLoopTicks(phase, currentMusicTrack);
         if (currentMusicTrack == null) return;
         for (EntityPlayerMP p : getAllPresentPlayers(server))
             musicManager.sendSpecificTrack(phase, currentMusicTrack, p);
+    }
+
+    /** Real duration of a track in ticks, falling back to {@link #MUSIC_LOOP_TICKS}. */
+    private int resolveLoopTicks(String phase, String track) {
+        if (musicManager == null || track == null) return MUSIC_LOOP_TICKS;
+        int d = musicManager.getTrackDurationTicks(phase, track);
+        return d > 0 ? d : MUSIC_LOOP_TICKS;
+    }
+
+    /**
+     * Fires a one-shot stinger (e.g. countdown, victory, elimination) to every player
+     * and spectator currently in the match. Layers over the looping phase music.
+     */
+    public void playStinger(MinecraftServer server, String category) {
+        if (musicManager == null) return;
+        musicManager.sendStingerToAll(category, getAllPresentPlayers(server));
     }
 
     private List<EntityPlayerMP> getAllPresentPlayers(MinecraftServer server) {

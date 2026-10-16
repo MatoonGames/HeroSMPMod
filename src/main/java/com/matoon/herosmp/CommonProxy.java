@@ -48,7 +48,7 @@ public class CommonProxy {
      * The common/server implementation is intentionally a no-op so dedicated servers
      * never have to load Minecraft's client-only audio classes.
      */
-    public void handleHungerGamesMusic(boolean stop, String phase, String track) {
+    public void handleHungerGamesMusic(boolean stop, String phase, String track, boolean oneShot) {
     }
 
     /** Dispatches packets whose effects use physical-client-only classes. */

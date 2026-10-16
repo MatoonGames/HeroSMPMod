@@ -51,7 +51,17 @@
       "Bash(curl -L -v \"https://mediafilez.forgecdn.net/files/2762/537/HeroesExpansion-1.12.2-1.3.5-deobf.jar\" --referer \"https://www.curseforge.com/\" -A \"Mozilla/5.0 \\(Windows NT 10.0; Win64; x64\\) AppleWebKit/537.36\" -o /tmp/test.jar)",
       "Bash(curl -sIL \"https://edge.forgecdn.net/files/2762/537/HeroesExpansion-1.12.2-1.3.5-deobf.jar\")",
       "Bash(curl -L -o /tmp/test_he.jar \"https://mediafilez.forgecdn.net/files/2762/537/HeroesExpansion-1.12.2-1.3.5.jar\" -w \"\\\\nHTTP: %{http_code}\\\\nSize: %{size_download}\")",
-      "Bash(cd /tmp/dec/infinitycraft && unzip -o -q InfinityCraft-deobf.jar -d ic_src *)"
+      "Bash(cd /tmp/dec/infinitycraft && unzip -o -q InfinityCraft-deobf.jar -d ic_src *)",
+      "Read(//c/Users/maxan/.gradle/caches/minecraft/net/minecraftforge/forge/1.12.2-14.23.5.2847/snapshot/20180814/**)",
+      "Bash('/c/Program Files/Java/jdk1.8.0_202/bin/javap.exe' -classpath C:/Users/maxan/.gradle/caches/minecraft/net/minecraftforge/forge/1.12.2-14.23.5.2847/snapshot/20180814/forgeBin-1.12.2-14.23.5.2847.jar net.minecraft.world.chunk.storage.RegionFile net.minecraft.block.material.MapColor)",
+      "Bash('/c/Program Files/Java/jdk1.8.0_202/bin/javap.exe' -classpath C:/Users/maxan/.gradle/caches/minecraft/net/minecraftforge/forge/1.12.2-14.23.5.2847/snapshot/20180814/forgeBin-1.12.2-14.23.5.2847.jar net.minecraft.nbt.CompressedStreamTools)",
+      "Bash('/c/Program Files/Java/jdk1.8.0_202/bin/javap.exe' -classpath C:/Users/maxan/.gradle/caches/minecraft/net/minecraftforge/forge/1.12.2-14.23.5.2847/snapshot/20180814/forgeBin-1.12.2-14.23.5.2847.jar net.minecraft.block.Block)",
+      "Bash(unzip -l LucraftCore-deobf.jar)",
+      "Bash(javap -cp LucraftCore-deobf.jar lucraft.mods.lucraftcore.utilities.items.ItemInjection 'lucraft.mods.lucraftcore.utilities.items.ItemInjection$Injection')",
+      "Read(//c/Program Files/Java/**)",
+      "Read(//c/Users/maxan/.jdks/**)",
+      "Bash('/c/Program Files/Java/jdk1.8.0_202/bin/javap' -p -cp LucraftCore-deobf.jar lucraft.mods.lucraftcore.utilities.items.ItemInjection 'lucraft.mods.lucraftcore.utilities.items.ItemInjection$Injection')",
+      "Bash(\"/c/Program Files/Java/jdk1.8.0_202/bin/javap\" -c -p -cp LucraftCore-deobf.jar 'lucraft.mods.lucraftcore.utilities.items.ItemInjection')"
     ]
   }
 }

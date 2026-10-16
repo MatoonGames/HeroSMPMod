@@ -38,6 +38,13 @@ public class ClientProxy extends CommonProxy {
         super.preInit(event);
         ModEntities.registerRenderers();
         MinecraftForge.EVENT_BUS.register(new EventHandler());
+        // Main-menu "Content Packs" storefront button + in-game open keybind.
+        MinecraftForge.EVENT_BUS.register(new MainMenuPackButton());
+        ClientRegistry.registerKeyBinding(MainMenuPackButton.OPEN_STORE_KEY);
+        // Hovering Content Packs burns the Minecraft title into the Beyonder logo.
+        MinecraftForge.EVENT_BUS.register(new MainMenuLogoFx());
+        // "Edit Map" from the store: editor-world launch, configure handoff, return to store.
+        MinecraftForge.EVENT_BUS.register(new com.matoon.herosmp.client.store.MapEditorLauncher());
         // Register model event handler (client-only)
         MinecraftForge.EVENT_BUS.register(new ModItems.ClientRegistrationHandler());
         MinecraftForge.EVENT_BUS.register(new ModBlocks.ClientRegistrationHandler());
@@ -90,9 +97,23 @@ public class ClientProxy extends CommonProxy {
     }
 
     @Override
-    public void handleHungerGamesMusic(boolean stop, String phase, String track) {
+    public void handleHungerGamesMusic(boolean stop, String phase, String track, boolean oneShot) {
         Minecraft mc = Minecraft.getMinecraft();
         mc.addScheduledTask(() -> {
+            // One-shot stingers layer OVER the looping music: play once and return
+            // without stopping or tracking the loop sound.
+            if (oneShot) {
+                if (!stop && phase != null && !phase.isEmpty() && track != null && !track.isEmpty()) {
+                    ResourceLocation stingLoc =
+                            com.matoon.herosmp.hungergames.music.HungerGamesMusicManager.soundLocation(phase, track);
+                    ISound sting = new PositionedSoundRecord(
+                            stingLoc, SoundCategory.MASTER, 1.0f, 1.0f,
+                            false, 0, ISound.AttenuationType.NONE, 0f, 0f, 0f);
+                    mc.getSoundHandler().playSound(sting);
+                }
+                return;
+            }
+
             if (currentHungerGamesSound != null) {
                 mc.getSoundHandler().stopSound(currentHungerGamesSound);
                 currentHungerGamesSound = null;

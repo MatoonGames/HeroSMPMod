@@ -58,15 +58,17 @@ public class CrownfallGauntletIndicatorRenderer {
 
     private static void beginIndicatorRender() {
         GlStateManager.pushMatrix();
-        GlStateManager.disableTexture2D();
-        GlStateManager.disableLighting();
-        GlStateManager.disableCull();
-        GlStateManager.disableDepth();
-        GlStateManager.depthMask(false);
-        GlStateManager.enableBlend();
-        GlStateManager.tryBlendFuncSeparate(GlStateManager.SourceFactor.SRC_ALPHA,
-                GlStateManager.DestFactor.ONE, GlStateManager.SourceFactor.ONE,
-                GlStateManager.DestFactor.ZERO);
+        // Use raw GL calls inside an attribute guard. GlStateManager caches state, so
+        // mixing its setters with glPopAttrib would leave the cache out of sync and can
+        // leak additive blending into the subsequently rendered first-person hand.
+        GL11.glPushAttrib(GL11.GL_ALL_ATTRIB_BITS);
+        GL11.glDisable(GL11.GL_TEXTURE_2D);
+        GL11.glDisable(GL11.GL_LIGHTING);
+        GL11.glDisable(GL11.GL_CULL_FACE);
+        GL11.glDisable(GL11.GL_DEPTH_TEST);
+        GL11.glDepthMask(false);
+        GL11.glEnable(GL11.GL_BLEND);
+        GL11.glBlendFunc(GL11.GL_SRC_ALPHA, GL11.GL_ONE);
     }
 
     private static void renderBeam(double x, double y, double z) {
@@ -89,12 +91,7 @@ public class CrownfallGauntletIndicatorRenderer {
     }
 
     private static void endIndicatorRender() {
-        GlStateManager.disableBlend();
-        GlStateManager.depthMask(true);
-        GlStateManager.enableDepth();
-        GlStateManager.enableCull();
-        GlStateManager.enableLighting();
-        GlStateManager.enableTexture2D();
+        GL11.glPopAttrib();
         GlStateManager.popMatrix();
     }
 }

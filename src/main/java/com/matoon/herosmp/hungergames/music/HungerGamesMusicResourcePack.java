@@ -27,8 +27,8 @@ public class HungerGamesMusicResourcePack implements IResourcePack {
 
     public HungerGamesMusicResourcePack(File musicDir) {
         this.musicDir = musicDir;
-        for (String phase : HungerGamesMusicManager.ALL_PHASES)
-            new File(musicDir, phase).mkdirs();
+        for (String folder : HungerGamesMusicManager.ALL_FOLDERS)
+            new File(musicDir, folder).mkdirs();
     }
 
     @Override
@@ -103,7 +103,7 @@ public class HungerGamesMusicResourcePack implements IResourcePack {
         StringBuilder sb = new StringBuilder("{\n");
         boolean any = false;
         boolean first = true;
-        for (String phase : HungerGamesMusicManager.ALL_PHASES) {
+        for (String phase : HungerGamesMusicManager.ALL_FOLDERS) {
             File dir = new File(musicDir, phase);
             File[] files = dir.listFiles(f -> f.isFile() && f.getName().endsWith(".ogg"));
             if (files == null) continue;
@@ -131,7 +131,7 @@ public class HungerGamesMusicResourcePack implements IResourcePack {
         String phaseLower = sub.substring(0, slash);
         String filename   = sub.substring(slash + 1);
 
-        for (String phase : HungerGamesMusicManager.ALL_PHASES) {
+        for (String phase : HungerGamesMusicManager.ALL_FOLDERS) {
             if (phase.toLowerCase(java.util.Locale.ROOT).equals(phaseLower)) {
                 File f = new File(new File(musicDir, phase), filename);
                 return (f.exists() && f.isFile()) ? f : null;

@@ -25,8 +25,8 @@ public class MultiplayerScoreboardHandler {
         int centerX = scaledRes.getScaledWidth() - 10; // 10 pixels from the right edge
         int centerY = scaledRes.getScaledHeight() / 2; // Vertically centered
 
-        // Get the width of the "Hero SMP" text and set box width to wrap the text
-        String heroText = TextFormatting.DARK_BLUE + "" + TextFormatting.BOLD + "Hero SMP";
+        // Get the width of the "Beyonder" text and set box width to wrap the text
+        String heroText = TextFormatting.DARK_BLUE + "" + TextFormatting.BOLD + "Beyonder";
         int textWidth = mc.fontRenderer.getStringWidth(heroText);
         int boxWidth = textWidth + 20; // Add some padding to the box width
         int boxHeight = 55;

@@ -2605,8 +2605,64 @@ public class PvpQueueManager {
             handleCrownfallFishingHook(player, match);
         }
         match.gauntletCarrier = carrier;
+        updateDroppedGauntletIndicator(world, match, carrier);
         updateCrownfallBossBar(server, match, carrier, stones);
         for (DamageWindow window : match.damageWindows.values()) if (window.ticksRemaining > 0) window.ticksRemaining--;
+    }
+
+    /** Maintains a server-tracked, glowing marker above any Crownfall gauntlet item on the ground. */
+    private void updateDroppedGauntletIndicator(WorldServer world, CrownfallMatch match, @Nullable UUID carrier) {
+        EntityItem droppedGauntlet = null;
+        if (carrier == null) {
+            for (Entity entity : world.loadedEntityList) {
+                if (entity instanceof EntityItem
+                        && isCrownfallGauntlet(((EntityItem) entity).getItem())) {
+                    droppedGauntlet = (EntityItem) entity;
+                    break;
+                }
+            }
+        }
+
+        Entity marker = match.gauntletIndicatorId == null
+                ? null : world.getEntityFromUuid(match.gauntletIndicatorId);
+        if (droppedGauntlet == null || droppedGauntlet.isDead) {
+            if (marker != null) marker.setDead();
+            match.gauntletIndicatorId = null;
+            return;
+        }
+
+        droppedGauntlet.setGlowing(true);
+        droppedGauntlet.setCustomNameTag(TextFormatting.LIGHT_PURPLE + "Infinity Gauntlet");
+        droppedGauntlet.setAlwaysRenderNameTag(true);
+
+        if (!(marker instanceof EntityShulker) || marker.isDead) {
+            EntityShulker indicator = new EntityShulker(world);
+            indicator.setNoAI(true);
+            indicator.setSilent(true);
+            indicator.setEntityInvulnerable(true);
+            indicator.setInvisible(true);
+            indicator.setGlowing(true);
+            indicator.setNoGravity(true);
+            indicator.noClip = true;
+            indicator.setCustomNameTag(TextFormatting.LIGHT_PURPLE + "INFINITY GAUNTLET");
+            indicator.setAlwaysRenderNameTag(true);
+            indicator.addPotionEffect(new PotionEffect(MobEffects.INVISIBILITY, Integer.MAX_VALUE, 0, false, false));
+            indicator.setPosition(droppedGauntlet.posX, droppedGauntlet.posY + 2.5D, droppedGauntlet.posZ);
+            if (world.spawnEntity(indicator)) {
+                match.gauntletIndicatorId = indicator.getUniqueID();
+                marker = indicator;
+            }
+        }
+        if (marker != null) {
+            marker.setPosition(droppedGauntlet.posX, droppedGauntlet.posY + 2.5D, droppedGauntlet.posZ);
+        }
+    }
+
+    private void removeDroppedGauntletIndicator(WorldServer world, CrownfallMatch match) {
+        if (match.gauntletIndicatorId == null) return;
+        Entity marker = world.getEntityFromUuid(match.gauntletIndicatorId);
+        if (marker != null) marker.setDead();
+        match.gauntletIndicatorId = null;
     }
 
     private void freezeCrownfallPlayers(MinecraftServer server, CrownfallMatch match) {
@@ -3197,6 +3253,7 @@ public class PvpQueueManager {
         WorldServer world = server.getWorld(match.dimensionId);
         if (world != null) {
             removeChestHighlights(world, match.chestHighlightIds);
+            removeDroppedGauntletIndicator(world, match);
             removeArenaInjections(world);
             for (BlockPos podiumPos : match.podiums.keySet()) {
                 if (world.getBlockState(podiumPos).getBlock() == ModBlocks.CROWNFALL_PODIUM) {
@@ -4038,6 +4095,7 @@ public class PvpQueueManager {
         private MatchPhase phase = MatchPhase.PREPARE;
         private int phaseTicksRemaining = PREP_FREEZE_TICKS;
         private UUID gauntletCarrier;
+        private UUID gauntletIndicatorId;
         private UUID snapWinner;
         private BossInfoServer bossBar;
 

@@ -921,6 +921,9 @@ public class HungerGamesWorldManager {
             EntityPlayerMP p = server.getPlayerList().getPlayerByUUID(pid);
             if (p != null && p.dimension == match.getDimensionId()) sendMessage(p, msg);
         });
+
+        // Cannon toll for the fallen tribute — everyone still in the match hears it.
+        match.playStinger(server, com.matoon.herosmp.hungergames.music.HungerGamesMusicManager.STING_DEATH);
     }
 
     public synchronized void handlePlayerRespawn(EntityPlayerMP player) {

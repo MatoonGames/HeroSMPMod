@@ -42,5 +42,6 @@ public final class ModNetwork {
         CHANNEL.registerMessage(PacketMindControlResistance.Handler.class, PacketMindControlResistance.class, id++, Side.CLIENT);
         CHANNEL.registerMessage(PacketMindControlResistanceResponse.Handler.class, PacketMindControlResistanceResponse.class, id++, Side.SERVER);
         CHANNEL.registerMessage(PacketMindControlResistanceResult.Handler.class, PacketMindControlResistanceResult.class, id++, Side.CLIENT);
+        CHANNEL.registerMessage(PacketConfigureMap.Handler.class, PacketConfigureMap.class, id++, Side.SERVER);
     }
 }

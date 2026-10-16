@@ -21,7 +21,7 @@ import java.io.File;
 public class HeroSMP {
 
     public static final String MODID = "herosmp";
-    public static final String NAME = "Hero SMP";
+    public static final String NAME = "Beyonder";
     public static final String VERSION = "1.0";
 
     public static final PvpQueueManager PVP_QUEUE_MANAGER = new PvpQueueManager();
@@ -51,6 +51,9 @@ public class HeroSMP {
     public static boolean enablePvpMobilityCharges       = true;
     public static int     pvpMobilityChargeSeconds       = 15;
     public static int     pvpMobilityRechargeSeconds     = 30;
+
+    // Content-pack storefront: public Google Drive folder packs are downloaded from.
+    public static String  storeDriveFolderId             = "1DBGXhjdHj_j1CnHpdvV5lCvvq1hy3_tY";
 
     @SidedProxy(clientSide = "com.matoon.herosmp.client.ClientProxy", serverSide = "com.matoon.herosmp.server.ServerProxy")
     public static CommonProxy proxy;
@@ -123,6 +126,12 @@ public class HeroSMP {
                     "Seconds of continuous flight or invisibility available from a full PVP charge. Each ability type has its own charge.");
             pvpMobilityRechargeSeconds = config.getInt("rechargeSeconds", CAT_PVP_ABILITIES, 30, 1, 3600,
                     "Seconds required for an empty PVP flight or invisibility charge to refill while that ability is off.");
+
+            final String CAT_STORE = "contentPacks";
+            storeDriveFolderId = config.getString("driveFolderId", CAT_STORE, storeDriveFolderId,
+                    "Public Google Drive folder ID the main-menu Content Packs store downloads from. "
+                    + "Expects 'Hunger Games Maps' and 'PVP Kits' subfolders (a flat folder of map "
+                    + "folders also works as maps).");
         } catch (Exception e) {
             System.err.println("Error loading config for " + MODID);
         } finally {
