@@ -2,13 +2,15 @@ package com.matoon.herosmp.client.gui;
 
 import com.matoon.herosmp.client.gui.bedrock.BedrockScreen;
 import com.matoon.herosmp.client.gui.bedrock.BedrockUI;
+import com.matoon.herosmp.client.gui.bedrock.UiSounds;
 import com.matoon.herosmp.client.gui.bedrock.BedrockUI.Style;
+import com.matoon.herosmp.client.store.InstalledKits;
 import com.matoon.herosmp.client.store.InstalledPacks;
 import com.matoon.herosmp.client.store.PackInstaller;
 import com.matoon.herosmp.client.store.StorePack;
 import net.minecraft.client.gui.GuiScreen;
 
-import java.io.File;
+import java.util.Collections;
 import java.util.List;
 
 /**
@@ -17,8 +19,14 @@ import java.util.List;
  */
 public class GuiDownloadProgress extends BedrockScreen {
 
+    /** When the finished state was first shown (0 = not yet): fanfare once, then a fading flash. */
+    private long celebratedAt;
+    private boolean failSounded;
+
     private final StorePack pack;
-    private final File targetWorldDir;
+    /** KIT packs: worlds the kits are available in (empty = all). */
+    private final List<String> kitWorlds;
+    private String worldsLabel;
 
     private PackInstaller.Progress progress;
 
@@ -27,10 +35,13 @@ public class GuiDownloadProgress extends BedrockScreen {
     private long lastSample;
     private double bytesPerSec;
 
-    public GuiDownloadProgress(GuiScreen parent, StorePack pack, File targetWorldDir) {
+    /** Mods / Hero Addons the installed kits need but this game lacks (null until checked). */
+    private List<com.matoon.herosmp.npc.kit.KitRequirements.Requirement> missing;
+
+    public GuiDownloadProgress(GuiScreen parent, StorePack pack, List<String> kitWorlds) {
         super(parent, "Installing");
         this.pack = pack;
-        this.targetWorldDir = targetWorldDir;
+        this.kitWorlds = kitWorlds;
     }
 
     @Override
@@ -39,8 +50,17 @@ public class GuiDownloadProgress extends BedrockScreen {
         if (progress == null) start();
     }
 
+    /** "all worlds" / a world's name / "N worlds", resolved once (it reads level.dat files). */
+    private String worldsLabel() {
+        if (worldsLabel == null) {
+            List<String> w = kitWorlds != null ? kitWorlds : Collections.<String>emptyList();
+            worldsLabel = w.isEmpty() ? "all worlds" : InstalledKits.describeWorlds(w, InstalledKits.worlds());
+        }
+        return worldsLabel;
+    }
+
     private void start() {
-        progress = PackInstaller.start(pack, targetWorldDir);
+        progress = PackInstaller.start(pack, kitWorlds);
         lastBytes = 0;
         lastSample = System.currentTimeMillis();
         bytesPerSec = 0;
@@ -83,7 +103,8 @@ public class GuiDownloadProgress extends BedrockScreen {
         int tw = x + w - 12 - tx;
         fontRenderer.drawString(BedrockUI.trim(fontRenderer, pack.displayName, tw), tx, y + 15, BedrockUI.TEXT, true);
         fontRenderer.drawString(pack.typeLabel(), tx, y + 28, BedrockUI.TEXT_MUTED, false);
-        String dest = targetWorldDir != null ? "Into world: " + targetWorldDir.getName() : "Into: Hunger Games maps";
+        String dest = pack.type == StorePack.PackType.KIT ? "Into: Kit Library  ·  " + worldsLabel()
+                : pack.type == StorePack.PackType.ADDON ? "Into: LucraftCore addon packs" : "Into: Hunger Games maps";
         fontRenderer.drawString(BedrockUI.trim(fontRenderer, dest, tw), tx, y + 41, BedrockUI.TEXT_DIM, false);
 
         BedrockUI.rect(x + 12, y + 76, w - 24, 1, BedrockUI.PANEL_LIGHT);
@@ -119,19 +140,57 @@ public class GuiDownloadProgress extends BedrockScreen {
     }
 
     private void drawSuccess(int x, int y, int w, int bottom) {
+        if (celebratedAt == 0) {
+            celebratedAt = System.currentTimeMillis();
+            UiSounds.celebrate();
+            confetti(80);
+            sparkle(x + 27, y + 13, 16, BedrockUI.GREEN_LIGHT, BedrockUI.GOLD, 0xFFFFFFFF);
+        }
+        float flash = 1f - Math.min(1f, (System.currentTimeMillis() - celebratedAt) / 600f);
         BedrockUI.rect(x + 12, y, w - 24, 26, BedrockUI.OUTLINE);
         BedrockUI.rect(x + 13, y + 1, w - 26, 24, 0xFF234A1A);
+        BedrockUI.rect(x + 13, y + 1, w - 26, 24, BedrockUI.fade(0xFF8CE070, flash * 0.6f));
         BedrockUI.rect(x + 13, y + 1, 3, 24, BedrockUI.GREEN_LIGHT);
         BedrockUI.check(x + 24, y + 9, BedrockUI.GREEN_LIGHT);
         fontRenderer.drawString("Installed successfully", x + 40, y + 9, BedrockUI.TEXT, true);
 
         String sub = pack.type == StorePack.PackType.MAP
                 ? "It's now part of your Hunger Games map rotation."
-                : "Its kits were added to " + (targetWorldDir != null ? targetWorldDir.getName() : "the world") + ".";
+                : pack.type == StorePack.PackType.ADDON
+                ? "Restart Minecraft to load its heroes and powers."
+                : "Added to your Kit Library, available in " + worldsLabel() + ".";
         fontRenderer.drawString(BedrockUI.trim(fontRenderer, sub, w - 24), x + 12, y + 34, BedrockUI.TEXT_DIM, false);
 
+        // Kits that need mods / Hero Addons this game doesn't have.
+        if (pack.type == StorePack.PackType.KIT && missing == null) {
+            missing = new java.util.ArrayList<com.matoon.herosmp.npc.kit.KitRequirements.Requirement>();
+            for (net.minecraft.nbt.NBTTagCompound k : progress.kitTags()) {
+                for (com.matoon.herosmp.npc.kit.KitRequirements.Requirement r : com.matoon.herosmp.npc.kit.KitRequirements.missing(k)) {
+                    boolean dup = false;
+                    for (com.matoon.herosmp.npc.kit.KitRequirements.Requirement o : missing) dup |= o.id.equals(r.id);
+                    if (!dup) missing.add(r);
+                }
+            }
+            if (!missing.isEmpty()) MissingModsOverlay.show(this, pack.displayName, missing);
+        }
+        if (missing != null && !missing.isEmpty()) {
+            String warn = "Needs: " + com.matoon.herosmp.npc.kit.KitRequirements.names(missing);
+            fontRenderer.drawString(BedrockUI.trim(fontRenderer, warn, w - 24), x + 12, y + 46, 0xFFE0A040, false);
+        }
+
         int by = bottom - 34;
-        if (pack.type == StorePack.PackType.MAP) {
+        if (pack.type == StorePack.PackType.ADDON) {
+            int bw = (w - 24 - 8) / 2;
+            button(x + 12, by, bw, 24, "Later", Style.DARK, true, () -> mc.displayGuiScreen(parent));
+            button(x + 12 + bw + 8, by, bw, 24, "Quit Game", Style.PRIMARY, true, () -> confirm("Quit Minecraft?",
+                    "Start it again from your launcher to load the new Hero Addon.", "Quit", Style.PRIMARY, mc::shutdown));
+            if (hover(x + 12 + bw + 8, by, bw, 24)) setTooltip("Close Minecraft", "§7Addon packs load when the game starts");
+        } else if (pack.type == StorePack.PackType.KIT && missing != null && !missing.isEmpty()) {
+            int bw = (w - 24 - 8) / 2;
+            button(x + 12, by, bw, 24, "Done", Style.DARK, true, () -> mc.displayGuiScreen(parent));
+            button(x + 12 + bw + 8, by, bw, 24, "Missing Mods", Style.GOLD, true,
+                    () -> MissingModsOverlay.show(this, pack.displayName, missing));
+        } else if (pack.type == StorePack.PackType.MAP) {
             int bw = (w - 24 - 8) / 2;
             button(x + 12, by, bw, 24, "Done", Style.DARK, true, () -> mc.displayGuiScreen(parent));
             splitButton(x + 12 + bw + 8, by, bw, 24, "Edit Map", Style.PRIMARY,
@@ -143,6 +202,10 @@ public class GuiDownloadProgress extends BedrockScreen {
     }
 
     private void drawFailure(int x, int y, int w, int bottom, String title, String message) {
+        if (!failSounded) {
+            failSounded = true;
+            UiSounds.warn();
+        }
         BedrockUI.rect(x + 12, y, w - 24, 26, BedrockUI.OUTLINE);
         BedrockUI.rect(x + 13, y + 1, w - 26, 24, 0xFF4A1A1A);
         BedrockUI.rect(x + 13, y + 1, 3, 24, BedrockUI.RED);
@@ -158,6 +221,10 @@ public class GuiDownloadProgress extends BedrockScreen {
         int bw = (w - 24 - 8) / 2;
         int by = bottom - 34;
         button(x + 12, by, bw, 24, "Back", Style.DARK, true, () -> mc.displayGuiScreen(parent));
-        button(x + 12 + bw + 8, by, bw, 24, "Try Again", Style.PRIMARY, true, this::start);
+        button(x + 12 + bw + 8, by, bw, 24, "Try Again", Style.PRIMARY, true, () -> {
+            celebratedAt = 0;
+            failSounded = false;
+            start();
+        });
     }
 }

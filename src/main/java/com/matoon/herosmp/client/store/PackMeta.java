@@ -76,9 +76,41 @@ public final class PackMeta {
         }
     }
 
+    private static final ConcurrentHashMap<String, net.minecraft.nbt.NBTTagCompound> KITS =
+            new ConcurrentHashMap<String, net.minecraft.nbt.NBTTagCompound>();
+    private static final Set<String> KIT_FAILED = ConcurrentHashMap.newKeySet();
+
+    /**
+     * The first kit in a store kit pack (a {@code .dat} or kit card on Drive), for drawing its figure.
+     * Null while downloading or if the file can't be read; the download starts on first call.
+     */
+    public static net.minecraft.nbt.NBTTagCompound remoteKitTag(final String fileId) {
+        net.minecraft.nbt.NBTTagCompound tag = KITS.get(fileId);
+        if (tag != null || KIT_FAILED.contains(fileId) || !IN_FLIGHT.add("kit:" + fileId)) return tag;
+        Thread t = new Thread(() -> {
+            File tmp = null;
+            try {
+                tmp = File.createTempFile("beyonder_kitpack_", ".bin");
+                DriveClient.downloadFile(fileId, tmp, null);
+                KITS.put(fileId, com.matoon.herosmp.npc.kit.KitLibrary.parse(
+                        com.matoon.herosmp.npc.kit.KitLibrary.readBytes(tmp)).kits.get(0));
+            } catch (Exception e) {
+                KIT_FAILED.add(fileId);
+            } finally {
+                IN_FLIGHT.remove("kit:" + fileId);
+                if (tmp != null) tmp.delete();
+            }
+        }, "Beyonder kit preview");
+        t.setDaemon(true);
+        t.start();
+        return null;
+    }
+
     public static void clear() {
         LISTINGS.clear();
         DESCRIPTIONS.clear();
+        KITS.clear();
+        KIT_FAILED.clear();
     }
 
     private static String clean(String s) {

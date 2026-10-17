@@ -165,7 +165,7 @@ public final class MapEditorLauncher {
     // ---------------------------------------------------------------------
 
     /** Current editor folder plus the one used before the mod was renamed to Beyonder. */
-    private static final String[] EDITOR_FOLDERS = {EDITOR_FOLDER, "herosmp_map_editor"};
+    private static final String[] EDITOR_FOLDERS = {EDITOR_FOLDER, "herosmp_map_editor", PlaytestLauncher.FOLDER};
 
     /**
      * Deletes the editor world(s) so they never linger in Singleplayer. The editor world holds
@@ -174,7 +174,7 @@ public final class MapEditorLauncher {
      */
     public static void cleanupEditorWorlds() {
         Minecraft mc = Minecraft.getMinecraft();
-        if (mc.getIntegratedServer() != null || stage != Stage.IDLE) return;
+        if (mc.getIntegratedServer() != null || stage != Stage.IDLE || PlaytestLauncher.isBusy()) return;
         for (String folder : EDITOR_FOLDERS) {
             if (!new java.io.File(new java.io.File(mc.gameDir, "saves"), folder).isDirectory()) continue;
             try {

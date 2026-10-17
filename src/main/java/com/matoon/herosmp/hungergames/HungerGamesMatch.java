@@ -243,7 +243,7 @@ public class HungerGamesMatch {
         }
 
         bossBar = new BossInfoServer(
-            new TextComponentString(TextFormatting.GOLD + "Hunger Games - Match #" + matchId),
+            new TextComponentString(com.matoon.herosmp.hud.RoundBar.encode(com.matoon.herosmp.hud.RoundBar.Kind.HUNGER_GAMES, com.matoon.herosmp.hud.RoundBar.Flag.NORMAL, "Match #" + matchId, "", "")),
             BossInfo.Color.RED, BossInfo.Overlay.NOTCHED_10);
         for (UUID id : playerOrder) {
             EntityPlayerMP p = server.getPlayerList().getPlayerByUUID(id);
@@ -1093,32 +1093,36 @@ public class HungerGamesMatch {
 
         String title;
         float  progress;
+        String alive = alivePlayers.size() + (alivePlayers.size() == 1 ? " tribute left" : " tributes left");
 
         switch (phase) {
             case LOBBY:
-                title    = TextFormatting.YELLOW + "Starting in " + (phaseTicksRemaining / 20) + "s";
+                title    = com.matoon.herosmp.hud.RoundBar.encode(com.matoon.herosmp.hud.RoundBar.Kind.HUNGER_GAMES, com.matoon.herosmp.hud.RoundBar.Flag.CALM, "Starting soon",
+                           com.matoon.herosmp.hud.RoundBar.clock(phaseTicksRemaining), "");
                 progress = (float) phaseTicksRemaining / (30 * 20);
                 break;
             case COUNTDOWN:
-                title    = TextFormatting.GOLD + "Get Ready - " + (phaseTicksRemaining / 20) + "s";
+                title    = com.matoon.herosmp.hud.RoundBar.encode(com.matoon.herosmp.hud.RoundBar.Kind.HUNGER_GAMES, com.matoon.herosmp.hud.RoundBar.Flag.URGENT, "Get ready",
+                           com.matoon.herosmp.hud.RoundBar.clock(phaseTicksRemaining), alive);
                 progress = (float) phaseTicksRemaining / COUNTDOWN_TICKS;
                 break;
             case GRACE_PERIOD:
-                title    = TextFormatting.GREEN + "Grace Period - " + (phaseTicksRemaining / 20) + "s";
+                title    = com.matoon.herosmp.hud.RoundBar.encode(com.matoon.herosmp.hud.RoundBar.Kind.HUNGER_GAMES, com.matoon.herosmp.hud.RoundBar.Flag.CALM, "Grace period",
+                           com.matoon.herosmp.hud.RoundBar.clock(phaseTicksRemaining), "No PVP yet  -  " + alive);
                 progress = (float) phaseTicksRemaining / GRACE_PERIOD_TICKS;
                 break;
             case ACTIVE: {
                 int phaseEnd = activePhase == 1 ? phase1EndTicks
                              : activePhase == 2 ? phase2EndTicks : phase3EndTicks;
                 int left = phaseEnd - activePhaseElapsed;
-                int m = left / (60 * 20), s = (left / 20) % 60;
-                title    = TextFormatting.RED + "Phase " + activePhase + " — " + alivePlayers.size()
-                           + " alive — " + String.format("%d:%02d", m, s);
+                title    = com.matoon.herosmp.hud.RoundBar.encode(com.matoon.herosmp.hud.RoundBar.Kind.HUNGER_GAMES,
+                           left <= 30 * 20 ? com.matoon.herosmp.hud.RoundBar.Flag.URGENT : com.matoon.herosmp.hud.RoundBar.Flag.NORMAL,
+                           "Phase " + activePhase, com.matoon.herosmp.hud.RoundBar.clock(left), alive);
                 progress = (float) left / (8 * 60 * 20);
                 break;
             }
             case ENDING:
-                title    = TextFormatting.GOLD + "Match Ending...";
+                title    = com.matoon.herosmp.hud.RoundBar.encode(com.matoon.herosmp.hud.RoundBar.Kind.HUNGER_GAMES, com.matoon.herosmp.hud.RoundBar.Flag.CALM, "Match ending", "", "");
                 progress = 1.0F - ((float) phaseTicksRemaining / (5 * 20));
                 break;
             default:

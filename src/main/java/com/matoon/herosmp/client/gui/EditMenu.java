@@ -26,7 +26,7 @@ final class EditMenu {
 
     static void openVisualEditor(BedrockScreen screen, String mapName) {
         if (MapEditorLauncher.isEditingMap(mapName)) {
-            screen.toast("Finish editing " + mapName + " in the world first (/return)");
+            screen.toastWarn("Finish editing " + mapName + " in the world first (/return)");
             return;
         }
         Minecraft.getMinecraft().displayGuiScreen(new GuiMapEditor(screen, mapName));

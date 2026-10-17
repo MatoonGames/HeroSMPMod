@@ -62,6 +62,7 @@ import anvil.infinity.snap.SnapResult;
 import java.io.File;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.Deque;
 import java.util.HashMap;
@@ -147,6 +148,8 @@ public class PvpQueueManager {
     private final Map<UUID, ReturnState> pendingReturns = new HashMap<UUID, ReturnState>();
     private final Map<UUID, PlayerInventorySnapshot> pendingInventoryReturns = new HashMap<UUID, PlayerInventorySnapshot>();
     private final Set<UUID> awaitingKitSelection = new HashSet<UUID>();
+    /** Kit each fighter locked in on the select screen, so opponents' screens can show it. */
+    private final Map<UUID, String> lockedKitKeys = new HashMap<UUID, String>();
     private final Map<UUID, BlockPos> chestHighlightTargets = new HashMap<UUID, BlockPos>();
     private final Map<UUID, SpectatorSession> spectators = new HashMap<UUID, SpectatorSession>();
     private final Map<UUID, VictorySequence> pendingVictorySequences = new HashMap<UUID, VictorySequence>();
@@ -614,8 +617,17 @@ public class PvpQueueManager {
         }
 
         KitDefinition kit = HeroSMP.KIT_MANAGER.getKit(player.getServer(), kitKey);
-        if (kit == null) {
-            send(player, TextFormatting.RED + "Kit not found: " + kitKey);
+        if (kit == null || !kit.isEnabled()) {
+            send(player, TextFormatting.RED + "Kit not available: " + kitKey);
+            openKitSelection(player);
+            return;
+        }
+        List<com.matoon.herosmp.npc.kit.KitRequirements.Requirement> missing =
+                com.matoon.herosmp.npc.kit.KitRequirements.missing(kit.getSourceTag());
+        if (!missing.isEmpty()) {
+            // Items from absent mods were dropped on load; handing out half a kit would be unfair.
+            send(player, TextFormatting.RED + kit.getDisplayName() + " needs " + com.matoon.herosmp.npc.kit.KitRequirements.names(missing)
+                    + " installed on the server. Pick another kit.");
             openKitSelection(player);
             return;
         }
@@ -625,24 +637,121 @@ public class PvpQueueManager {
             giveCrownfallRod(player);
         }
         awaitingKitSelection.remove(player.getUniqueID());
+        lockedKitKeys.put(player.getUniqueID(), kit.getKey());
         send(player, TextFormatting.GREEN + "Selected kit " + TextFormatting.WHITE + kit.getDisplayName());
+        broadcastKitSelectStatus(player.getServer(), player.getUniqueID());
     }
 
     private void openKitSelection(EntityPlayerMP player) {
-        List<KitDefinition> kits = HeroSMP.KIT_MANAGER.getKits(player.getServer());
+        List<KitDefinition> kits = HeroSMP.KIT_MANAGER.getEnabledKits(player.getServer());
         if (kits.isEmpty()) {
             awaitingKitSelection.remove(player.getUniqueID());
-            send(player, TextFormatting.RED + "No kits configured. Ask staff to create kits with /heropvp kit create.");
+            send(player, TextFormatting.RED + "No kits available. Ask staff to create or enable kits.");
             return;
         }
 
         List<PacketOpenKitSelection.KitEntry> entries = new ArrayList<PacketOpenKitSelection.KitEntry>(kits.size());
         for (KitDefinition kit : kits) {
-            entries.add(new PacketOpenKitSelection.KitEntry(kit.getKey(), kit.getDisplayName(), kit.getIcon()));
+            entries.add(kitSelectEntry(kit));
         }
 
-        awaitingKitSelection.add(player.getUniqueID());
-        ModNetwork.CHANNEL.sendTo(new PacketOpenKitSelection(entries), player);
+        UUID playerId = player.getUniqueID();
+        awaitingKitSelection.add(playerId);
+        lockedKitKeys.remove(playerId);
+        com.matoon.herosmp.hungergames.music.HungerGamesMusicManager music = HeroSMP.HUNGER_GAMES_MANAGER.getMusicManager();
+        String theme = music == null ? null : music.pickTrack(com.matoon.herosmp.hungergames.music.HungerGamesMusicManager.STING_KIT_SELECT);
+        String fight = music == null ? null : music.pickTrack(com.matoon.herosmp.hungergames.music.HungerGamesMusicManager.STING_FIGHT);
+        ModNetwork.CHANNEL.sendTo(new PacketOpenKitSelection(entries, kitSelectMode(playerId), kitSelectSeconds(playerId), theme, fight), player);
+        broadcastKitSelectStatus(player.getServer(), playerId);
+    }
+
+    /** A kit as the fighter-select screen shows it: the gear its figure wears and its hotbar. */
+    private static PacketOpenKitSelection.KitEntry kitSelectEntry(KitDefinition kit) {
+        NonNullList<ItemStack> c = kit.getContentsCopy();
+        // KitDefinition slots: 0-8 hotbar, 9-35 main, 36 feet, 37 legs, 38 chest, 39 head, 40 offhand.
+        ItemStack[] gear = {slot(c, 39), slot(c, 38), slot(c, 37), slot(c, 36), kitWeapon(c), slot(c, 40)};
+        int count = 0;
+        for (ItemStack st : c) if (!st.isEmpty()) count++;
+        List<ItemStack> hotbar = new ArrayList<ItemStack>();
+        for (int i = 0; i < 9; i++) if (!slot(c, i).isEmpty()) hotbar.add(slot(c, i));
+        String power = kit.hasPower() && com.matoon.herosmp.integration.LucraftInjectionEntry.isValidInjection(kit.getPower())
+                ? com.matoon.herosmp.integration.LucraftInjectionEntry.getDisplayName(kit.getPower()) : "";
+        String missing = com.matoon.herosmp.npc.kit.KitRequirements.names(
+                com.matoon.herosmp.npc.kit.KitRequirements.missing(kit.getSourceTag()));
+        return new PacketOpenKitSelection.KitEntry(kit.getKey(), kit.getDisplayName(), kit.getIcon(), gear, count, hotbar, power, missing);
+    }
+
+    private static ItemStack slot(NonNullList<ItemStack> c, int i) {
+        return i < c.size() ? c.get(i) : ItemStack.EMPTY;
+    }
+
+    /** The hotbar weapon the kit is built around (sword, else axe/bow/tool, else the first hotbar item). */
+    private static ItemStack kitWeapon(NonNullList<ItemStack> c) {
+        for (int i = 0; i < 9; i++) if (slot(c, i).getItem() instanceof net.minecraft.item.ItemSword) return slot(c, i);
+        for (int i = 0; i < 9; i++) {
+            net.minecraft.item.Item it = slot(c, i).getItem();
+            if (it instanceof net.minecraft.item.ItemAxe || it instanceof net.minecraft.item.ItemBow
+                    || it instanceof net.minecraft.item.ItemTool) return slot(c, i);
+        }
+        for (int i = 0; i < 9; i++) if (!slot(c, i).isEmpty()) return slot(c, i);
+        return ItemStack.EMPTY;
+    }
+
+    /** Everyone picking kits in the same round as {@code playerId} (including them). */
+    private List<UUID> kitSelectFighters(UUID playerId) {
+        ActiveMatch duel = playerToMatch.get(playerId);
+        if (duel != null) return Arrays.asList(duel.firstPlayer, duel.secondPlayer);
+        FfaMatch ffa = playerToFfaMatch.get(playerId);
+        if (ffa != null) return new ArrayList<UUID>(ffa.playerOrder);
+        CrownfallMatch crownfall = playerToCrownfallMatch.get(playerId);
+        if (crownfall != null) return new ArrayList<UUID>(crownfall.playerOrder);
+        return Collections.singletonList(playerId);
+    }
+
+    private String kitSelectMode(UUID playerId) {
+        if (playerToMatch.containsKey(playerId)) return "1v1 DUEL";
+        if (playerToFfaMatch.containsKey(playerId)) return "FREE-FOR-ALL";
+        if (playerToCrownfallMatch.containsKey(playerId)) return "CROWNFALL";
+        if (soloMatches.containsKey(playerId)) return "TRAINING";
+        return "PVP";
+    }
+
+    /** Seconds left to pick before the round starts anyway (0 = no visible deadline). */
+    private int kitSelectSeconds(UUID playerId) {
+        MatchPhase phase = null;
+        int ticks = 0;
+        ActiveMatch duel = playerToMatch.get(playerId);
+        FfaMatch ffa = playerToFfaMatch.get(playerId);
+        CrownfallMatch crownfall = playerToCrownfallMatch.get(playerId);
+        SoloMatch solo = soloMatches.get(playerId);
+        if (duel != null) { phase = duel.phase; ticks = duel.phaseTicksRemaining; }
+        else if (ffa != null) { phase = ffa.phase; ticks = ffa.phaseTicksRemaining; }
+        else if (crownfall != null) { phase = crownfall.phase; ticks = crownfall.phaseTicksRemaining; }
+        else if (solo != null) { phase = solo.phase; ticks = solo.phaseTicksRemaining; }
+        return phase == MatchPhase.PREPARE && ticks > 20 ? ticks / 20 : 0;
+    }
+
+    /** Sends the round's roster and locked-in kits to every fighter in it. */
+    private void broadcastKitSelectStatus(MinecraftServer server, UUID playerId) {
+        if (server == null) return;
+        List<UUID> ids = kitSelectFighters(playerId);
+        List<com.matoon.herosmp.network.PacketKitSelectStatus.Fighter> roster =
+                new ArrayList<com.matoon.herosmp.network.PacketKitSelectStatus.Fighter>(ids.size());
+        for (UUID id : ids) {
+            EntityPlayerMP p = server.getPlayerList().getPlayerByUUID(id);
+            String name = p != null ? p.getName() : null;
+            if (name == null) {
+                com.mojang.authlib.GameProfile profile = server.getPlayerProfileCache().getProfileByUUID(id);
+                name = profile != null ? profile.getName() : "???";
+            }
+            String kit = awaitingKitSelection.contains(id) ? "" : lockedKitKeys.get(id);
+            roster.add(new com.matoon.herosmp.network.PacketKitSelectStatus.Fighter(id, name, kit));
+        }
+        com.matoon.herosmp.network.PacketKitSelectStatus packet = new com.matoon.herosmp.network.PacketKitSelectStatus(roster);
+        for (UUID id : ids) {
+            EntityPlayerMP p = server.getPlayerList().getPlayerByUUID(id);
+            if (p != null) ModNetwork.CHANNEL.sendTo(packet, p);
+        }
     }
 
     private EntityPlayerMP pollNextAvailableOpponent(EntityPlayerMP requester) {
@@ -2196,6 +2305,35 @@ public class PvpQueueManager {
      * that were not cleaned up (e.g. due to a crash). Called once on server start.
      * Arena IDs run from ARENA_BASE_DIMENSION_ID-1 down to ARENA_BASE_DIMENSION_ID-998.
      */
+    /**
+     * Forgets every queue, match and pending return after a throwaway integrated world (store
+     * playtest / map editor) stops. This manager outlives the server, and in singleplayer the
+     * player's UUID is the same in every world, so leftovers would otherwise teleport the player
+     * or restore an old inventory in the next world they open. Arena dimensions are unregistered
+     * so the next server doesn't load them.
+     */
+    public synchronized void resetAfterThrowawayWorld() {
+        for (Integer dimId : new ArrayList<Integer>(registeredArenaDimensionTypes.keySet())) {
+            try {
+                DimensionManager.keepDimensionLoaded(dimId, false);
+                ArenaWorldProvider.clearArenaDimension(dimId);
+                if (DimensionManager.isDimensionRegistered(dimId)) DimensionManager.unregisterDimension(dimId);
+            } catch (Exception ignored) {
+            }
+        }
+        queue.clear(); ffaQueue.clear(); crownfallQueue.clear();
+        queuedPlayers.clear(); ffaQueuedPlayers.clear(); crownfallQueuedPlayers.clear();
+        playerToMatch.clear(); playerToFfaMatch.clear(); playerToCrownfallMatch.clear();
+        soloMatches.clear();
+        pendingArenaPreparations.clear(); playersPreparingArena.clear();
+        pendingReturns.clear(); pendingInventoryReturns.clear();
+        awaitingKitSelection.clear(); lockedKitKeys.clear(); chestHighlightTargets.clear();
+        spectators.clear(); pendingVictorySequences.clear();
+        pendingArenaArrivals.clear(); pendingArenaDimensionCleanup.clear();
+        ffaQueueCountdownTicks = -1;
+        crownfallQueueCountdownTicks = -1;
+    }
+
     public void purgeStaleArenaDimensions(MinecraftServer server) {
         try {
             File worldRoot = server.getWorld(0).getSaveHandler().getWorldDirectory().getAbsoluteFile();
@@ -2679,8 +2817,8 @@ public class PvpQueueManager {
 
     private void startActiveCrownfallRound(MinecraftServer server, CrownfallMatch match, WorldServer world) {
         match.phase = MatchPhase.ACTIVE;
-        match.bossBar = new BossInfoServer(new TextComponentString("Crownfall: Gauntlet unclaimed"),
-                BossInfo.Color.PURPLE, BossInfo.Overlay.PROGRESS);
+        match.bossBar = new BossInfoServer(new TextComponentString(com.matoon.herosmp.hud.RoundBar.encode(com.matoon.herosmp.hud.RoundBar.Kind.CROWNFALL, com.matoon.herosmp.hud.RoundBar.Flag.NORMAL,
+                "Gauntlet unclaimed", "0/6", "Claim the Gauntlet")), BossInfo.Color.PURPLE, BossInfo.Overlay.NOTCHED_6);
         match.bossBar.setPercent(0.0F);
         for (UUID id : match.playerOrder) {
             EntityPlayerMP player = server.getPlayerList().getPlayerByUUID(id);
@@ -2709,8 +2847,10 @@ public class PvpQueueManager {
             EntityPlayerMP player = server.getPlayerList().getPlayerByUUID(carrier);
             name = player == null ? "Unknown" : player.getName();
         }
-        match.bossBar.setName(new TextComponentString(TextFormatting.LIGHT_PURPLE + "Crownfall: "
-                + TextFormatting.WHITE + name + TextFormatting.GRAY + " [" + stones + "/6 Stones]"));
+        match.bossBar.setName(new TextComponentString(com.matoon.herosmp.hud.RoundBar.encode(com.matoon.herosmp.hud.RoundBar.Kind.CROWNFALL,
+                stones >= 5 ? com.matoon.herosmp.hud.RoundBar.Flag.URGENT : com.matoon.herosmp.hud.RoundBar.Flag.NORMAL,
+                carrier == null ? "Gauntlet unclaimed" : name + " has the Gauntlet", stones + "/6",
+                stones >= 6 ? "All six Stones: one Snap to win" : "Infinity Stones")));
         match.bossBar.setPercent(Math.min(1.0F, stones / 6.0F));
     }
 
@@ -2970,7 +3110,8 @@ public class PvpQueueManager {
     }
 
     private BossInfoServer createRoundBossBar() {
-        return new BossInfoServer(new TextComponentString(TextFormatting.RED + "PvP Round"), BossInfo.Color.RED, BossInfo.Overlay.NOTCHED_10);
+        return new BossInfoServer(new TextComponentString(com.matoon.herosmp.hud.RoundBar.encode(com.matoon.herosmp.hud.RoundBar.Kind.DUEL, com.matoon.herosmp.hud.RoundBar.Flag.NORMAL, "Round", "", "")),
+                BossInfo.Color.RED, BossInfo.Overlay.NOTCHED_10);
     }
 
     private void updateRoundBossBar(ActiveMatch match) {
@@ -2980,7 +3121,10 @@ public class PvpQueueManager {
         int secondsLeft = Math.max(0, (match.phaseTicksRemaining + 19) / 20);
         float totalTicks = Math.max(1.0F, match.roundTicks);
         float progress = Math.max(0.0F, Math.min(1.0F, match.phaseTicksRemaining / totalTicks));
-        ITextComponent title = new TextComponentString(TextFormatting.DARK_RED + "PvP Round " + TextFormatting.GOLD + secondsLeft + "s");
+        String extra = match.playersRevealed ? "Players revealed" : match.chestsRevealed ? "Supply chests revealed" : "";
+        ITextComponent title = new TextComponentString(com.matoon.herosmp.hud.RoundBar.encode(com.matoon.herosmp.hud.RoundBar.Kind.DUEL,
+                secondsLeft <= PLAYER_REVEAL_AT_SECONDS ? com.matoon.herosmp.hud.RoundBar.Flag.URGENT : com.matoon.herosmp.hud.RoundBar.Flag.NORMAL,
+                "Round", com.matoon.herosmp.hud.RoundBar.clock(match.phaseTicksRemaining), extra));
         match.bossBar.setName(title);
         match.bossBar.setPercent(progress);
     }
@@ -2992,7 +3136,10 @@ public class PvpQueueManager {
         int secondsLeft = Math.max(0, (solo.phaseTicksRemaining + 19) / 20);
         float totalTicks = Math.max(1.0F, solo.roundTicks);
         float progress = Math.max(0.0F, Math.min(1.0F, solo.phaseTicksRemaining / totalTicks));
-        ITextComponent title = new TextComponentString(TextFormatting.DARK_RED + "PvP Round " + TextFormatting.GOLD + secondsLeft + "s");
+        String extra = solo.playersRevealed ? "Players revealed" : solo.chestsRevealed ? "Supply chests revealed" : "";
+        ITextComponent title = new TextComponentString(com.matoon.herosmp.hud.RoundBar.encode(com.matoon.herosmp.hud.RoundBar.Kind.TRAINING,
+                secondsLeft <= PLAYER_REVEAL_AT_SECONDS ? com.matoon.herosmp.hud.RoundBar.Flag.URGENT : com.matoon.herosmp.hud.RoundBar.Flag.NORMAL,
+                "Debug round", com.matoon.herosmp.hud.RoundBar.clock(solo.phaseTicksRemaining), extra));
         solo.bossBar.setName(title);
         solo.bossBar.setPercent(progress);
     }
@@ -3004,7 +3151,10 @@ public class PvpQueueManager {
         int secondsLeft = Math.max(0, (match.phaseTicksRemaining + 19) / 20);
         float totalTicks = Math.max(1.0F, match.roundTicks);
         float progress = Math.max(0.0F, Math.min(1.0F, match.phaseTicksRemaining / totalTicks));
-        ITextComponent title = new TextComponentString(TextFormatting.DARK_RED + "FFA Round " + TextFormatting.GOLD + secondsLeft + "s");
+        int alive = match.alivePlayers.size();
+        ITextComponent title = new TextComponentString(com.matoon.herosmp.hud.RoundBar.encode(com.matoon.herosmp.hud.RoundBar.Kind.FFA,
+                secondsLeft <= PLAYER_REVEAL_AT_SECONDS ? com.matoon.herosmp.hud.RoundBar.Flag.URGENT : com.matoon.herosmp.hud.RoundBar.Flag.NORMAL,
+                "Round", com.matoon.herosmp.hud.RoundBar.clock(match.phaseTicksRemaining), alive + (alive == 1 ? " fighter left" : " fighters left")));
         match.bossBar.setName(title);
         match.bossBar.setPercent(progress);
     }

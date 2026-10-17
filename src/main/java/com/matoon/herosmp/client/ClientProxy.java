@@ -45,6 +45,10 @@ public class ClientProxy extends CommonProxy {
         MinecraftForge.EVENT_BUS.register(new MainMenuLogoFx());
         // "Edit Map" from the store: editor-world launch, configure handoff, return to store.
         MinecraftForge.EVENT_BUS.register(new com.matoon.herosmp.client.store.MapEditorLauncher());
+        // Playtests: throwaway world for map / kit test runs.
+        MinecraftForge.EVENT_BUS.register(new com.matoon.herosmp.client.store.PlaytestLauncher());
+        // Themed round progress HUD in place of tagged vanilla boss bars.
+        MinecraftForge.EVENT_BUS.register(new com.matoon.herosmp.client.hud.RoundBarHud());
         // Register model event handler (client-only)
         MinecraftForge.EVENT_BUS.register(new ModItems.ClientRegistrationHandler());
         MinecraftForge.EVENT_BUS.register(new ModBlocks.ClientRegistrationHandler());

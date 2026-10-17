@@ -31,7 +31,7 @@ public final class InstalledPacks {
         if (subs == null) return Collections.emptyList();
         List<String> names = new ArrayList<String>();
         for (File d : subs) {
-            if (isMapDir(d)) names.add(d.getName());
+            if (isMapDir(d) && !d.getName().startsWith(".")) names.add(d.getName()); // dot folders: staging / backups
         }
         Collections.sort(names, String.CASE_INSENSITIVE_ORDER);
         return names;
@@ -43,6 +43,23 @@ public final class InstalledPacks {
 
     private static boolean isMapDir(File d) {
         return d.isDirectory() && (new File(d, "region").isDirectory() || new File(d, "level.dat").isFile());
+    }
+
+    /** Whether the map is in the match rotation (see HungerGamesMapManager.DISABLED_MARKER). */
+    public static boolean isMapEnabled(String name) {
+        return com.matoon.herosmp.hungergames.map.HungerGamesMapManager.isMapEnabled(mapDir(name));
+    }
+
+    /** Adds/removes the disabled marker. Returns the new state. */
+    public static boolean setMapEnabled(String name, boolean enabled) {
+        File marker = new File(mapDir(name), com.matoon.herosmp.hungergames.map.HungerGamesMapManager.DISABLED_MARKER);
+        try {
+            if (enabled) marker.delete();
+            else marker.createNewFile();
+        } catch (java.io.IOException e) {
+            System.err.println("[Beyonder] Couldn't toggle map " + name + ": " + e.getMessage());
+        }
+        return isMapEnabled(name);
     }
 
     /** Total bytes on disk for an installed map. */

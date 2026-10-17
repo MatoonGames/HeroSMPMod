@@ -121,6 +121,39 @@ public final class DriveClient {
         streamToFile(conn, dest, listener);
     }
 
+    /** Bytes of a byte-range request plus the file's total size (from Content-Range). */
+    public static final class Range {
+        public final byte[] data;
+        public final long total;
+        Range(byte[] data, long total) { this.data = data; this.total = total; }
+    }
+
+    /**
+     * Reads part of a public Drive file. {@code range} is an HTTP range such as {@code "bytes=-65536"}
+     * (the last 64 KB) or {@code "bytes=100-199"}. Throws if Drive doesn't answer with partial content.
+     */
+    public static Range readRange(String fileId, String range) throws IOException {
+        HttpURLConnection conn = open("https://drive.usercontent.google.com/download?id=" + fileId + "&export=download&confirm=t");
+        conn.setRequestProperty("Range", range);
+        try {
+            if (conn.getResponseCode() != 206) throw new IOException("No range support (HTTP " + conn.getResponseCode() + ")");
+            String cr = conn.getHeaderField("Content-Range"); // "bytes 0-99/6286417"
+            long total = -1;
+            if (cr != null && cr.indexOf('/') >= 0) {
+                try { total = Long.parseLong(cr.substring(cr.indexOf('/') + 1).trim()); } catch (NumberFormatException ignored) { }
+            }
+            ByteArrayOutputStream bos = new ByteArrayOutputStream();
+            byte[] buf = new byte[8192];
+            int read;
+            try (InputStream in = conn.getInputStream()) {
+                while ((read = in.read(buf)) >= 0) bos.write(buf, 0, read);
+            }
+            return new Range(bos.toByteArray(), total);
+        } finally {
+            conn.disconnect();
+        }
+    }
+
     private static void streamToFile(HttpURLConnection conn, File dest, DownloadListener listener) throws IOException {
         try (InputStream in = new BufferedInputStream(conn.getInputStream());
              FileOutputStream out = new FileOutputStream(dest)) {

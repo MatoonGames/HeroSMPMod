@@ -27,15 +27,20 @@ public class MainMenuPackButton {
     public static final KeyBinding OPEN_STORE_KEY =
             new KeyBinding("Open Content Packs", Keyboard.KEY_NONE, "Beyonder");
 
+    /** The main menu and the in-game pause menu both get the button. */
+    private static boolean hasButton(net.minecraft.client.gui.GuiScreen gui) {
+        return gui instanceof GuiMainMenu || gui instanceof net.minecraft.client.gui.GuiIngameMenu;
+    }
+
     @SubscribeEvent
-    public void onMainMenuInit(GuiScreenEvent.InitGuiEvent.Post event) {
-        if (!(event.getGui() instanceof GuiMainMenu)) return;
+    public void onMenuInit(GuiScreenEvent.InitGuiEvent.Post event) {
+        if (!hasButton(event.getGui())) return;
         event.getButtonList().add(new GoldSheenButton(BUTTON_ID, 6, 6, 128, 24, "Content Packs"));
     }
 
     @SubscribeEvent
-    public void onMainMenuAction(GuiScreenEvent.ActionPerformedEvent.Pre event) {
-        if (!(event.getGui() instanceof GuiMainMenu)) return;
+    public void onMenuAction(GuiScreenEvent.ActionPerformedEvent.Pre event) {
+        if (!hasButton(event.getGui())) return;
         if (event.getButton().id != BUTTON_ID) return;
         Minecraft.getMinecraft().displayGuiScreen(new GuiPackStore(event.getGui()));
     }

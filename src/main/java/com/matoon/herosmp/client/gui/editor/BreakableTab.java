@@ -64,12 +64,12 @@ final class BreakableTab extends EditorTab {
     private void add(ItemStack st) {
         List<ItemStack> blocks = session.config.getBreakableBlocks();
         if (blocks.size() >= MAX) {
-            ed.toast("The list is full (" + MAX + ")");
+            ed.toastWarn("The list is full (" + MAX + ")");
             return;
         }
         for (ItemStack existing : blocks) {
             if (existing.getItem() == st.getItem()) {
-                ed.toast("Already in the list");
+                ed.toastWarn("Already in the list");
                 return;
             }
         }

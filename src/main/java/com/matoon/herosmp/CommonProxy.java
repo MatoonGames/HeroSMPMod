@@ -38,6 +38,8 @@ public class CommonProxy {
         MinecraftForge.EVENT_BUS.register(new LucraftCoreIntegration());
         MinecraftForge.EVENT_BUS.register(new ArrowEffectHandler());
         MinecraftForge.EVENT_BUS.register(new MindControlManager());
+        // Kit playtest arena: the gold button that starts a solo PVP match.
+        MinecraftForge.EVENT_BUS.register(new com.matoon.herosmp.npc.playtest.KitPlaytest());
     }
 
     public void init(FMLInitializationEvent event) {

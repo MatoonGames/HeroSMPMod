@@ -21,6 +21,7 @@ public final class ModEntities {
     private static final int STATIC_NPC_ENTITY_ID    = 1;
     private static final int LUCRAFT_INJECTION_ID     = 2;
     private static final int TAGGED_ARROW_ID          = 3;
+    private static final int TEST_DUMMY_ID            = 4;
 
     private ModEntities() {
     }
@@ -64,10 +65,26 @@ public final class ModEntities {
                 0xFFDD44,
                 0xAA8800
         );
+
+        EntityRegistry.registerModEntity(
+                new ResourceLocation(HeroSMP.MODID, "test_dummy"),
+                com.matoon.herosmp.npc.playtest.EntityTestDummy.class,
+                "test_dummy",
+                TEST_DUMMY_ID,
+                HeroSMP.MODID,
+                64,
+                3,
+                false,
+                0xC8A060,
+                0x6B4A26
+        );
     }
 
     @SideOnly(Side.CLIENT)
     public static void registerRenderers() {
+        RenderingRegistry.registerEntityRenderingHandler(com.matoon.herosmp.npc.playtest.EntityTestDummy.class,
+                manager -> new com.matoon.herosmp.client.render.RenderTestDummy(manager));
+
         RenderingRegistry.registerEntityRenderingHandler(EntityStaticNpc.class, new IRenderFactory<EntityStaticNpc>() {
             @Override
             public Render<? super EntityStaticNpc> createRenderFor(RenderManager manager) {

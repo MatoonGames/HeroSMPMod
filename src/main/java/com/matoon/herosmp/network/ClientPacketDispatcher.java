@@ -4,6 +4,7 @@ import com.matoon.herosmp.client.InfPowerUpOverlay;
 import com.matoon.herosmp.client.LifeLinkClientMap;
 import com.matoon.herosmp.client.SnapEffectOverlay;
 import com.matoon.herosmp.client.SnapSkinOverlay;
+import com.matoon.herosmp.client.gui.GuiKitDownload;
 import com.matoon.herosmp.mindstone.GuiMindControl;
 import com.matoon.herosmp.mindstone.MindControlAuraRenderer;
 import com.matoon.herosmp.mindstone.MindControlClientState;
@@ -62,6 +63,12 @@ public final class ClientPacketDispatcher {
                     packet.windowStart, packet.windowEnd, packet.escape);
         } else if (message instanceof PacketMindControlResistanceResult) {
             MindControlPlayerLock.finishResistance();
+        } else if (message instanceof PacketOpenKitSelection) {
+            com.matoon.herosmp.client.gui.kitselect.GuiFighterSelect.open((PacketOpenKitSelection) message);
+        } else if (message instanceof PacketKitSelectStatus) {
+            com.matoon.herosmp.client.gui.kitselect.GuiFighterSelect.status((PacketKitSelectStatus) message);
+        } else if (message instanceof PacketKitTransfer) {
+            GuiKitDownload.receive((PacketKitTransfer) message);
         }
     }
 }

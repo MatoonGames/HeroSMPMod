@@ -3,7 +3,9 @@ package com.matoon.herosmp.npc.command;
 import com.matoon.herosmp.HeroSMP;
 import com.matoon.herosmp.npc.EntityStaticNpc;
 import com.matoon.herosmp.npc.NpcMode;
+import com.matoon.herosmp.network.PacketKitTransfer;
 import com.matoon.herosmp.npc.kit.KitDefinition;
+import com.matoon.herosmp.npc.kit.KitLibrary;
 import net.minecraft.command.CommandBase;
 import net.minecraft.command.CommandException;
 import net.minecraft.command.ICommandSender;
@@ -19,6 +21,7 @@ import net.minecraft.util.text.TextComponentString;
 import net.minecraft.world.World;
 
 import javax.annotation.Nullable;
+import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
@@ -40,7 +43,7 @@ public class CommandHeroNpc extends CommandBase {
 
     @Override
     public String getUsage(ICommandSender sender) {
-        return "/heropvp spawn <x> <y> <z> <skinOwner> <name...> | mode <npcKey> <command|pvp_queue> | setcommand <npcKey> <command...> | info <npcKey> | kit <create|remove|list> ... | lootmenu | forcestart | debugsolo | debugexit | roundtime <seconds> | hg debug <configuremap <map>|endconfigure|solo>";
+        return "/heropvp spawn <x> <y> <z> <skinOwner> <name...> | mode <npcKey> <command|pvp_queue> | setcommand <npcKey> <command...> | info <npcKey> | kit <create|remove|list|download> ... | lootmenu | forcestart | debugsolo | debugexit | roundtime <seconds> | hg debug <configuremap <map>|endconfigure|solo>";
     }
 
     @Override
@@ -177,7 +180,7 @@ public class CommandHeroNpc extends CommandBase {
 
     private void handleKit(ICommandSender sender, String[] args) throws CommandException {
         if (args.length < 2) {
-            throw new WrongUsageException("/heropvp kit <create|remove|list> ...");
+            throw new WrongUsageException("/heropvp kit <create|remove|list|download> ...");
         }
 
         String action = args[1].toLowerCase(Locale.ROOT);
@@ -189,8 +192,32 @@ public class CommandHeroNpc extends CommandBase {
             }
             sender.sendMessage(new TextComponentString("Kits:"));
             for (KitDefinition kit : kits) {
-                sender.sendMessage(new TextComponentString("- " + kit.getKey() + " (" + kit.getDisplayName() + ")"));
+                boolean library = HeroSMP.KIT_MANAGER.isLibraryKit(sender.getServer(), kit.getKey());
+                sender.sendMessage(new TextComponentString("- " + kit.getKey() + " (" + kit.getDisplayName() + ")"
+                        + (library ? " [library]" : " [world]") + (kit.isEnabled() ? "" : " [disabled]")));
             }
+            return;
+        }
+
+        if ("download".equals(action)) {
+            if (args.length < 3) {
+                throw new WrongUsageException("/heropvp kit download <kitName>");
+            }
+
+            EntityPlayerMP player = getPlayerSender(sender);
+            KitDefinition kit = HeroSMP.KIT_MANAGER.getKit(sender.getServer(), args[2]);
+            if (kit == null) {
+                throw new CommandException("Kit not found: " + args[2]);
+            }
+            byte[] file;
+            try {
+                // Exported as a template: no world list, so whoever installs it chooses.
+                file = KitLibrary.toFileBytes(kit, Collections.<String>emptyList());
+            } catch (IOException e) {
+                throw new CommandException("Couldn't export kit: " + e.getMessage());
+            }
+            PacketKitTransfer.send(player, kit.getDisplayName(), file);
+            sender.sendMessage(new TextComponentString("Downloading kit '" + kit.getDisplayName() + "'..."));
             return;
         }
 
@@ -217,6 +244,12 @@ public class CommandHeroNpc extends CommandBase {
             }
 
             boolean removed = HeroSMP.KIT_MANAGER.removeKit(sender.getServer(), args[2]);
+            if (!removed && HeroSMP.KIT_MANAGER.isLibraryKit(sender.getServer(), args[2])) {
+                KitDefinition kit = HeroSMP.KIT_MANAGER.getKit(sender.getServer(), args[2]);
+                throw new CommandException("'" + kit.getDisplayName() + "' is a library kit shared with other worlds. "
+                        + "Remove it from Content Packs > Installed > Kits, or delete beyonder_kits/"
+                        + KitLibrary.fileFor(kit.getKey()).getName() + ".");
+            }
             if (!removed) {
                 throw new CommandException("Kit not found: " + args[2]);
             }
@@ -224,7 +257,7 @@ public class CommandHeroNpc extends CommandBase {
             return;
         }
 
-        throw new WrongUsageException("/heropvp kit <create|remove|list> ...");
+        throw new WrongUsageException("/heropvp kit <create|remove|list|download> ...");
     }
 
     private void handleDebugSolo(ICommandSender sender) throws CommandException {
@@ -382,15 +415,16 @@ public class CommandHeroNpc extends CommandBase {
         }
 
         if (args.length == 2 && "kit".equalsIgnoreCase(args[0])) {
-            return getListOfStringsMatchingLastWord(args, Arrays.asList("create", "remove", "list"));
+            return getListOfStringsMatchingLastWord(args, Arrays.asList("create", "remove", "list", "download"));
         }
 
         if (args.length == 3 && "mode".equalsIgnoreCase(args[0])) {
             return getListOfStringsMatchingLastWord(args, Arrays.asList("command", "pvp_queue", "hunger_games_queue"));
         }
 
-        if (args.length == 3 && "kit".equalsIgnoreCase(args[0]) && "remove".equalsIgnoreCase(args[1])) {
-            return getKitKeys(server);
+        if (args.length == 3 && "kit".equalsIgnoreCase(args[0])
+                && ("remove".equalsIgnoreCase(args[1]) || "download".equalsIgnoreCase(args[1]))) {
+            return getListOfStringsMatchingLastWord(args, getKitKeys(server));
         }
 
         if (args.length == 4 && "kit".equalsIgnoreCase(args[0]) && "create".equalsIgnoreCase(args[1])) {

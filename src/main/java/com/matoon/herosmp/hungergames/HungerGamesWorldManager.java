@@ -289,7 +289,7 @@ public class HungerGamesWorldManager {
      */
     private void startMatchFromLobby(MinecraftServer server, List<EntityPlayerMP> players, Set<UUID> lobbyPlayers) {
         HungerGamesMapManager mgr = getMapManager(server);
-        String selectedMap = defaultMapName != null ? defaultMapName : mgr.pickRandomMap();
+        String selectedMap = defaultMapName != null && mgr.isMapEnabled(defaultMapName) ? defaultMapName : mgr.pickRandomMap();
         int dimensionId = allocateDimensionId();
         if (selectedMap != null) {
             File worldDir = server.getWorld(0).getSaveHandler().getWorldDirectory().getAbsoluteFile();
@@ -357,7 +357,7 @@ public class HungerGamesWorldManager {
 
         String selectedMap = mapName;
         if (selectedMap == null || "default".equals(selectedMap) || "random".equals(selectedMap)) {
-            selectedMap = defaultMapName != null ? defaultMapName : mgr.pickRandomMap();
+            selectedMap = defaultMapName != null && mgr.isMapEnabled(defaultMapName) ? defaultMapName : mgr.pickRandomMap();
         }
 
         int dimensionId = allocateDimensionId();
@@ -436,6 +436,17 @@ public class HungerGamesWorldManager {
         }
         sendMessage(player, TextFormatting.GOLD + "Starting solo debug match...");
         startMatch(server, Collections.singletonList(player), null);
+    }
+
+    /** Solo debug match on a specific map (map playtests from the Content Packs store). */
+    public synchronized void startSoloMatch(MinecraftServer server, EntityPlayerMP player, String mapName) {
+        UUID id = player.getUniqueID();
+        if (isPlayerInMatch(id) || configureSessions.containsKey(id)) {
+            sendMessage(player, TextFormatting.RED + "Finish your current match or configure session first.");
+            return;
+        }
+        sendMessage(player, TextFormatting.GOLD + "Playtest: starting a solo match on " + TextFormatting.WHITE + mapName + TextFormatting.GOLD + "...");
+        startMatch(server, Collections.singletonList(player), mapName);
     }
 
     // -------------------------------------------------------------------------
@@ -1034,6 +1045,33 @@ public class HungerGamesWorldManager {
         }
 
         return false;
+    }
+
+    /**
+     * Forgets matches, queues, configure sessions and stored player states after a throwaway
+     * integrated world (store playtest / map editor) stops; see
+     * {@code PvpQueueManager.resetAfterThrowawayWorld}. HG dimensions are unregistered so the
+     * next server doesn't load them.
+     */
+    public synchronized void resetAfterThrowawayWorld() {
+        for (Integer dimId : new ArrayList<>(registeredDimensionTypes.keySet())) {
+            try {
+                if (DimensionManager.isDimensionRegistered(dimId)) DimensionManager.unregisterDimension(dimId);
+            } catch (Exception ignored) {
+            }
+        }
+        for (UUID id : PlayerDataIsolationManager.storedPlayers()) {
+            PlayerDataIsolationManager.clearStoredState(id);
+        }
+        activeMatches.clear();
+        queue.clear(); queuedPlayers.clear();
+        configureSessions.clear(); pendingChatInputs.clear();
+        pendingHGSpectators.clear(); spectatorSetupCountdown.clear(); pendingHGReturns.clear();
+        openLootInventories.clear(); openInjectionInventories.clear(); openInjectionPropInventories.clear();
+        playersInLobby.clear();
+        lobbyDimensionId = Integer.MIN_VALUE;
+        lobbySpawnPoint = null;
+        currentQueueCountdown = -1;
     }
 
     public boolean isPlayerInMatch(UUID playerId) {

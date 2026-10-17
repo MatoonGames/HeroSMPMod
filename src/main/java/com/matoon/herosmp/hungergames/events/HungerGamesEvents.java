@@ -4,16 +4,8 @@ import com.matoon.herosmp.HeroSMP;
 import com.matoon.herosmp.hungergames.HungerGamesWorldManager;
 import com.matoon.herosmp.integration.EntityLucraftInjection;
 import com.matoon.herosmp.integration.LucraftInjectionEntry;
-import lucraft.mods.lucraftcore.superpowers.SuperpowerHandler;
-import lucraft.mods.lucraftcore.superpowers.abilities.Ability;
-import lucraft.mods.lucraftcore.superpowers.abilities.supplier.AbilityContainer;
-import lucraft.mods.lucraftcore.superpowers.abilities.supplier.AbilityContainerSuperpower;
-import lucraft.mods.lucraftcore.utilities.items.ItemInjection;
 import net.minecraft.entity.player.EntityPlayerMP;
-import net.minecraft.init.SoundEvents;
 import net.minecraft.item.ItemStack;
-import net.minecraft.util.EnumParticleTypes;
-import net.minecraft.util.SoundCategory;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.util.text.TextComponentString;
 import net.minecraft.util.text.TextFormatting;
@@ -298,67 +290,6 @@ public class HungerGamesEvents {
     }
 
     private static void grantSuperpower(EntityPlayerMP player, ItemStack injStack, net.minecraft.world.World world) {
-        try {
-            ItemInjection.Injection injection = ItemInjection.getInjection(injStack);
-            if (injection == null) {
-                System.err.println("[HeroSMP] grantSuperpower: null injection for "
-                        + injStack.getDisplayName());
-                return;
-            }
-
-            // Remove the player's current superpower first so they never have two,
-            // and so LucraftCore's hasSuperpower() guard inside inject() doesn't block the grant.
-            if (SuperpowerHandler.hasSuperpower(player)) {
-                SuperpowerHandler.removeSuperpower(player);
-                SuperpowerHandler.syncToPlayer(player);
-            }
-
-            // inject() calls giveSuperpower() internally, fires OnGain ability events,
-            // and handles capability setup — identical to right-click item use.
-            injection.inject(player, injStack.copy());
-
-            // Set the player to the maximum level of this superpower immediately.
-            try {
-                AbilityContainer container = Ability.getAbilityContainer(
-                        Ability.EnumAbilityContext.SUPERPOWER, player);
-                if (container instanceof AbilityContainerSuperpower) {
-                    AbilityContainerSuperpower spContainer = (AbilityContainerSuperpower) container;
-                    int maxLevel = SuperpowerHandler.getSuperpower(player) != null
-                            ? SuperpowerHandler.getSuperpower(player).getMaxLevel() : 1;
-                    if (maxLevel > 1) {
-                        spContainer.setLevel(maxLevel);
-                        spContainer.setXP(0);
-                        SuperpowerHandler.syncToPlayer(player);
-                    }
-                }
-            } catch (Exception levelEx) {
-                System.err.println("[HeroSMP] grantSuperpower: could not set max level for "
-                        + player.getName() + ": " + levelEx.getMessage());
-            }
-
-            String display = injection.getDisplayName();
-            player.sendMessage(new TextComponentString(
-                    TextFormatting.LIGHT_PURPLE + "" + TextFormatting.BOLD + "POWER INJECTED! "
-                    + TextFormatting.RESET + TextFormatting.GOLD + display));
-
-            world.playSound(null, player.posX, player.posY, player.posZ,
-                    SoundEvents.ENTITY_EXPERIENCE_ORB_PICKUP, SoundCategory.PLAYERS, 1.0F, 0.5F);
-            world.playSound(null, player.posX, player.posY, player.posZ,
-                    SoundEvents.ENTITY_PLAYER_LEVELUP, SoundCategory.PLAYERS, 1.0F, 1.2F);
-
-            ((net.minecraft.world.WorldServer) world).spawnParticle(
-                    EnumParticleTypes.SPELL_MOB,
-                    player.posX, player.posY + 1.0, player.posZ,
-                    40, 0.4, 0.6, 0.4, 0.15);
-            ((net.minecraft.world.WorldServer) world).spawnParticle(
-                    EnumParticleTypes.END_ROD,
-                    player.posX, player.posY + 1.0, player.posZ,
-                    20, 0.3, 0.5, 0.3, 0.05);
-
-        } catch (Exception e) {
-            System.err.println("[HeroSMP] grantSuperpower: exception granting '"
-                    + LucraftInjectionEntry.getLucraftId(injStack) + "' to "
-                    + player.getName() + ": " + e.getMessage());
-        }
+        com.matoon.herosmp.integration.SuperpowerGrant.grant(player, injStack, "POWER INJECTED!");
     }
 }

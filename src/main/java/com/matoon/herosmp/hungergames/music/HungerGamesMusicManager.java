@@ -30,8 +30,12 @@ public class HungerGamesMusicManager {
     public static final String STING_COUNTDOWN = "Countdown";
     public static final String STING_VICTORY   = "Victory";
     public static final String STING_DEATH     = "Death";
+    /** Fighter-select theme for PVP rounds (plays while players pick kits, stops when the screen closes). */
+    public static final String STING_KIT_SELECT = "KitSelect";
+    /** Hit when the fighter-select VS splash slams in. */
+    public static final String STING_FIGHT      = "Fight";
 
-    static final String[] ALL_STINGERS = {STING_COUNTDOWN, STING_VICTORY, STING_DEATH};
+    static final String[] ALL_STINGERS = {STING_COUNTDOWN, STING_VICTORY, STING_DEATH, STING_KIT_SELECT, STING_FIGHT};
 
     /** Every folder the manager scans, serves in the manifest, and streams on request. */
     static final String[] ALL_FOLDERS = concat(ALL_PHASES, ALL_STINGERS);

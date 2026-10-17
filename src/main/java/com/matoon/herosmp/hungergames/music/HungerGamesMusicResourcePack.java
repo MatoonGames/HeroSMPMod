@@ -141,7 +141,7 @@ public class HungerGamesMusicResourcePack implements IResourcePack {
     }
 
     private boolean hasAnyOggFiles() {
-        for (String phase : HungerGamesMusicManager.ALL_PHASES) {
+        for (String phase : HungerGamesMusicManager.ALL_FOLDERS) {
             File dir = new File(musicDir, phase);
             File[] files = dir.listFiles(f -> f.isFile() && f.getName().endsWith(".ogg"));
             if (files != null && files.length > 0) return true;

@@ -111,6 +111,13 @@ public final class PackThumbnails {
         return null;
     }
 
+    /** Texture for an already-decoded image (e.g. a Hero Addon's logo), uploaded once. Client thread only. */
+    public static Thumb image(String key, BufferedImage img) {
+        String k = "hs_i_" + safe(key);
+        Thumb t = READY.get(k);
+        return t != null ? t : upload(k, img);
+    }
+
     /** Client thread only. */
     private static Thumb upload(String key, BufferedImage img) {
         Thumb existing = READY.get(key);

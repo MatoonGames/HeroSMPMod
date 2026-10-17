@@ -6,6 +6,7 @@ import com.matoon.herosmp.npc.PvpQueueManager;
 import com.matoon.herosmp.npc.command.CommandHeroNpc;
 import com.matoon.herosmp.npc.command.CommandPvpMenu;
 import com.matoon.herosmp.npc.command.CommandReturn;
+import com.matoon.herosmp.npc.kit.KitLibrary;
 import com.matoon.herosmp.npc.kit.KitManager;
 import com.matoon.herosmp.npc.loot.PvpChestLootManager;
 import net.minecraftforge.common.config.Configuration;
@@ -53,10 +54,41 @@ public class HeroSMP {
     public static int     pvpMobilityRechargeSeconds     = 30;
 
     // Content-pack storefront: public Google Drive folder packs are downloaded from.
-    public static String  storeDriveFolderId             = "1DBGXhjdHj_j1CnHpdvV5lCvvq1hy3_tY";
+    public static String  storeDriveFolderId             = "1Skc50bQ41JTk90APBEoYw_MDJrf1Vrcx";
+    /** The store's first Drive folder (maps only); configs still pointing at it move to the new root. */
+    private static final String OLD_STORE_FOLDER_ID      = "1DBGXhjdHj_j1CnHpdvV5lCvvq1hy3_tY";
 
     @SidedProxy(clientSide = "com.matoon.herosmp.client.ClientProxy", serverSide = "com.matoon.herosmp.server.ServerProxy")
     public static CommonProxy proxy;
+
+    /**
+     * Hero Addons removed from the store while the game had them open are queued in
+     * beyonder_addons_remove.txt; delete them now, before LucraftCore loads its addon packs.
+     */
+    @Mod.EventHandler
+    public void construct(net.minecraftforge.fml.common.event.FMLConstructionEvent event) {
+        File list = new File(net.minecraftforge.fml.common.Loader.instance().getConfigDir().getParentFile(), "beyonder_addons_remove.txt");
+        if (!list.isFile()) return;
+        try {
+            java.util.List<String> left = new java.util.ArrayList<String>();
+            for (String line : java.nio.file.Files.readAllLines(list.toPath(), java.nio.charset.StandardCharsets.UTF_8)) {
+                if (line.trim().isEmpty()) continue;
+                File f = new File(line.trim());
+                deleteTree(f);
+                if (f.exists()) left.add(line.trim());
+            }
+            if (left.isEmpty()) list.delete();
+            else java.nio.file.Files.write(list.toPath(), left, java.nio.charset.StandardCharsets.UTF_8);
+        } catch (java.io.IOException e) {
+            System.err.println("[Beyonder] Couldn't remove queued Hero Addons: " + e.getMessage());
+        }
+    }
+
+    private static void deleteTree(File f) {
+        File[] children = f.listFiles();
+        if (children != null) for (File c : children) deleteTree(c);
+        f.delete();
+    }
 
     @Mod.EventHandler
     public void preInit(FMLPreInitializationEvent event) {
@@ -66,6 +98,8 @@ public class HeroSMP {
 
         File mapsDir = new File(event.getModConfigurationDirectory().getParentFile(), "herosmp_hg_maps");
         HUNGER_GAMES_MANAGER.initMapsDirectory(mapsDir);
+
+        KitLibrary.init(new File(event.getModConfigurationDirectory().getParentFile(), "beyonder_kits"));
 
         File musicDir = new File(event.getModConfigurationDirectory().getParentFile(), "herosmp_hg_music");
         HUNGER_GAMES_MANAGER.initMusicDirectory(musicDir);
@@ -80,8 +114,24 @@ public class HeroSMP {
         LucraftCoreIntegration.init(event);
     }
 
+    /** Save folder of the running server, so serverStopped knows which world just closed. */
+    private static volatile String serverFolder;
+
+    @Mod.EventHandler
+    public void serverStopped(net.minecraftforge.fml.common.event.FMLServerStoppedEvent event) {
+        // Store playtest / map editor worlds are deleted after use; drop the match state they left
+        // behind so it can't leak into the next singleplayer world (same player UUID there).
+        if (com.matoon.herosmp.npc.playtest.KitPlaytest.isThrowawayWorld(serverFolder)) {
+            PVP_QUEUE_MANAGER.resetAfterThrowawayWorld();
+            HUNGER_GAMES_MANAGER.resetAfterThrowawayWorld();
+            com.matoon.herosmp.npc.playtest.KitPlaytest.reset();
+        }
+        serverFolder = null;
+    }
+
     @Mod.EventHandler
     public void serverStarting(FMLServerStartingEvent event) {
+        serverFolder = event.getServer().getFolderName();
         proxy.serverStarting(event);
         PVP_QUEUE_MANAGER.purgeStaleArenaDimensions(event.getServer());
         // Register commands directly as a safety net so dedicated/integrated command wiring
@@ -128,10 +178,12 @@ public class HeroSMP {
                     "Seconds required for an empty PVP flight or invisibility charge to refill while that ability is off.");
 
             final String CAT_STORE = "contentPacks";
-            storeDriveFolderId = config.getString("driveFolderId", CAT_STORE, storeDriveFolderId,
+            net.minecraftforge.common.config.Property folder = config.get(CAT_STORE, "driveFolderId", storeDriveFolderId,
                     "Public Google Drive folder ID the main-menu Content Packs store downloads from. "
-                    + "Expects 'Hunger Games Maps' and 'PVP Kits' subfolders (a flat folder of map "
-                    + "folders also works as maps).");
+                    + "Expects 'Hunger Games Map Templates' (or 'Hunger Games Maps'), 'PVP Kits' and 'Hero Addons' "
+                    + "subfolders (a flat folder of map folders also works as maps).");
+            if (OLD_STORE_FOLDER_ID.equals(folder.getString())) folder.set(storeDriveFolderId); // moved to the new root
+            storeDriveFolderId = folder.getString();
         } catch (Exception e) {
             System.err.println("Error loading config for " + MODID);
         } finally {

@@ -33,6 +33,8 @@ public class HungerGamesMapManager {
         File[] subdirs = mapsDirectory.listFiles(File::isDirectory);
         if (subdirs == null) return maps;
         for (File dir : subdirs) {
+            // Dot folders are installer staging / backups, never maps.
+            if (dir.getName().startsWith(".")) continue;
             if (new File(dir, "region").isDirectory() || new File(dir, "level.dat").exists()) {
                 maps.add(dir.getName());
             }
@@ -40,10 +42,24 @@ public class HungerGamesMapManager {
         return maps;
     }
 
-    /** Returns all maps eligible for actual HG matches — excludes reserved names like "Lobby". */
+    /**
+     * Marker file that takes a map out of the match rotation (toggled from the Content Packs store).
+     * Disabled maps stay installed and editable; they're just never picked for a match.
+     */
+    public static final String DISABLED_MARKER = "beyonder_disabled";
+
+    public static boolean isMapEnabled(File mapDir) {
+        return !new File(mapDir, DISABLED_MARKER).exists();
+    }
+
+    public boolean isMapEnabled(String mapName) {
+        return isMapEnabled(getMapDir(mapName));
+    }
+
+    /** Returns all maps eligible for actual HG matches — excludes reserved names like "Lobby" and disabled maps. */
     public List<String> getPlayableMaps() {
         List<String> maps = getAvailableMaps();
-        maps.removeIf(name -> name.equalsIgnoreCase("Lobby"));
+        maps.removeIf(name -> name.equalsIgnoreCase("Lobby") || !isMapEnabled(name));
         return maps;
     }
 

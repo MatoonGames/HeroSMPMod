@@ -7,20 +7,51 @@ import net.minecraft.util.NonNullList;
 import net.minecraft.world.WorldServer;
 
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Locale;
+import java.util.Map;
 
 public class KitManager {
 
+    /**
+     * Every kit usable in this world: the world's own kits, then library kits assigned to this
+     * world (or to all worlds). A world kit wins over a library kit with the same key.
+     */
     public List<KitDefinition> getKits(MinecraftServer server) {
-        return new ArrayList<KitDefinition>(getData(server).getKits().values());
+        Map<String, KitDefinition> out = new LinkedHashMap<String, KitDefinition>(getData(server).getKits());
+        for (KitLibrary.Entry e : KitLibrary.forWorld(server.getFolderName())) {
+            if (!out.containsKey(e.key())) out.put(e.key(), e.kit());
+        }
+        return new ArrayList<KitDefinition>(out.values());
+    }
+
+    /** Kits players may pick (disabled kits are hidden). */
+    public List<KitDefinition> getEnabledKits(MinecraftServer server) {
+        List<KitDefinition> out = new ArrayList<KitDefinition>();
+        for (KitDefinition kit : getKits(server)) if (kit.isEnabled()) out.add(kit);
+        return out;
     }
 
     public KitDefinition getKit(MinecraftServer server, String key) {
         if (key == null) {
             return null;
         }
-        return getData(server).getKits().get(normalizeKey(key));
+        String k = normalizeKey(key);
+        KitDefinition kit = getData(server).getKits().get(k);
+        if (kit != null) return kit;
+        KitLibrary.Entry e = libraryKit(server, k);
+        return e != null ? e.kit() : null;
+    }
+
+    /** True when the kit comes from the shared library rather than this world's save. */
+    public boolean isLibraryKit(MinecraftServer server, String key) {
+        String k = normalizeKey(key);
+        return !getData(server).getKits().containsKey(k) && libraryKit(server, k) != null;
+    }
+
+    private KitLibrary.Entry libraryKit(MinecraftServer server, String key) {
+        KitLibrary.Entry e = KitLibrary.get(key);
+        return e != null && e.appliesTo(server.getFolderName()) ? e : null;
     }
 
     public KitDefinition createOrUpdateFromPlayer(MinecraftServer server, EntityPlayerMP player, String displayName, ItemStack icon) {
@@ -40,9 +71,18 @@ public class KitManager {
 
         KitDefinition kit = new KitDefinition(key, displayName, icon.copy(), contents);
         KitSavedData data = getData(server);
+        KitDefinition previous = data.getKits().get(key);
+        if (previous != null) kit.setEnabled(previous.isEnabled()); // re-saving a kit keeps its toggle
         data.getKits().put(key, kit);
         data.markDirty();
         return kit;
+    }
+
+    /** Saves a kit into this world's own kits (used by kit playtests). */
+    public void putWorldKit(MinecraftServer server, KitDefinition kit) {
+        KitSavedData data = getData(server);
+        data.getKits().put(kit.getKey(), kit);
+        data.markDirty();
     }
 
     public boolean removeKit(MinecraftServer server, String key) {
@@ -69,6 +109,11 @@ public class KitManager {
 
         player.inventory.markDirty();
         player.inventoryContainer.detectAndSendChanges();
+
+        // The kit's superpower, if it has one (taken away again when the player leaves the round).
+        if (kit.hasPower() && com.matoon.herosmp.integration.LucraftInjectionEntry.isValidInjection(kit.getPower())) {
+            com.matoon.herosmp.integration.SuperpowerGrant.grant(player, kit.getPower(), "KIT POWER:");
+        }
     }
 
     public void clearPlayerInventory(EntityPlayerMP player) {
@@ -96,6 +141,6 @@ public class KitManager {
     }
 
     private String normalizeKey(String value) {
-        return value == null ? "" : value.toLowerCase(Locale.ROOT).replaceAll("[^a-z0-9]+", "_").replaceAll("^_+|_+$", "");
+        return KitLibrary.normalizeKey(value);
     }
 }

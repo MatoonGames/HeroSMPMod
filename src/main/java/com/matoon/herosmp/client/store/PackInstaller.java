@@ -1,20 +1,14 @@
 package com.matoon.herosmp.client.store;
 
 import com.matoon.herosmp.client.store.DriveClient.DriveEntry;
+import com.matoon.herosmp.npc.kit.KitLibrary;
 import net.minecraft.client.Minecraft;
-import net.minecraft.nbt.CompressedStreamTools;
 import net.minecraft.nbt.NBTTagCompound;
-import net.minecraft.nbt.NBTTagList;
 
 import java.io.File;
-import java.io.FileInputStream;
-import java.io.FileOutputStream;
 import java.io.IOException;
-import java.io.InputStream;
 import java.util.ArrayList;
-import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Map;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 
@@ -25,10 +19,9 @@ import java.util.concurrent.atomic.AtomicLong;
  *  - MAP: recursively downloads the pack's Drive folder (only {@code level.dat}, {@code region/**},
  *    and {@code herosmp_config.dat} — everything the HG map system reads) into
  *    {@code <gameDir>/herosmp_hg_maps/<MapName>/}. Auto-discovered by HungerGamesMapManager.
- *  - KIT: downloads the pack's {@code .dat}, then merges its kits into the chosen world's
- *    {@code data/herosmp_kits.dat} (Forge WorldSavedData format: gzip NBT wrapped in a "data"
- *    compound holding a "Kits" list). Safe because the store runs at the main menu with the
- *    world offline.
+ *  - KIT: downloads the pack's {@code .dat} (the shared kit file format, see {@link KitLibrary})
+ *    and writes each of its kits into the global kit library {@code beyonder_kits/}, available in
+ *    the worlds the player picked (or all worlds).
  */
 public final class PackInstaller {
 
@@ -45,6 +38,10 @@ public final class PackInstaller {
         private volatile String      currentFile = "";
         private volatile String      error       = null;
         private volatile boolean     cancelRequested = false;
+        /** Kits written by a kit install (for the requirements check on the success screen). */
+        private volatile List<net.minecraft.nbt.NBTTagCompound> kitTags = java.util.Collections.emptyList();
+        /** Where an addon install put the pack. */
+        private volatile File addonFile;
 
         public State   state()       { return state; }
         public int     totalFiles()  { return totalFiles; }
@@ -52,6 +49,8 @@ public final class PackInstaller {
         public long    bytesDone()   { return bytesDone.get(); }
         public String  currentFile() { return currentFile; }
         public String  error()       { return error; }
+        public List<net.minecraft.nbt.NBTTagCompound> kitTags() { return kitTags; }
+        public File    addonFile()   { return addonFile; }
 
         public void requestCancel()  { cancelRequested = true; }
         public boolean isCancelled() { return cancelRequested; }
@@ -64,21 +63,25 @@ public final class PackInstaller {
     }
 
     /** Starts the install on a daemon thread and returns the live Progress to poll. */
-    public static Progress start(final StorePack pack, final File targetWorldDir) {
+    public static Progress start(final StorePack pack, final List<String> kitWorlds) {
         final Progress p = new Progress();
         Thread t = new Thread(new Runnable() {
-            @Override public void run() { PackInstaller.run(pack, targetWorldDir, p); }
+            @Override public void run() { PackInstaller.run(pack, kitWorlds, p); }
         }, "HeroSMP pack installer");
         t.setDaemon(true);
         t.start();
         return p;
     }
 
-    private static void run(StorePack pack, File targetWorldDir, Progress p) {
+    private static void run(StorePack pack, List<String> kitWorlds, Progress p) {
         try {
             switch (pack.type) {
-                case MAP: installMap(pack, p); break;
-                case KIT: installKit(pack, targetWorldDir, p); break;
+                case MAP:
+                    if (pack.localSource != null) importMap(pack, p);
+                    else installMap(pack, p);
+                    break;
+                case KIT: installKit(pack, kitWorlds, p); break;
+                case ADDON: installAddon(pack, p); break;
                 default: throw new IOException("Unsupported pack type: " + pack.type);
             }
             if (!p.isCancelled()) p.state = State.SUCCESS;
@@ -129,10 +132,26 @@ public final class PackInstaller {
                 p.filesDone.incrementAndGet();
             }
 
-            // Swap the finished install into place.
-            p.currentFile = "Finishing up...";
-            InstalledPacks.deleteRecursive(mapDir);
-            mapDir.getParentFile().mkdirs();
+            swapIntoPlace(staging, mapDir, safeName, p);
+        } finally {
+            InstalledPacks.deleteRecursive(staging);
+        }
+    }
+
+    /**
+     * Replaces the installed map with the finished staging folder. The old map is moved aside first
+     * and only deleted once the new one is in place, so a failed swap (locked file) puts it back
+     * instead of leaving no map at all.
+     */
+    private static void swapIntoPlace(File staging, File mapDir, String safeName, Progress p) throws IOException {
+        p.currentFile = "Finishing up...";
+        mapDir.getParentFile().mkdirs();
+        File backup = null;
+        if (mapDir.exists()) {
+            backup = new File(mapDir.getParentFile(), "." + mapDir.getName() + ".old-" + System.currentTimeMillis());
+            if (!mapDir.renameTo(backup)) backup = null; // can't move it aside: fall through and copy over it
+        }
+        try {
             if (!staging.renameTo(mapDir)) {
                 java.nio.file.Path src = staging.toPath();
                 try (java.util.stream.Stream<java.nio.file.Path> walk = java.nio.file.Files.walk(src)) {
@@ -143,9 +162,141 @@ public final class PackInstaller {
                     }
                 }
             }
-            PackThumbnails.invalidateInstalledMap(safeName);
+        } catch (IOException | RuntimeException e) {
+            if (backup != null) {
+                InstalledPacks.deleteRecursive(mapDir);
+                if (!backup.renameTo(mapDir)) {
+                    System.err.println("[Beyonder] Couldn't restore " + mapDir.getName() + "; the old copy is in " + backup.getName());
+                }
+            }
+            throw e;
+        }
+        if (backup != null) InstalledPacks.deleteRecursive(backup);
+        PackThumbnails.invalidateInstalledMap(safeName);
+    }
+
+    // -------------------------------------------------------------------------
+    // Map upload (from the user's computer)
+    // -------------------------------------------------------------------------
+
+    /** True if the folder is a world save (has level.dat or region/). */
+    public static boolean isWorldFolder(File dir) {
+        return dir.isDirectory() && (new File(dir, "level.dat").isFile() || new File(dir, "region").isDirectory());
+    }
+
+    /**
+     * The world inside a chosen folder: the folder itself, or its only world sub-folder (people often
+     * pick the folder that wraps the world). Null if none.
+     */
+    public static File findWorld(File chosen) {
+        if (isWorldFolder(chosen)) return chosen;
+        File[] subs = chosen.listFiles(File::isDirectory);
+        File found = null;
+        if (subs != null) {
+            for (File s : subs) {
+                if (!isWorldFolder(s)) continue;
+                if (found != null) return null; // several worlds: ambiguous
+                found = s;
+            }
+        }
+        return found;
+    }
+
+    /** Copies a world folder or extracts a .zip into the maps folder (same files as store installs). */
+    private static void importMap(StorePack pack, Progress p) throws IOException {
+        File gameDir = Minecraft.getMinecraft().gameDir;
+        String safeName = sanitize(pack.displayName);
+        if (safeName.isEmpty()) throw new IOException("Invalid map name.");
+        File mapDir = new File(new File(gameDir, "herosmp_hg_maps"), safeName);
+        File staging = new File(new File(gameDir, "herosmp_store_tmp"), safeName);
+        InstalledPacks.deleteRecursive(staging);
+        File src = pack.localSource;
+        try {
+            if (src.isDirectory()) importFolder(src, staging, p);
+            else importZip(src, staging, p);
+            if (p.isCancelled()) return;
+            swapIntoPlace(staging, mapDir, safeName, p);
         } finally {
             InstalledPacks.deleteRecursive(staging);
+        }
+    }
+
+    private static void importFolder(File chosen, File staging, Progress p) throws IOException {
+        File world = findWorld(chosen);
+        if (world == null) throw new IOException("That folder isn't a Minecraft world (no level.dat or region folder).");
+        List<File> files = new ArrayList<File>();
+        File[] root = world.listFiles();
+        if (root != null) {
+            for (File f : root) {
+                if (f.isFile() && isWantedRootFile(f.getName())) files.add(f);
+                else if (f.isDirectory() && f.getName().equalsIgnoreCase("region")) collectFiles(f, files);
+            }
+        }
+        if (files.isEmpty()) throw new IOException("The world folder has nothing to copy.");
+        p.totalFiles = files.size();
+        java.nio.file.Path base = world.toPath();
+        for (File f : files) {
+            if (p.isCancelled()) return;
+            String rel = base.relativize(f.toPath()).toString();
+            p.currentFile = rel.replace('\\', '/');
+            File dest = new File(staging, rel);
+            dest.getParentFile().mkdirs();
+            java.nio.file.Files.copy(f.toPath(), dest.toPath(), java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+            p.bytesDone.addAndGet(f.length());
+            p.filesDone.incrementAndGet();
+        }
+    }
+
+    private static void collectFiles(File dir, List<File> out) {
+        File[] children = dir.listFiles();
+        if (children == null) return;
+        for (File c : children) {
+            if (c.isDirectory()) collectFiles(c, out);
+            else out.add(c);
+        }
+    }
+
+    private static void importZip(File zipFile, File staging, Progress p) throws IOException {
+        try (java.util.zip.ZipFile zip = new java.util.zip.ZipFile(zipFile)) {
+            // The world may sit at the zip root or inside a folder: use the shallowest folder that
+            // holds level.dat or region/.
+            String prefix = null;
+            for (java.util.zip.ZipEntry e : java.util.Collections.list(zip.entries())) {
+                String n = e.getName().replace('\\', '/');
+                String dir = null;
+                if (n.endsWith("level.dat") && (n.equals("level.dat") || n.endsWith("/level.dat"))) dir = n.substring(0, n.length() - "level.dat".length());
+                else if (n.contains("region/")) dir = n.substring(0, n.indexOf("region/"));
+                if (dir != null && (dir.isEmpty() || dir.endsWith("/")) && (prefix == null || dir.length() < prefix.length())) prefix = dir;
+            }
+            if (prefix == null) throw new IOException("That .zip doesn't contain a Minecraft world.");
+
+            List<java.util.zip.ZipEntry> wanted = new ArrayList<java.util.zip.ZipEntry>();
+            for (java.util.zip.ZipEntry e : java.util.Collections.list(zip.entries())) {
+                if (e.isDirectory()) continue;
+                String n = e.getName().replace('\\', '/');
+                if (!n.startsWith(prefix)) continue;
+                String rel = n.substring(prefix.length());
+                if (rel.contains("..") || rel.startsWith("/")) continue; // never write outside the map
+                if (rel.contains("/") ? rel.toLowerCase(java.util.Locale.ROOT).startsWith("region/") : isWantedRootFile(rel)) wanted.add(e);
+            }
+            if (wanted.isEmpty()) throw new IOException("The world in that .zip has nothing to copy.");
+            p.totalFiles = wanted.size();
+            byte[] buf = new byte[32 * 1024];
+            for (java.util.zip.ZipEntry e : wanted) {
+                if (p.isCancelled()) return;
+                String rel = e.getName().replace('\\', '/').substring(prefix.length());
+                p.currentFile = rel;
+                File dest = new File(staging, rel);
+                dest.getParentFile().mkdirs();
+                try (java.io.InputStream in = zip.getInputStream(e); java.io.FileOutputStream out = new java.io.FileOutputStream(dest)) {
+                    int n;
+                    while ((n = in.read(buf)) > 0) {
+                        out.write(buf, 0, n);
+                        p.bytesDone.addAndGet(n);
+                    }
+                }
+                p.filesDone.incrementAndGet();
+            }
         }
     }
 
@@ -176,8 +327,8 @@ public final class PackInstaller {
     // Kit install
     // -------------------------------------------------------------------------
 
-    private static void installKit(StorePack pack, File targetWorldDir, Progress p) throws IOException {
-        if (targetWorldDir == null) throw new IOException("No target world selected.");
+    private static void installKit(StorePack pack, List<String> kitWorlds, Progress p) throws IOException {
+        if (kitWorlds == null) throw new IOException("No worlds selected.");
         p.totalFiles = 1;
         p.currentFile = pack.displayName + ".dat";
 
@@ -185,46 +336,72 @@ public final class PackInstaller {
         try {
             DriveClient.downloadFile(pack.driveId, tmp, byteSink(p));
             if (p.isCancelled()) return;
-
-            // Read the pack. Accept either a bare { Kits:[...] } file or a full data-wrapped save.
-            NBTTagCompound packRoot = readNbt(tmp);
-            NBTTagCompound packHolder = packRoot.hasKey("data") ? packRoot.getCompoundTag("data") : packRoot;
-            NBTTagList packKits = packHolder.getTagList("Kits", 10);
-            if (packKits.tagCount() == 0) throw new IOException("Kit pack contained no kits.");
-
-            // Load the world's existing kit saved-data (if any) and merge by Key.
-            File kitsFile = new File(new File(targetWorldDir, "data"), "herosmp_kits.dat");
-            Map<String, NBTTagCompound> byKey = new LinkedHashMap<String, NBTTagCompound>();
-            if (kitsFile.isFile()) {
-                NBTTagCompound wrapper = readNbt(kitsFile);
-                NBTTagCompound data = wrapper.hasKey("data") ? wrapper.getCompoundTag("data") : wrapper;
-                NBTTagList existing = data.getTagList("Kits", 10);
-                for (int i = 0; i < existing.tagCount(); i++) {
-                    NBTTagCompound kit = existing.getCompoundTagAt(i);
-                    byKey.put(kit.getString("Key"), kit);
-                }
-            }
-            for (int i = 0; i < packKits.tagCount(); i++) {
-                NBTTagCompound kit = packKits.getCompoundTagAt(i);
-                byKey.put(kit.getString("Key"), kit); // pack overrides same-key kits
-            }
-
-            // Rebuild and write back in Forge's WorldSavedData wrapper format.
-            NBTTagList merged = new NBTTagList();
-            for (NBTTagCompound kit : byKey.values()) merged.appendTag(kit);
-            NBTTagCompound dataOut = new NBTTagCompound();
-            dataOut.setTag("Kits", merged);
-            NBTTagCompound wrapperOut = new NBTTagCompound();
-            wrapperOut.setTag("data", dataOut);
-
-            kitsFile.getParentFile().mkdirs();
-            try (FileOutputStream fos = new FileOutputStream(kitsFile)) {
-                CompressedStreamTools.writeCompressed(wrapperOut, fos);
-            }
+            byte[] bytes = KitLibrary.readBytes(tmp);
+            installKitFile(bytes, kitWorlds);
+            p.kitTags = KitLibrary.parse(bytes).kits;
             p.filesDone.incrementAndGet();
         } finally {
             tmp.delete();
         }
+    }
+
+    // -------------------------------------------------------------------------
+    // Hero Addon install
+    // -------------------------------------------------------------------------
+
+    /**
+     * Downloads a LucraftCore addon pack into the addon packs folder. It loads the next time the
+     * game starts (LucraftCore reads addon packs once, at startup).
+     */
+    private static void installAddon(StorePack pack, Progress p) throws IOException {
+        File target = HeroAddons.targetFor(pack);
+        target.getParentFile().mkdirs();
+        p.totalFiles = 1;
+        p.currentFile = target.getName();
+        File part = new File(target.getParentFile(), target.getName() + ".part");
+        try {
+            File cached = AddonMeta.cacheFile(pack.driveId);
+            if (cached.isFile() && cached.length() > 0) {
+                // Already fetched whole for its store preview.
+                java.nio.file.Files.copy(cached.toPath(), part.toPath(), java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+                p.bytesDone.addAndGet(cached.length());
+            } else {
+                DriveClient.downloadFile(pack.driveId, part, byteSink(p));
+            }
+            if (p.isCancelled()) return;
+            try (java.util.zip.ZipFile zip = new java.util.zip.ZipFile(part)) {
+                if (zip.getEntry("addonpack.mcmeta") == null) {
+                    throw new IOException("This file isn't a LucraftCore addon pack (no addonpack.mcmeta).");
+                }
+            } catch (java.util.zip.ZipException e) {
+                throw new IOException("The download isn't a valid addon pack zip.");
+            }
+            try {
+                java.nio.file.Files.move(part.toPath(), target.toPath(), java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+            } catch (IOException e) {
+                throw new IOException("Couldn't replace " + target.getName() + " while the game is using it. "
+                        + "Remove it from Installed, restart, then install again.");
+            }
+            HeroAddons.markInstalled(target);
+            p.addonFile = target;
+            p.filesDone.incrementAndGet();
+        } finally {
+            part.delete();
+        }
+    }
+
+    /**
+     * Writes every kit in a kit file into the {@link KitLibrary}, available in {@code worlds}
+     * (empty = all worlds). Same-key library kits are replaced. Returns the kits' display names.
+     */
+    public static List<String> installKitFile(byte[] file, List<String> worlds) throws IOException {
+        KitLibrary.Parsed parsed = KitLibrary.parse(file);
+        List<String> names = new ArrayList<String>();
+        for (NBTTagCompound kit : parsed.kits) {
+            KitLibrary.write(kit, worlds);
+            names.add(kit.getString("DisplayName"));
+        }
+        return names;
     }
 
     // -------------------------------------------------------------------------
@@ -236,15 +413,6 @@ public final class PackInstaller {
             @Override public void bytesTransferred(long delta) { p.bytesDone.addAndGet(delta); }
             @Override public boolean isCancelled() { return p.isCancelled(); }
         };
-    }
-
-    /** Reads an NBT file, trying gzip first then falling back to uncompressed. */
-    private static NBTTagCompound readNbt(File f) throws IOException {
-        try (InputStream in = new FileInputStream(f)) {
-            return CompressedStreamTools.readCompressed(in);
-        } catch (IOException gzipFail) {
-            return CompressedStreamTools.read(f);
-        }
     }
 
     /** Strips path separators and traversal so a Drive name can't escape the maps folder. */

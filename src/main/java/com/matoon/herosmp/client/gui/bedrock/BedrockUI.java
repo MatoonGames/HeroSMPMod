@@ -208,6 +208,96 @@ public final class BedrockUI {
         rect(x + w, y + 2, 2, h, 0x50000000);
     }
 
+    /** Filled circle (triangle fan). */
+    public static void disc(float cx, float cy, float r, int argb) {
+        if (r <= 0 || (argb >>> 24) == 0) return;
+        GlStateManager.disableTexture2D();
+        GlStateManager.enableBlend();
+        GlStateManager.disableAlpha();
+        GlStateManager.tryBlendFuncSeparate(GlStateManager.SourceFactor.SRC_ALPHA,
+                GlStateManager.DestFactor.ONE_MINUS_SRC_ALPHA,
+                GlStateManager.SourceFactor.ONE, GlStateManager.DestFactor.ZERO);
+        Tessellator tess = Tessellator.getInstance();
+        BufferBuilder b = tess.getBuffer();
+        b.begin(GL11.GL_TRIANGLE_FAN, DefaultVertexFormats.POSITION_COLOR);
+        vtx(b, cx, cy, argb);
+        int segs = Math.max(12, Math.min(48, (int) (r * 1.5f)));
+        for (int i = segs; i >= 0; i--) {
+            double a = Math.PI * 2 * i / segs;
+            vtx(b, cx + Math.cos(a) * r, cy + Math.sin(a) * r, argb);
+        }
+        tess.draw();
+        GlStateManager.enableAlpha();
+        GlStateManager.disableBlend();
+        GlStateManager.enableTexture2D();
+    }
+
+    /**
+     * Diagonal light band sweeping across a box: {@code t} 0..1 moves it from just off the left edge
+     * to just off the right. Clipped to the box.
+     */
+    public static void sheen(int x, int y, int w, int h, float t, int alpha) {
+        if (t <= 0 || t >= 1 || w <= 0 || h <= 0) return;
+        float band = Math.max(10, Math.min(28, w * 0.18f));
+        float skew = h * 0.6f;
+        float cx = x - band - skew + (w + band * 2 + skew * 2) * t;
+        int peak = (Math.max(0, Math.min(255, alpha)) << 24) | 0xFFFFFF;
+        pushClip(x, y, w, h);
+        GlStateManager.disableTexture2D();
+        GlStateManager.enableBlend();
+        GlStateManager.disableAlpha();
+        GlStateManager.tryBlendFuncSeparate(GlStateManager.SourceFactor.SRC_ALPHA,
+                GlStateManager.DestFactor.ONE_MINUS_SRC_ALPHA,
+                GlStateManager.SourceFactor.ONE, GlStateManager.DestFactor.ZERO);
+        GlStateManager.shadeModel(GL11.GL_SMOOTH);
+        Tessellator tess = Tessellator.getInstance();
+        BufferBuilder b = tess.getBuffer();
+        b.begin(GL11.GL_QUADS, DefaultVertexFormats.POSITION_COLOR);
+        // Left half: transparent -> peak, right half: peak -> transparent; top edge leans right.
+        vtx(b, cx + skew, y, peak);
+        vtx(b, cx - band + skew, y, 0x00FFFFFF);
+        vtx(b, cx - band - skew, y + h, 0x00FFFFFF);
+        vtx(b, cx - skew, y + h, peak);
+        vtx(b, cx + band + skew, y, 0x00FFFFFF);
+        vtx(b, cx + skew, y, peak);
+        vtx(b, cx - skew, y + h, peak);
+        vtx(b, cx + band - skew, y + h, 0x00FFFFFF);
+        tess.draw();
+        GlStateManager.shadeModel(GL11.GL_FLAT);
+        GlStateManager.enableAlpha();
+        GlStateManager.disableBlend();
+        GlStateManager.enableTexture2D();
+        popClip();
+    }
+
+    /** Soft glow around a box: a few stacked translucent outlines fading outwards. */
+    public static void glow(int x, int y, int w, int h, int rgb, float strength) {
+        if (strength <= 0.01f) return;
+        for (int i = 1; i <= 4; i++) {
+            int a = (int) (strength * (70 - i * 15));
+            if (a <= 0) continue;
+            outline(x - i, y - i, w + i * 2, h + i * 2, 1, (a << 24) | (rgb & 0xFFFFFF));
+        }
+    }
+
+    /** Multiplies a colour's alpha by {@code a} (0..1). */
+    public static int fade(int argb, float a) {
+        int alpha = (int) (((argb >>> 24) & 0xFF) * Math.max(0, Math.min(1, a)));
+        return (alpha << 24) | (argb & 0xFFFFFF);
+    }
+
+    public static float easeOut(float t) {
+        t = Math.max(0, Math.min(1, t));
+        return 1 - (1 - t) * (1 - t) * (1 - t);
+    }
+
+    /** Ease-out with a small overshoot, for things that pop in. */
+    public static float easeOutBack(float t) {
+        t = Math.max(0, Math.min(1, t));
+        float c1 = 1.70158f, c3 = c1 + 1;
+        return 1 + c3 * (float) Math.pow(t - 1, 3) + c1 * (float) Math.pow(t - 1, 2);
+    }
+
     public static void clearDepth() {
         GlStateManager.clear(GL11.GL_DEPTH_BUFFER_BIT);
     }
@@ -443,8 +533,28 @@ public final class BedrockUI {
         clearDepth();
     }
 
+    /**
+     * Runs a render call for an item (held item, armor model...) that a mod might have broken. On
+     * failure the item is remembered (skipped from then on), GL state is unwound, and false is
+     * returned so the caller can draw something else.
+     */
+    public static boolean safely(net.minecraft.item.Item item, Runnable render) {
+        if (item != null && BROKEN_ITEMS.contains(item)) return false;
+        int depth = GL11.glGetInteger(GL11.GL_MODELVIEW_STACK_DEPTH);
+        try {
+            render.run();
+            return true;
+        } catch (RuntimeException e) {
+            if (item != null) BROKEN_ITEMS.add(item);
+            System.err.println("[Beyonder] Couldn't render " + (item != null ? item.getRegistryName() : "item")
+                    + " here (" + e.getClass().getSimpleName() + ")");
+            recoverRenderState(depth);
+            return false;
+        }
+    }
+
     /** Undoes whatever a failed item render left behind: open vertex buffer, pushed matrices, lighting. */
-    private static void recoverRenderState(int modelviewDepth) {
+    public static void recoverRenderState(int modelviewDepth) {
         try {
             Tessellator.getInstance().getBuffer().finishDrawing();
         } catch (IllegalStateException notDrawing) {

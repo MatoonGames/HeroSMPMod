@@ -13,6 +13,9 @@ import java.util.Locale;
  * Preferred layout — one category subfolder per pack type:
  *   &lt;root&gt;/Hunger Games Maps/&lt;MapName&gt;/   (each child folder = one map pack)
  *   &lt;root&gt;/PVP Kits/&lt;KitPack&gt;.dat         (each child file   = one kit pack)
+ *   &lt;root&gt;/Hero Addons/&lt;Pack&gt;.zip          (each child file   = one LucraftCore addon pack)
+ *
+ * The maps folder may also be called "Hunger Games Map Templates".
  *
  * Backwards-compatible fallback: if neither category folder exists, every folder directly
  * under the root is treated as a map pack (so a flat folder of maps works out of the box).
@@ -20,7 +23,12 @@ import java.util.Locale;
 public final class StoreCatalog {
 
     public static final String CAT_MAPS = "Hunger Games Maps";
+    public static final String CAT_MAPS_ALT = "Hunger Games Map Templates";
     public static final String CAT_KITS = "PVP Kits";
+    public static final String CAT_ADDONS = "Hero Addons";
+
+    /** The last catalog fetched (for prompts that point at store packs, e.g. a kit's missing addon). */
+    public static volatile List<StorePack> lastPacks = Collections.emptyList();
 
     private StoreCatalog() {}
 
@@ -44,7 +52,7 @@ public final class StoreCatalog {
 
             for (DriveEntry e : root) {
                 if (!e.isFolder) continue;
-                if (e.name.equalsIgnoreCase(CAT_MAPS)) {
+                if (e.name.equalsIgnoreCase(CAT_MAPS) || e.name.equalsIgnoreCase(CAT_MAPS_ALT)) {
                     foundCategory = true;
                     for (DriveEntry m : DriveClient.listFolder(e.id)) {
                         if (m.isFolder) packs.add(new StorePack(StorePack.PackType.MAP, m.name, m.id, true));
@@ -54,6 +62,14 @@ public final class StoreCatalog {
                     for (DriveEntry k : DriveClient.listFolder(e.id)) {
                         if (!k.isFolder) {
                             packs.add(new StorePack(StorePack.PackType.KIT, stripExtension(k.name), k.id, false));
+                        }
+                    }
+                } else if (e.name.equalsIgnoreCase(CAT_ADDONS)) {
+                    foundCategory = true;
+                    for (DriveEntry a : DriveClient.listFolder(e.id)) {
+                        String lower = a.name.toLowerCase(Locale.ROOT);
+                        if (!a.isFolder && (lower.endsWith(".zip") || lower.endsWith(".jar"))) {
+                            packs.add(StorePack.addon(addonTitle(a.name), a.id, a.name));
                         }
                     }
                 }
@@ -66,6 +82,7 @@ public final class StoreCatalog {
                 }
             }
 
+            lastPacks = Collections.unmodifiableList(new ArrayList<>(packs));
             return new Result(packs, null);
         } catch (Exception ex) {
             String msg = ex.getMessage();
@@ -74,9 +91,15 @@ public final class StoreCatalog {
         }
     }
 
+    /** "Neons+Villains+1.3.zip" -> "Neons Villains 1.3" (Drive keeps '+' from URL-encoded uploads). */
+    public static String addonTitle(String fileName) {
+        String base = fileName.replaceAll("(?i)[.](zip|jar)$", "").replace('+', ' ').replace('_', ' ').trim();
+        return base.isEmpty() ? fileName : base;
+    }
+
     private static String stripExtension(String name) {
         String lower = name.toLowerCase(Locale.ROOT);
-        if (lower.endsWith(".dat")) return name.substring(0, name.length() - 4);
+        if (lower.endsWith(".dat") || lower.endsWith(".png")) return name.substring(0, name.length() - 4);
         return name;
     }
 }

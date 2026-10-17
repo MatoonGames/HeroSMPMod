@@ -149,6 +149,11 @@ public class PlayerDataIsolationManager {
     /**
      * Check if a player has stored state.
      */
+    /** Players with a stored state (a copy, safe to iterate while clearing). */
+    public static java.util.Set<UUID> storedPlayers() {
+        return new java.util.HashSet<>(storedStates.keySet());
+    }
+
     public static boolean hasStoredState(UUID playerId) {
         return storedStates.containsKey(playerId);
     }
